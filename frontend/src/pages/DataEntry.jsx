@@ -7,6 +7,7 @@ function DataEntry() {
   const [observations, setObservations] = useState([]);
   const [error, setError] = useState(null);
 
+  // Form State
   const [formData, setFormData] = useState({
     unit_id: '',
     metric_id: '',
@@ -14,32 +15,26 @@ function DataEntry() {
     text_value: ''
   });
 
-  // Fetch all required data when the page loads
+  // Load all required data when the page opens
   useEffect(() => {
-    fetchData();
+    fetchAllData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchAllData = async () => {
     try {
-      const orgRes = await axios.get('http://localhost:5000/api/organizations');
-      const metricRes = await axios.get('http://localhost:5000/api/metrics');
-      const obsRes = await axios.get('http://localhost:5000/api/observations');
+      // We can fetch all three datasets at the same time for speed
+      const [orgRes, metricRes, obsRes] = await Promise.all([
+        axios.get('/api/organizations'),
+        axios.get('/api/metrics'),
+        axios.get('/api/observations')
+      ]);
       
       setOrganizations(orgRes.data);
       setMetrics(metricRes.data);
       setObservations(obsRes.data);
-
-      // Auto-populate the dropdowns with the first available option
-      if (orgRes.data.length > 0 && metricRes.data.length > 0) {
-        setFormData(prev => ({
-          ...prev,
-          unit_id: orgRes.data[0].unit_id,
-          metric_id: metricRes.data[0].metric_id
-        }));
-      }
     } catch (err) {
       console.error("Error fetching data:", err);
-      setError("Failed to load platform data.");
+      setError("Failed to load data. Ensure you are logged in.");
     }
   };
 
@@ -50,95 +45,157 @@ function DataEntry() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/observations', formData);
-      // Clear values but keep the selected org/metric for easy bulk entry
+      // 1. Clean the payload before sending it to PostgreSQL
+      const cleanPayload = {
+        unit_id: formData.unit_id,
+        metric_id: formData.metric_id,
+        // If the number box is empty, send 'null' instead of an empty string
+        numeric_value: formData.numeric_value === '' ? null : Number(formData.numeric_value),
+        // If the text box is empty, send 'null' instead of an empty string
+        text_value: formData.text_value === '' ? null : formData.text_value
+      };
+
+      // 2. Send the cleaned payload
+      await axios.post('/api/observations', cleanPayload);
+      
+      // 3. Clear the input values but keep the selected Org and Metric for fast entry
       setFormData({ ...formData, numeric_value: '', text_value: '' });
-      // Refresh the ledger
-      const obsRes = await axios.get('http://localhost:5000/api/observations');
-      setObservations(obsRes.data);
+      
+      // 4. Refresh the ledger
+      fetchAllData();
     } catch (err) {
       console.error("Error logging observation:", err);
-      alert("Failed to log data.");
+      alert("Failed to save observation.");
     }
   };
 
+  // Find the currently selected metric so we know whether to show a Number or Text input
+  const selectedMetric = metrics.find(m => m.metric_id === formData.metric_id);
+
   return (
-    <div>
-      <h2>Log ESG Data</h2>
+    <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
+      <h1 style={{ marginBottom: '30px', color: '#212529' }}>Data Entry & Ledger</h1>
       
-      {/* Form */}
-      <div style={{ background: '#e8f5e9', padding: '20px', borderRadius: '8px', marginBottom: '30px' }}>
-        <h3 style={{ marginTop: 0 }}>New Observation</h3>
-        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+      {error && <p style={{ color: '#dc3545', background: '#f8d7da', padding: '10px', borderRadius: '4px' }}>{error}</p>}
+
+      {/* --- DATA ENTRY FORM --- */}
+      <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6', marginBottom: '40px' }}>
+        <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#495057' }}>Log New Observation</h2>
+        
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Organization Unit</label>
-            <select name="unit_id" value={formData.unit_id} onChange={handleChange} required style={{ padding: '10px', width: '100%', borderRadius: '4px', border: '1px solid #ccc' }}>
+          {/* Organization Dropdown */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization Unit</label>
+            <select name="unit_id" value={formData.unit_id} onChange={handleChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <option value="">-- Select Organization --</option>
               {organizations.map(org => (
-                <option key={org.unit_id} value={org.unit_id}>{org.name} ({org.unit_type})</option>
+                <option key={org.unit_id} value={org.unit_id}>{org.name} ({org.jurisdiction})</option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Metric</label>
-            <select name="metric_id" value={formData.metric_id} onChange={handleChange} required style={{ padding: '10px', width: '100%', borderRadius: '4px', border: '1px solid #ccc' }}>
-              {metrics.map(m => (
-                <option key={m.metric_id} value={m.metric_id}>[{m.pillar}] {m.name} ({m.unit_of_measure})</option>
+          {/* Metric Dropdown */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>ESG Metric</label>
+            <select name="metric_id" value={formData.metric_id} onChange={handleChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <option value="">-- Select Metric --</option>
+              {metrics.map(metric => (
+                <option key={metric.metric_id} value={metric.metric_id}>{metric.name} [{metric.pillar}]</option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Numeric Value</label>
-            <input type="number" step="any" name="numeric_value" value={formData.numeric_value} onChange={handleChange} placeholder="e.g., 150.5" required style={{ padding: '10px', width: '100%', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }} />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Notes (Optional)</label>
-            <input type="text" name="text_value" value={formData.text_value} onChange={handleChange} placeholder="e.g., Q2 Audit Estimate" style={{ padding: '10px', width: '100%', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }} />
-          </div>
+          {/* Dynamic Input: Only show if a metric is selected */}
+          {selectedMetric && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', gridColumn: 'span 2' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                Value recorded in {selectedMetric.unit_of_measure || 'Standard Format'}
+              </label>
+              
+              {selectedMetric.data_type === 'Numeric' ? (
+                <input 
+                  type="number" 
+                  step="any" 
+                  name="numeric_value" 
+                  placeholder={`Enter number (${selectedMetric.unit_of_measure})`} 
+                  value={formData.numeric_value} 
+                  onChange={handleChange} 
+                  required 
+                  style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                />
+              ) : selectedMetric.data_type === 'Boolean' ? (
+                <select name="text_value" value={formData.text_value} onChange={handleChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="">-- Select Yes/No --</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              ) : (
+                <textarea 
+                  name="text_value" 
+                  placeholder="Enter descriptive text..." 
+                  value={formData.text_value} 
+                  onChange={handleChange} 
+                  required 
+                  style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '80px' }}
+                />
+              )}
+            </div>
+          )}
 
           <div style={{ gridColumn: 'span 2' }}>
-            <button type="submit" style={{ padding: '12px 24px', background: '#4caf50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}>
-              Submit Data Log
+            <button type="submit" disabled={!formData.unit_id || !formData.metric_id} style={{ padding: '12px 20px', background: '#198754', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>
+              Securely Log Data
             </button>
           </div>
         </form>
       </div>
 
-      {/* Ledger Display */}
-      <h2>Observation Ledger</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {/* --- IMMUTABLE LEDGER --- */}
+      <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
+        Recent Observations
+      </h2>
       
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.95rem' }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid #ccc', textAlign: 'left', background: '#f5f5f5' }}>
-            <th style={{ padding: '12px' }}>Date</th>
-            <th style={{ padding: '12px' }}>Organization</th>
-            <th style={{ padding: '12px' }}>Pillar</th>
-            <th style={{ padding: '12px' }}>Metric</th>
-            <th style={{ padding: '12px' }}>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {observations.map((obs) => (
-            <tr key={obs.observation_id} style={{ borderBottom: '1px solid #eee' }}>
-              <td style={{ padding: '12px', color: '#666' }}>{new Date(obs.timestamp).toLocaleDateString()}</td>
-              <td style={{ padding: '12px', fontWeight: '500' }}>{obs.organization_name}</td>
-              <td style={{ padding: '12px' }}>
-                <span style={{ padding: '2px 6px', borderRadius: '4px', color: 'white', background: obs.pillar === 'E' ? '#4caf50' : obs.pillar === 'S' ? '#2196f3' : '#ff9800', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                  {obs.pillar}
-                </span>
-              </td>
-              <td style={{ padding: '12px' }}>{obs.metric_name}</td>
-              <td style={{ padding: '12px', fontWeight: 'bold', color: '#2e7d32' }}>
-                {obs.numeric_value} <span style={{ fontWeight: 'normal', color: '#666', fontSize: '0.85rem' }}>{obs.unit_of_measure}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {observations.length === 0 ? (
+        <p style={{ color: '#6c757d' }}>No data logged yet.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <thead>
+              <tr style={{ background: '#f1f3f5', textAlign: 'left' }}>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6' }}>Date/Time</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6' }}>Organization</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6' }}>Pillar</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6' }}>Metric</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6' }}>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {observations.map((obs) => (
+                <tr key={obs.observation_id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '12px', color: '#6c757d', fontSize: '0.9rem' }}>
+                    {new Date(obs.timestamp).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '12px', fontWeight: '500' }}>{obs.organization_name}</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{ 
+                      background: obs.pillar === 'E' ? '#e8f5e9' : obs.pillar === 'S' ? '#e3f2fd' : '#fff3e0',
+                      color: obs.pillar === 'E' ? '#2e7d32' : obs.pillar === 'S' ? '#1565c0' : '#e65100',
+                      padding: '3px 6px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold'
+                    }}>
+                      {obs.pillar}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px' }}>{obs.metric_name}</td>
+                  <td style={{ padding: '12px', fontWeight: 'bold' }}>
+                    {obs.numeric_value !== null ? `${obs.numeric_value} ${obs.unit_of_measure}` : obs.text_value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

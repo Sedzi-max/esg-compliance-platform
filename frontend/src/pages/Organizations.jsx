@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-function App() {
+function Organizations() {
   const [organizations, setOrganizations] = useState([]);
   const [error, setError] = useState(null);
   
@@ -18,7 +18,7 @@ function App() {
   }, []);
 
   const fetchOrganizations = () => {
-    axios.get('http://localhost:5000/api/organizations')
+    axios.get('/api/organizations')
       .then(response => setOrganizations(response.data))
       .catch(err => {
         console.error("Connection error:", err);
@@ -34,7 +34,7 @@ function App() {
   // Submit new organization
   const handleSubmit = (e) => {
     e.preventDefault();
-    axios.post('http://localhost:5000/api/organizations', formData)
+    axios.post('/api/organizations', formData)
       .then(response => {
         // Clear the form and refresh the list
         setFormData({ name: '', unit_type: 'Facility', jurisdiction: '' });
@@ -104,4 +104,4 @@ function App() {
   );
 }
 
-export default App;
+export default Organizations;

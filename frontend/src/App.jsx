@@ -1,47 +1,115 @@
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Organizations from './pages/Organizations';
-import Metrics from './pages/Metrics'; 
+import Metrics from './pages/Metrics';
 import DataEntry from './pages/DataEntry';
+import Login from './pages/Login';
+import UserManagement from './pages/UserManagement'; // 1. Imported the new page
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
+  const navigate = useNavigate();
+
+  // Grab the user data so we know what to show them in the Sidebar
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  
+  // Define what role counts as an Admin (adjust this if your DB uses lowercase 'admin')
+  const isAdmin = user?.role === 'Admin'; 
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user'); 
+    navigate('/login');
+  };
+
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', minHeight: '100vh' }}>
-      
-      {/* Sidebar Navigation */}
-      <nav style={{ width: '250px', background: '#212529', color: 'white', padding: '20px' }}>
-        <h2 style={{ fontSize: '1.2rem', marginBottom: '30px', borderBottom: '1px solid #495057', paddingBottom: '10px' }}>
-          ESG Platform
-        </h2>
-        <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <li>
-            <Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link>
-          </li>
-          <li>
-            <Link to="/organizations" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link>
-          </li>
-          <li>
-            <Link to="/metrics" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link>
-          </li>
-          <li>
-            {/* Added Data Entry Link */}
-            <Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link>
-          </li>
-        </ul>
-      </nav>
+    <Routes>
+      <Route path="/login" element={<Login />} />
 
-      {/* Main Content Area */}
-      <main style={{ flex: 1, padding: '40px', background: '#ffffff' }}>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/organizations" element={<Organizations />} />
-          <Route path="/metrics" element={<Metrics />} />
-          {/* Added Data Entry Route */}
-          <Route path="/data-entry" element={<DataEntry />} />
-        </Routes>
-      </main>
+      {/* --- SECURE PLATFORM --- */}
+      <Route 
+        path="/*" 
+        element={
+          <ProtectedRoute>
+            <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', minHeight: '100vh' }}>
+              
+              {/* --- DYNAMIC SIDEBAR --- */}
+              <nav style={{ width: '250px', background: '#212529', color: 'white', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+                <h2 style={{ fontSize: '1.2rem', marginBottom: '30px', borderBottom: '1px solid #495057', paddingBottom: '10px' }}>
+                  ESG Platform
+                </h2>
+                
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
+                  {/* Everyone gets to see the Dashboard and Data Entry */}
+                  <li><Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
+                  <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
+                  
+                  {/* ONLY ADMINS see these links */}
+                  {isAdmin && (
+                    <>
+                      <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Admin Settings</li>
+                      <li><Link to="/organizations" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link></li>
+                      <li><Link to="/metrics" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link></li>
+                      {/* 2. Added the Sidebar Link */}
+                      <li><Link to="/users" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>👥 Manage Users</Link></li>
+                    </>
+                  )}
+                </ul>
 
-    </div>
+                <div style={{ borderTop: '1px solid #495057', paddingTop: '15px', marginBottom: '15px' }}>
+                   <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#adb5bd' }}>Logged in as:</p>
+                   <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>{user?.email || 'User'}</p>
+                </div>
+
+                <button onClick={handleLogout} style={{ background: '#dc3545', color: 'white', padding: '10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Log Out
+                </button>
+              </nav>
+
+              {/* --- PROTECTED MAIN CONTENT --- */}
+              <main style={{ flex: 1, padding: '40px', background: '#ffffff', overflowY: 'auto' }}>
+                <Routes>
+                  {/* Open to all authenticated users */}
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/data-entry" element={<DataEntry />} />
+                  
+                  {/* Locked to Admins only! */}
+                  <Route 
+                    path="/organizations" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <Organizations />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/metrics" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <Metrics />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  {/* 3. Added the Secure Route */}
+                  <Route 
+                    path="/users" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <UserManagement />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </main>
+
+            </div>
+          </ProtectedRoute>
+        } 
+      />
+    </Routes>
   );
 }
 

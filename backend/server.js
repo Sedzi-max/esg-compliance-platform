@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const authorize = require('./middleware/authorize'); // Our new bouncer
 require('dotenv').config();
 
 const app = express();
@@ -10,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// HEALTH CHECK ROUTE
+// HEALTH CHECK ROUTE (Unprotected)
 // ==========================================
 app.get('/api/health', async (req, res) => {
     try {
@@ -23,11 +26,11 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==========================================
-// ORGANIZATION UNIT ROUTES
+// ORGANIZATION UNIT ROUTES (Protected)
 // ==========================================
 
 // CREATE a new Organization Unit
-app.post('/api/organizations', async (req, res) => {
+app.post('/api/organizations', authorize, async (req, res) => {
     try {
         const { name, unit_type, jurisdiction } = req.body;
         const newOrg = await pool.query(
@@ -42,7 +45,7 @@ app.post('/api/organizations', async (req, res) => {
 });
 
 // READ all Organization Units
-app.get('/api/organizations', async (req, res) => {
+app.get('/api/organizations', authorize, async (req, res) => {
     try {
         const allOrgs = await pool.query("SELECT * FROM Organization_Unit ORDER BY created_at DESC");
         res.json(allOrgs.rows);
@@ -53,11 +56,11 @@ app.get('/api/organizations', async (req, res) => {
 });
 
 // ==========================================
-// METRIC DEFINITION ROUTES
+// METRIC DEFINITION ROUTES (Protected)
 // ==========================================
 
 // CREATE a new Metric
-app.post('/api/metrics', async (req, res) => {
+app.post('/api/metrics', authorize, async (req, res) => {
     try {
         const { pillar, name, data_type, unit_of_measure, aggregation_type } = req.body;
         const newMetric = await pool.query(
@@ -72,7 +75,7 @@ app.post('/api/metrics', async (req, res) => {
 });
 
 // READ all Metrics
-app.get('/api/metrics', async (req, res) => {
+app.get('/api/metrics', authorize, async (req, res) => {
     try {
         const allMetrics = await pool.query("SELECT * FROM Metric_Definition ORDER BY pillar, name");
         res.json(allMetrics.rows);
@@ -83,11 +86,11 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 // ==========================================
-// ESG OBSERVATION (DATA ENTRY) ROUTES
+// ESG OBSERVATION (DATA ENTRY) ROUTES (Protected)
 // ==========================================
 
 // CREATE a new ESG Observation
-app.post('/api/observations', async (req, res) => {
+app.post('/api/observations', authorize, async (req, res) => {
     try {
         const { unit_id, metric_id, numeric_value, text_value } = req.body;
         
@@ -103,7 +106,7 @@ app.post('/api/observations', async (req, res) => {
 });
 
 // READ all Observations (with joined names for the frontend)
-app.get('/api/observations', async (req, res) => {
+app.get('/api/observations', authorize, async (req, res) => {
     try {
         const query = `
             SELECT 
@@ -125,6 +128,127 @@ app.get('/api/observations', async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: "Failed to fetch observations" });
+    }
+});
+
+// ==========================================
+// AUTHENTICATION ROUTES (Unprotected)
+// ==========================================
+
+// --- 1. REGISTRATION ENDPOINT ---
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+
+    // Insert user (PostgreSQL will automatically assign the 'Data Entry' role!)
+    const newUser = await pool.query(
+      'INSERT INTO Users (email, password_hash) VALUES ($1, $2) RETURNING user_id, email, role',
+      [email, password_hash]
+    );
+
+    // Create a token that includes their role
+    const token = jwt.sign(
+      { id: newUser.rows[0].user_id, role: newUser.rows[0].role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1h' }
+    );
+
+    // Send the token AND the user data back to React
+    res.json({ 
+      token, 
+      user: { id: newUser.rows[0].user_id, email: newUser.rows[0].email, role: newUser.rows[0].role } 
+    });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Server Error during registration" });
+  }
+});
+
+// --- 2. LOGIN ENDPOINT ---
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // IMPORTANT: Make sure you SELECT the role column here!
+    const user = await pool.query(
+      'SELECT user_id, email, password_hash, role FROM Users WHERE email = $1',
+      [email]
+    );
+
+    if (user.rows.length === 0) {
+      return res.status(401).json({ error: "Invalid Credentials" });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.rows[0].password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: "Invalid Credentials" });
+    }
+
+    // Create a token that includes their role
+    const token = jwt.sign(
+      { id: user.rows[0].user_id, role: user.rows[0].role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Send the token AND the user data back to React
+    res.json({ 
+      token, 
+      user: { id: user.rows[0].user_id, email: user.rows[0].email, role: user.rows[0].role } 
+    });
+
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Server Error during login" });
+  }
+});
+
+// ==========================================
+// USER MANAGEMENT ROUTES (Admin Only)
+// ==========================================
+
+// GET all users
+app.get('/api/users', authorize, async (req, res) => {
+    try {
+        // Security check: Ensure the user's token says they are an Admin
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        const allUsers = await pool.query(
+            "SELECT user_id, email, role, created_at FROM Users ORDER BY created_at DESC"
+        );
+        res.json(allUsers.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// UPDATE a user's role
+app.put('/api/users/:id/role', authorize, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        const { id } = req.params;
+        const { role } = req.body;
+
+        const updatedUser = await pool.query(
+            "UPDATE Users SET role = $1 WHERE user_id = $2 RETURNING user_id, email, role",
+            [role, id]
+        );
+
+        res.json(updatedUser.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ error: "Failed to update user role" });
     }
 });
 
