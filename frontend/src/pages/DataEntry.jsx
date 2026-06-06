@@ -5,7 +5,11 @@ function DataEntry() {
   const [organizations, setOrganizations] = useState([]);
   const [metrics, setMetrics] = useState([]);
   const [observations, setObservations] = useState([]);
+  
+  // UI States
   const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -22,11 +26,15 @@ function DataEntry() {
 
   const fetchAllData = async () => {
     try {
+      // 1. Grab the token from local storage
+      const token = localStorage.getItem('token');
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+
       // We can fetch all three datasets at the same time for speed
       const [orgRes, metricRes, obsRes] = await Promise.all([
-        axios.get('/api/organizations'),
-        axios.get('/api/metrics'),
-        axios.get('/api/observations')
+        axios.get('/api/organizations', config),
+        axios.get('/api/metrics', config),
+        axios.get('/api/observations', config)
       ]);
       
       setOrganizations(orgRes.data);
@@ -44,6 +52,10 @@ function DataEntry() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true); // Disable the button instantly
+    setSuccessMsg('');
+    setError(null);
+
     try {
       // 1. Clean the payload before sending it to PostgreSQL
       const cleanPayload = {
@@ -55,28 +67,43 @@ function DataEntry() {
         text_value: formData.text_value === '' ? null : formData.text_value
       };
 
-      // 2. Send the cleaned payload
-      await axios.post('/api/observations', cleanPayload);
+      // 2. Attach the token to the POST request
+      const token = localStorage.getItem('token');
+      const config = { headers: { Authorization: `Bearer ${token}` } };
       
-      // 3. Clear the input values but keep the selected Org and Metric for fast entry
+      // 3. Send the cleaned payload with the auth headers
+      await axios.post('/api/observations', cleanPayload, config);
+      
+      // 4. Clear the input values but keep the selected Org and Metric for fast entry
       setFormData({ ...formData, numeric_value: '', text_value: '' });
       
-      // 4. Refresh the ledger
+      // 5. Refresh the ledger
       fetchAllData();
+
+      // Show success message and clear it after 3 seconds
+      setSuccessMsg("Observation securely logged!");
+      setTimeout(() => setSuccessMsg(''), 3000);
+
     } catch (err) {
       console.error("Error logging observation:", err);
-      alert("Failed to save observation.");
+      setError("Failed to save observation.");
+    } finally {
+      setIsSubmitting(false); // Re-enable the button
     }
   };
 
   // Find the currently selected metric so we know whether to show a Number or Text input
-  const selectedMetric = metrics.find(m => m.metric_id === formData.metric_id);
+  // IMPORTANT FIX: Using .toString() to ensure the Select ID and Database ID match perfectly
+  const selectedMetric = metrics.find(
+    m => m.metric_id.toString() === formData.metric_id.toString()
+  );
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
       <h1 style={{ marginBottom: '30px', color: '#212529' }}>Data Entry & Ledger</h1>
       
-      {error && <p style={{ color: '#dc3545', background: '#f8d7da', padding: '10px', borderRadius: '4px' }}>{error}</p>}
+      {error && <p style={{ color: '#dc3545', background: '#f8d7da', padding: '10px', borderRadius: '4px', marginBottom: '15px' }}>{error}</p>}
+      {successMsg && <p style={{ color: '#0f5132', background: '#d1e7dd', padding: '10px', borderRadius: '4px', marginBottom: '15px' }}>{successMsg}</p>}
 
       {/* --- DATA ENTRY FORM --- */}
       <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6', marginBottom: '40px' }}>
@@ -144,8 +171,21 @@ function DataEntry() {
           )}
 
           <div style={{ gridColumn: 'span 2' }}>
-            <button type="submit" disabled={!formData.unit_id || !formData.metric_id} style={{ padding: '12px 20px', background: '#198754', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>
-              Securely Log Data
+            <button 
+              type="submit" 
+              disabled={!formData.unit_id || !formData.metric_id || isSubmitting} 
+              style={{ 
+                padding: '12px 20px', 
+                background: isSubmitting ? '#6c757d' : '#198754', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '4px', 
+                fontWeight: 'bold', 
+                cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                width: '100%' 
+              }}
+            >
+              {isSubmitting ? 'Logging Data...' : 'Securely Log Data'}
             </button>
           </div>
         </form>
