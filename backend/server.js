@@ -3,7 +3,7 @@ const cors = require('cors');
 const pool = require('./db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const authorize = require('./middleware/authorize'); // Our new bouncer
+const authorize = require('./middleware/authorize'); // Our bouncer
 require('dotenv').config();
 const CARBON_MULTIPLIERS = require('./utils/carbonFactors');
 
@@ -139,7 +139,7 @@ app.get('/api/observations', authorize, async (req, res) => {
 // 1. GET Route: Fetch emissions (Admins see all, Data Entry sees only their org's/approved - simplified to all for now)
 app.get('/api/emissions', authorize, async (req, res) => {
     try {
-        // We now fetch the status column as well, sorting pending items to the top!
+        // We fetch the status column as well, sorting pending items to the top
         const result = await pool.query(
             `SELECT * FROM ghg_emissions 
              ORDER BY 
@@ -161,7 +161,6 @@ app.post('/api/emissions', authorize, async (req, res) => {
         const multiplier = CARBON_MULTIPLIERS[scope_category][activity_type];
         const calculated_co2e = raw_amount * multiplier;
 
-        // Notice we don't need to insert the 'status' here—PostgreSQL defaults it to 'Pending' automatically!
         const newEmission = await pool.query(
             `INSERT INTO ghg_emissions 
             (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
@@ -200,10 +199,9 @@ app.put('/api/emissions/:id/status', authorize, async (req, res) => {
     }
 });
 
-// 4. POST Route: Bulk Carbon Conversion Engine (NEW!)
+// 4. POST Route: Bulk Carbon Conversion Engine
 app.post('/api/emissions/bulk', authorize, async (req, res) => {
     // We use a database 'client' directly so we can use a SQL Transaction (BEGIN/COMMIT)
-    // This ensures if row #499 fails, the whole batch rolls back safely!
     const client = await pool.connect();
     
     try {
@@ -249,6 +247,46 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
 });
 
 // ==========================================
+// NET-ZERO TARGET ROUTES
+// ==========================================
+
+// 1. POST Route: Set a new reduction target (Admins Only)
+app.post('/api/targets', authorize, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin') return res.status(403).json({ error: "Admins only." });
+
+        const { organization_id, scope_category, baseline_year, target_year, reduction_percentage } = req.body;
+
+        const newTarget = await pool.query(
+            `INSERT INTO reduction_targets 
+            (organization_id, scope_category, baseline_year, target_year, reduction_percentage) 
+            VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [organization_id, scope_category, baseline_year, target_year, reduction_percentage]
+        );
+        res.json(newTarget.rows[0]);
+    } catch (err) {
+        console.error("Error saving target:", err.message);
+        res.status(500).json({ error: "Failed to set target." });
+    }
+});
+
+// 2. GET Route: Fetch active targets
+app.get('/api/targets', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT t.*, o.name as organization_name 
+            FROM reduction_targets t
+            JOIN Organization_Unit o ON t.organization_id = o.unit_id
+            ORDER BY created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching targets:", err.message);
+        res.status(500).json({ error: "Failed to load targets." });
+    }
+});
+
+// ==========================================
 // AUTHENTICATION ROUTES (Unprotected)
 // ==========================================
 
@@ -261,7 +299,7 @@ app.post('/api/auth/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
-    // Insert user (PostgreSQL will automatically assign the 'Data Entry' role!)
+    // Insert user (PostgreSQL will automatically assign the 'Data Entry' role)
     const newUser = await pool.query(
       'INSERT INTO Users (email, password_hash) VALUES ($1, $2) RETURNING user_id, email, role',
       [email, password_hash]
@@ -291,7 +329,6 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // IMPORTANT: Make sure you SELECT the role column here!
     const user = await pool.query(
       'SELECT user_id, email, password_hash, role FROM Users WHERE email = $1',
       [email]
