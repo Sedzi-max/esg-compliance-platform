@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const authorize = require('./middleware/authorize'); // Our new bouncer
 require('dotenv').config();
+const CARBON_MULTIPLIERS = require('./utils/carbonFactors');
 
 const app = express();
 
@@ -105,7 +106,7 @@ app.post('/api/observations', authorize, async (req, res) => {
     }
 });
 
-// READ all Observations (with joined names for the frontend)
+// READ all Observations
 app.get('/api/observations', authorize, async (req, res) => {
     try {
         const query = `
@@ -128,6 +129,52 @@ app.get('/api/observations', authorize, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: "Failed to fetch observations" });
+    }
+});
+
+// ==========================================
+// GHG EMISSIONS ROUTES (Protected)
+// ==========================================
+
+// 1. GET Route: Fetch data for the Immutable Ledger table
+app.get('/api/emissions', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM ghg_emissions ORDER BY created_at DESC LIMIT 100'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching emissions:", err.message);
+        res.status(500).send('Server error fetching emissions');
+    }
+});
+
+// 2. POST Route: The Carbon Conversion Engine
+app.post('/api/emissions', authorize, async (req, res) => {
+    try {
+        // Step A: Grab the data sent from the React frontend
+        const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+
+        // Step B: Look up the scientific multiplier from the dictionary
+        const multiplier = CARBON_MULTIPLIERS[scope_category][activity_type];
+        
+        // Step C: Calculate the total Carbon Footprint (kg CO2e)
+        const calculated_co2e = raw_amount * multiplier;
+
+        // Step D: Save the raw data AND the calculated footprint to the database
+        const newEmission = await pool.query(
+            `INSERT INTO ghg_emissions 
+            (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
+            VALUES ($1, $2, $3, $4, $5) 
+            RETURNING *`,
+            [organization_id, scope_category, activity_type, raw_amount, calculated_co2e]
+        );
+
+        // Send a success response back to React
+        res.json(newEmission.rows[0]);
+    } catch (err) {
+        console.error("Error saving emission:", err.message);
+        res.status(500).send('Server error saving emission');
     }
 });
 
