@@ -177,7 +177,7 @@ app.post('/api/emissions', authorize, async (req, res) => {
     }
 });
 
-// 3. PUT Route: Admin Approval Workflow (NEW!)
+// 3. PUT Route: Admin Approval Workflow
 app.put('/api/emissions/:id/status', authorize, async (req, res) => {
     try {
         // Security Check: Only allow Admins to approve/reject data
@@ -197,6 +197,54 @@ app.put('/api/emissions/:id/status', authorize, async (req, res) => {
     } catch (err) {
         console.error("Error updating status:", err.message);
         res.status(500).send('Server error updating status');
+    }
+});
+
+// 4. POST Route: Bulk Carbon Conversion Engine (NEW!)
+app.post('/api/emissions/bulk', authorize, async (req, res) => {
+    // We use a database 'client' directly so we can use a SQL Transaction (BEGIN/COMMIT)
+    // This ensures if row #499 fails, the whole batch rolls back safely!
+    const client = await pool.connect();
+    
+    try {
+        const emissionsArray = req.body; 
+        if (!Array.isArray(emissionsArray)) {
+            return res.status(400).json({ error: "Expected an array of emissions data." });
+        }
+
+        await client.query('BEGIN'); // Start Transaction
+
+        let insertedCount = 0;
+
+        for (const row of emissionsArray) {
+            const { organization_id, scope_category, activity_type, raw_amount } = row;
+            
+            // Look up the math multiplier safely
+            const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
+            if (multiplier === undefined) {
+                throw new Error(`Invalid category or activity: ${scope_category} / ${activity_type}`);
+            }
+
+            const calculated_co2e = Number(raw_amount) * multiplier;
+
+            await client.query(
+                `INSERT INTO ghg_emissions 
+                (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
+                VALUES ($1, $2, $3, $4, $5)`,
+                [organization_id, scope_category, activity_type, raw_amount, calculated_co2e]
+            );
+            insertedCount++;
+        }
+
+        await client.query('COMMIT'); // Save everything!
+        res.json({ message: `Successfully processed ${insertedCount} bulk records.` });
+
+    } catch (err) {
+        await client.query('ROLLBACK'); // Cancel everything if there is an error
+        console.error("Bulk upload error:", err.message);
+        res.status(500).json({ error: err.message || "Failed to process bulk upload." });
+    } finally {
+        client.release();
     }
 });
 
