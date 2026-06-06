@@ -4,8 +4,9 @@ import Organizations from './pages/Organizations';
 import Metrics from './pages/Metrics';
 import DataEntry from './pages/DataEntry';
 import Login from './pages/Login';
-import UserManagement from './pages/UserManagement'; // 1. Imported the new page
+import UserManagement from './pages/UserManagement'; 
 import ProtectedRoute from './components/ProtectedRoute';
+import AuditQueue from './pages/AuditQueue'; 
 
 function App() {
   const navigate = useNavigate();
@@ -14,7 +15,7 @@ function App() {
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   
-  // Define what role counts as an Admin (adjust this if your DB uses lowercase 'admin')
+  // Define what role counts as an Admin
   const isAdmin = user?.role === 'Admin'; 
 
   const handleLogout = () => {
@@ -49,9 +50,16 @@ function App() {
                   {isAdmin && (
                     <>
                       <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Admin Settings</li>
+                      
+                      {/* Integrated your exact custom link styling here! */}
+                      <li>
+                        <Link to="/audit-queue" style={{ display: 'block', padding: '10px', color: 'white', textDecoration: 'none', fontSize: '1.1rem', marginLeft: '-10px', borderRadius: '4px' }}>
+                           ✅ Audit Queue
+                        </Link>
+                      </li>
+                      
                       <li><Link to="/organizations" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link></li>
                       <li><Link to="/metrics" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link></li>
-                      {/* 2. Added the Sidebar Link */}
                       <li><Link to="/users" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>👥 Manage Users</Link></li>
                     </>
                   )}
@@ -76,6 +84,14 @@ function App() {
                   
                   {/* Locked to Admins only! */}
                   <Route 
+                    path="/audit-queue" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <AuditQueue />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
                     path="/organizations" 
                     element={
                       <ProtectedRoute allowedRoles={['Admin']}>
@@ -91,7 +107,6 @@ function App() {
                       </ProtectedRoute>
                     } 
                   />
-                  {/* 3. Added the Secure Route */}
                   <Route 
                     path="/users" 
                     element={

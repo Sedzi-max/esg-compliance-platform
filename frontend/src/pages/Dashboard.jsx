@@ -5,26 +5,29 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
+  const [emissions, setEmissions] = useState([]); 
   const [orgCount, setOrgCount] = useState(0);
   const [timeFilter, setTimeFilter] = useState('ALL'); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const COLORS = { E: '#2e7d32', S: '#1565c0', G: '#e65100' };
+  const COLORS = { E: '#2e7d32', S: '#1565c0', G: '#e65100', Scope1: '#d32f2f', Scope2: '#1976d2', Scope3: '#f57c00' };
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        // ADDED: Auth tokens to allow the Dashboard to fetch secure data
         const token = localStorage.getItem('token');
         const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        const [orgRes, obsRes] = await Promise.all([
+        const [orgRes, obsRes, emissionsRes] = await Promise.all([
           axios.get('/api/organizations', config),
-          axios.get('/api/observations', config)
+          axios.get('/api/observations', config),
+          axios.get('/api/emissions', config).catch(() => ({ data: [] })) 
         ]);
+        
         setOrgCount(orgRes.data.length);
         setRawObservations(obsRes.data);
+        setEmissions(emissionsRes.data);
         setLoading(false);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
@@ -36,19 +39,14 @@ function Dashboard() {
   }, []);
 
   const exportToCSV = () => {
-    const headers = ["Date", "Time", "Organization", "Jurisdiction", "ESG Pillar", "Metric Name", "Numeric Value", "Text Value", "Unit of Measure"];
-    
+    const headers = ["Date", "Organization", "Metric Name", "Numeric Value", "Unit of Measure"];
     const csvRows = rawObservations.map(obs => {
       const dateObj = new Date(obs.timestamp);
       return [
         dateObj.toLocaleDateString(),
-        dateObj.toLocaleTimeString(),
         `"${obs.organization_name}"`, 
-        `"${obs.jurisdiction || ''}"`,
-        obs.pillar,
         `"${obs.metric_name}"`,
         obs.numeric_value !== null ? obs.numeric_value : "",
-        obs.text_value !== null ? `"${obs.text_value}"` : "",
         obs.unit_of_measure || ""
       ].join(','); 
     });
@@ -66,31 +64,49 @@ function Dashboard() {
 
   if (loading) return <p style={{ fontSize: '1.2rem', color: '#666', textAlign: 'center', marginTop: '50px' }}>Loading live data...</p>;
 
-  // --- DYNAMIC FILTERING LOGIC ---
   const now = new Date();
+
+  // --- FILTER 1: Generic Observations ---
   const filteredObs = rawObservations.filter(obs => {
     if (timeFilter === 'ALL') return true;
     const obsDate = new Date(obs.timestamp);
-    const diffTime = Math.abs(now - obsDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(Math.abs(now - obsDate) / (1000 * 60 * 60 * 24));
     if (timeFilter === '30') return diffDays <= 30;
     if (timeFilter === '90') return diffDays <= 90;
     if (timeFilter === '365') return diffDays <= 365;
     return true;
   });
 
+  // --- FILTER 2: Carbon Emissions (STRICTLY 'Approved' ONLY) ---
+  const approvedEmissions = emissions.filter(e => {
+    if (e.status !== 'Approved') return false; 
+    
+    if (timeFilter === 'ALL') return true;
+    const eDate = new Date(e.recorded_date);
+    const diffDays = Math.ceil(Math.abs(now - eDate) / (1000 * 60 * 60 * 24));
+    if (timeFilter === '30') return diffDays <= 30;
+    if (timeFilter === '90') return diffDays <= 90;
+    if (timeFilter === '365') return diffDays <= 365;
+    return true;
+  });
+
+  // --- STAT CALCULATIONS ---
   const envCount = filteredObs.filter(o => o.pillar === 'E').length;
   const socCount = filteredObs.filter(o => o.pillar === 'S').length;
   const govCount = filteredObs.filter(o => o.pillar === 'G').length;
+  const totalCO2e = approvedEmissions.reduce((sum, item) => sum + Number(item.calculated_co2e), 0);
+  
+  // Restored: Recent Feed Data
   const recentObs = filteredObs.slice(0, 5);
+  const numericObs = [...filteredObs].filter(obs => obs.numeric_value !== null).slice(0, 5);
 
+  // --- CHART DATA GENERATION ---
   const pieData = [
     { name: 'Environmental', value: envCount, fill: COLORS.E },
     { name: 'Social', value: socCount, fill: COLORS.S },
     { name: 'Governance', value: govCount, fill: COLORS.G }
   ].filter(d => d.value > 0);
 
-  const numericObs = [...filteredObs].filter(obs => obs.numeric_value !== null).slice(0, 5);
   const barData = numericObs.reverse().map(obs => ({
     name: obs.metric_name,
     value: parseFloat(obs.numeric_value),
@@ -98,22 +114,18 @@ function Dashboard() {
     fill: COLORS[obs.pillar]
   }));
 
-  // --- NEW: ENERGY AGGREGATION LOGIC ---
-  const energyObservations = filteredObs.filter(
-    obs => obs.metric_name === 'Scope 2 Electricity Consumption' && obs.numeric_value !== null
-  );
+  const formatScope = (scope) => {
+    const map = { scope_1: 'Scope 1', scope_2: 'Scope 2', scope_3: 'Scope 3' };
+    return map[scope] || scope;
+  };
 
-  const aggregatedEnergy = energyObservations.reduce((acc, curr) => {
-    const orgName = curr.organization_name;
-    if (!acc[orgName]) {
-      acc[orgName] = { name: orgName, kWh: 0 };
-    }
-    acc[orgName].kWh += Number(curr.numeric_value);
+  const emissionsByScope = approvedEmissions.reduce((acc, curr) => {
+    const scope = formatScope(curr.scope_category);
+    if (!acc[scope]) acc[scope] = { name: scope, CO2e: 0, fill: COLORS[scope.replace(' ', '')] || '#333' };
+    acc[scope].CO2e += Number(curr.calculated_co2e);
     return acc;
   }, {});
-
-  const energyChartData = Object.values(aggregatedEnergy);
-  const totalEnergy = energyChartData.reduce((sum, item) => sum + item.kWh, 0);
+  const carbonChartData = Object.values(emissionsByScope);
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
@@ -122,7 +134,7 @@ function Dashboard() {
         <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>{data.name}</p>
           <p style={{ margin: 0, color: data.fill || '#2e7d32', fontWeight: 'bold' }}>
-            {data.value || data.kWh} {data.unit || 'kWh'}
+            {Number(data.value || data.CO2e).toLocaleString()} {data.CO2e !== undefined ? 'kg CO2e' : data.unit || ''}
           </p>
         </div>
       );
@@ -149,13 +161,11 @@ function Dashboard() {
             <option value="30">Last 30 Days</option>
           </select>
 
-          <button 
-            onClick={exportToCSV} 
-            style={{ background: '#198754', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
+          <button onClick={exportToCSV} style={{ background: '#198754', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
             📊 Export CSV
           </button>
 
+          {/* Restored: Link to Data Entry */}
           <Link to="/data-entry" style={{ background: '#0d6efd', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
             + Log New Data
           </Link>
@@ -170,10 +180,14 @@ function Dashboard() {
           <h3 style={{ margin: '0 0 10px 0', color: '#6c757d', fontSize: '1rem' }}>Total Organizations</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>{orgCount}</p>
         </div>
-        <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.E}`, borderRadius: '8px', background: '#e8f5e9', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: COLORS.E, fontSize: '1rem' }}>Total Energy Logged</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#1b5e20' }}>{totalEnergy.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kWh</span></p>
+        
+        <div style={{ padding: '20px', borderLeft: `5px solid #d32f2f`, borderRadius: '8px', background: '#ffebee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#d32f2f', fontSize: '1rem' }}>Total Carbon Footprint</h3>
+          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#b71c1c' }}>
+            {totalCO2e.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kg CO2e</span>
+          </p>
         </div>
+
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.S}`, borderRadius: '8px', background: '#e3f2fd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>{socCount}</p>
@@ -184,24 +198,32 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* --- NEW: ENERGY CONSUMPTION CHART --- */}
+      {/* --- APPROVED CARBON EMISSIONS CHART --- */}
       <div style={{ background: '#fff', padding: '25px', marginBottom: '40px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#495057' }}>Energy Consumption by Facility (Scope 2)</h3>
-        {energyChartData.length === 0 ? (
-          <p style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>No electricity data logged in this timeframe.</p>
+        <h3 style={{ marginTop: 0, marginBottom: '5px', color: '#495057' }}>GHG Protocol Carbon Emissions (Approved)</h3>
+        <p style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '20px' }}>Only data approved by an Administrator is reflected here.</p>
+        
+        {carbonChartData.length === 0 ? (
+          <p style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>No approved emissions data in this timeframe.</p>
         ) : (
-          <div style={{ width: '100%', height: 350 }}>
-            <ResponsiveContainer>
-              <BarChart data={energyChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
-                <XAxis dataKey="name" tick={{ fill: '#6c757d', fontSize: 12 }} />
-                <YAxis tick={{ fill: '#6c757d' }} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8f9fa' }} />
-                <Legend />
-                <Bar dataKey="kWh" name="Electricity (kWh)" fill="#2e7d32" radius={[4, 4, 0, 0]} animationDuration={1000} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            <div style={{ width: '100%', height: '350px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={carbonChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+                  <XAxis dataKey="name" tick={{ fill: '#6c757d', fontSize: 12 }} />
+                  <YAxis tick={{ fill: '#6c757d' }} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8f9fa' }} />
+                  <Legend />
+                  <Bar dataKey="CO2e" name="Total CO2e (kg)" radius={[4, 4, 0, 0]} animationDuration={1000}>
+                    {carbonChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
       </div>
 
@@ -210,44 +232,47 @@ function Dashboard() {
         
         {/* Pie Chart Card */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>ESG Distribution</h3>
+          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>General ESG Distribution</h3>
           {pieData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No data in this timeframe.</p> : (
-            <div style={{ width: '100%', height: 300, minHeight: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <div style={{ width: '100%', height: '300px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
         </div>
 
-        {/* Bar Chart Card (Recent Entries) */}
+        {/* Restored: Bar Chart Card (Recent Entries) */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Numeric Values</h3>
           {barData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No numeric data in this timeframe.</p> : (
-            <div style={{ width: '100%', height: 300, minHeight: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{fontSize: 12}} />
-                  <YAxis />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <div style={{ width: '100%', height: '300px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" tick={{fontSize: 12}} />
+                    <YAxis />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
         </div>
-
       </div>
 
-      {/* --- RECENT ACTIVITY FEED --- */}
+      {/* --- RESTORED: RECENT ACTIVITY FEED --- */}
       <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
         Recent Activity Log
       </h2>

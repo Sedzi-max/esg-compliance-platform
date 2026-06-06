@@ -136,11 +136,16 @@ app.get('/api/observations', authorize, async (req, res) => {
 // GHG EMISSIONS ROUTES (Protected)
 // ==========================================
 
-// 1. GET Route: Fetch data for the Immutable Ledger table
+// 1. GET Route: Fetch emissions (Admins see all, Data Entry sees only their org's/approved - simplified to all for now)
 app.get('/api/emissions', authorize, async (req, res) => {
     try {
+        // We now fetch the status column as well, sorting pending items to the top!
         const result = await pool.query(
-            'SELECT * FROM ghg_emissions ORDER BY created_at DESC LIMIT 100'
+            `SELECT * FROM ghg_emissions 
+             ORDER BY 
+                CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
+                created_at DESC 
+             LIMIT 100`
         );
         res.json(result.rows);
     } catch (err) {
@@ -152,16 +157,11 @@ app.get('/api/emissions', authorize, async (req, res) => {
 // 2. POST Route: The Carbon Conversion Engine
 app.post('/api/emissions', authorize, async (req, res) => {
     try {
-        // Step A: Grab the data sent from the React frontend
         const { organization_id, scope_category, activity_type, raw_amount } = req.body;
-
-        // Step B: Look up the scientific multiplier from the dictionary
         const multiplier = CARBON_MULTIPLIERS[scope_category][activity_type];
-        
-        // Step C: Calculate the total Carbon Footprint (kg CO2e)
         const calculated_co2e = raw_amount * multiplier;
 
-        // Step D: Save the raw data AND the calculated footprint to the database
+        // Notice we don't need to insert the 'status' here—PostgreSQL defaults it to 'Pending' automatically!
         const newEmission = await pool.query(
             `INSERT INTO ghg_emissions 
             (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
@@ -170,11 +170,33 @@ app.post('/api/emissions', authorize, async (req, res) => {
             [organization_id, scope_category, activity_type, raw_amount, calculated_co2e]
         );
 
-        // Send a success response back to React
         res.json(newEmission.rows[0]);
     } catch (err) {
         console.error("Error saving emission:", err.message);
         res.status(500).send('Server error saving emission');
+    }
+});
+
+// 3. PUT Route: Admin Approval Workflow (NEW!)
+app.put('/api/emissions/:id/status', authorize, async (req, res) => {
+    try {
+        // Security Check: Only allow Admins to approve/reject data
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Only Admins can approve data." });
+        }
+
+        const { id } = req.params;
+        const { status } = req.body; // Expecting 'Approved' or 'Rejected'
+
+        const updatedEmission = await pool.query(
+            "UPDATE ghg_emissions SET status = $1 WHERE id = $2 RETURNING *",
+            [status, id]
+        );
+
+        res.json(updatedEmission.rows[0]);
+    } catch (err) {
+        console.error("Error updating status:", err.message);
+        res.status(500).send('Server error updating status');
     }
 });
 
