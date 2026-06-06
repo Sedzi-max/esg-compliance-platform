@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
@@ -15,47 +15,45 @@ function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        // ADDED: Auth tokens to allow the Dashboard to fetch secure data
+        const token = localStorage.getItem('token');
+        const config = { headers: { Authorization: `Bearer ${token}` } };
+
         const [orgRes, obsRes] = await Promise.all([
-          axios.get('/api/organizations'),
-          axios.get('/api/observations')
+          axios.get('/api/organizations', config),
+          axios.get('/api/observations', config)
         ]);
         setOrgCount(orgRes.data.length);
         setRawObservations(obsRes.data);
         setLoading(false);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
-        setError("Failed to load dashboard metrics.");
+        setError("Failed to load dashboard metrics. Ensure you are logged in.");
         setLoading(false);
       }
     };
     fetchDashboardData();
   }, []);
 
-  // --- NEW FEATURE: EXPORT TO CSV ---
   const exportToCSV = () => {
-    // 1. Create the Header Row
     const headers = ["Date", "Time", "Organization", "Jurisdiction", "ESG Pillar", "Metric Name", "Numeric Value", "Text Value", "Unit of Measure"];
     
-    // 2. Map over the raw data and format each row
     const csvRows = rawObservations.map(obs => {
       const dateObj = new Date(obs.timestamp);
       return [
         dateObj.toLocaleDateString(),
         dateObj.toLocaleTimeString(),
-        `"${obs.organization_name}"`, // Wrapped in quotes just in case the name has a comma in it!
+        `"${obs.organization_name}"`, 
         `"${obs.jurisdiction || ''}"`,
         obs.pillar,
         `"${obs.metric_name}"`,
         obs.numeric_value !== null ? obs.numeric_value : "",
         obs.text_value !== null ? `"${obs.text_value}"` : "",
         obs.unit_of_measure || ""
-      ].join(','); // Join the columns with a comma
+      ].join(','); 
     });
 
-    // 3. Combine Headers and Rows with a line break (\n)
     const csvString = [headers.join(','), ...csvRows].join('\n');
-
-    // 4. Create a hidden Blob (File) in the browser and force download
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -63,7 +61,7 @@ function Dashboard() {
     link.setAttribute('download', `ESG_Compliance_Report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link); // Clean up the hidden link
+    document.body.removeChild(link); 
   };
 
   if (loading) return <p style={{ fontSize: '1.2rem', color: '#666', textAlign: 'center', marginTop: '50px' }}>Loading live data...</p>;
@@ -100,13 +98,32 @@ function Dashboard() {
     fill: COLORS[obs.pillar]
   }));
 
+  // --- NEW: ENERGY AGGREGATION LOGIC ---
+  const energyObservations = filteredObs.filter(
+    obs => obs.metric_name === 'Scope 2 Electricity Consumption' && obs.numeric_value !== null
+  );
+
+  const aggregatedEnergy = energyObservations.reduce((acc, curr) => {
+    const orgName = curr.organization_name;
+    if (!acc[orgName]) {
+      acc[orgName] = { name: orgName, kWh: 0 };
+    }
+    acc[orgName].kWh += Number(curr.numeric_value);
+    return acc;
+  }, {});
+
+  const energyChartData = Object.values(aggregatedEnergy);
+  const totalEnergy = energyChartData.reduce((sum, item) => sum + item.kWh, 0);
+
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>{data.name}</p>
-          <p style={{ margin: 0, color: data.fill, fontWeight: 'bold' }}>{data.value} {data.unit}</p>
+          <p style={{ margin: 0, color: data.fill || '#2e7d32', fontWeight: 'bold' }}>
+            {data.value || data.kWh} {data.unit || 'kWh'}
+          </p>
         </div>
       );
     }
@@ -121,7 +138,6 @@ function Dashboard() {
         <h1 style={{ margin: 0, color: '#212529', whiteSpace: 'nowrap', lineHeight: '1.2' }}>Platform Overview</h1>
         
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          
           <select 
             value={timeFilter} 
             onChange={(e) => setTimeFilter(e.target.value)}
@@ -133,7 +149,6 @@ function Dashboard() {
             <option value="30">Last 30 Days</option>
           </select>
 
-          {/* NEW CSV DOWNLOAD BUTTON */}
           <button 
             onClick={exportToCSV} 
             style={{ background: '#198754', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -156,8 +171,8 @@ function Dashboard() {
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>{orgCount}</p>
         </div>
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.E}`, borderRadius: '8px', background: '#e8f5e9', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: COLORS.E, fontSize: '1rem' }}>Environmental Logs</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#1b5e20' }}>{envCount}</p>
+          <h3 style={{ margin: '0 0 10px 0', color: COLORS.E, fontSize: '1rem' }}>Total Energy Logged</h3>
+          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#1b5e20' }}>{totalEnergy.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kWh</span></p>
         </div>
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.S}`, borderRadius: '8px', background: '#e3f2fd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
@@ -169,7 +184,28 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* --- DATA VISUALIZATION SECTION --- */}
+      {/* --- NEW: ENERGY CONSUMPTION CHART --- */}
+      <div style={{ background: '#fff', padding: '25px', marginBottom: '40px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#495057' }}>Energy Consumption by Facility (Scope 2)</h3>
+        {energyChartData.length === 0 ? (
+          <p style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>No electricity data logged in this timeframe.</p>
+        ) : (
+          <div style={{ width: '100%', height: 350 }}>
+            <ResponsiveContainer>
+              <BarChart data={energyChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+                <XAxis dataKey="name" tick={{ fill: '#6c757d', fontSize: 12 }} />
+                <YAxis tick={{ fill: '#6c757d' }} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8f9fa' }} />
+                <Legend />
+                <Bar dataKey="kWh" name="Electricity (kWh)" fill="#2e7d32" radius={[4, 4, 0, 0]} animationDuration={1000} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* --- SECONDARY DATA VISUALIZATION SECTION --- */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px', marginBottom: '40px' }}>
         
         {/* Pie Chart Card */}
@@ -191,7 +227,7 @@ function Dashboard() {
           )}
         </div>
 
-        {/* Bar Chart Card */}
+        {/* Bar Chart Card (Recent Entries) */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Numeric Values</h3>
           {barData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No numeric data in this timeframe.</p> : (
