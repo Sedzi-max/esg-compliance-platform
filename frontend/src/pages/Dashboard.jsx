@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, Line, ComposedChart, 
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+// Import your new logo
+import myLogo from '../assets/logo.png';
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
@@ -15,6 +19,10 @@ function Dashboard() {
   const [timeFilter, setTimeFilter] = useState('ALL'); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // 1. Create a reference to the main dashboard container and export state
+  const reportRef = useRef();
+  const [isExporting, setIsExporting] = useState(false);
 
   // Check if current user is an Admin
   const userStr = localStorage.getItem('user');
@@ -81,6 +89,39 @@ function Dashboard() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link); 
+  };
+
+  // 2. The PDF Generation Engine
+  const generatePDF = async () => {
+    setIsExporting(true);
+    try {
+      const element = reportRef.current;
+      
+      // Take a high-res screenshot of the dashboard
+      const canvas = await html2canvas(element, { 
+        scale: 2, // Doubles the resolution for crisp text
+        useCORS: true, // Ensures charts render correctly
+        backgroundColor: '#f8f9fa' // Matches your app background
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      
+      // Initialize an A4, Portrait PDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // Calculate dimensions to fit the image perfectly on the page
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`ESG_Executive_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error("Failed to generate PDF", error);
+      alert("There was an issue generating the PDF. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSetTarget = async (e) => {
@@ -222,11 +263,20 @@ function Dashboard() {
   };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px' }}>
+    <div ref={reportRef} style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', background: '#f8f9fa', padding: '20px' }}>
       
       {/* --- RESPONSIVE HEADER SECTION --- */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h1 style={{ margin: 0, color: '#212529', whiteSpace: 'nowrap', lineHeight: '1.2' }}>Platform Overview</h1>
+
+        {/* BRANDING CONTAINER: Logo + Title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <img 
+            src={myLogo} 
+            alt="ESG Platform Logo" 
+            style={{ height: '40px', width: 'auto', borderRadius: '4px' }} 
+          />
+          <h1 style={{ margin: 0, color: '#212529', whiteSpace: 'nowrap', lineHeight: '1.2' }}>Platform Overview</h1>
+        </div>
         
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select 
@@ -242,6 +292,22 @@ function Dashboard() {
 
           <button onClick={exportToCSV} style={{ background: '#198754', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
             📊 Export CSV
+          </button>
+
+          <button 
+            onClick={generatePDF} 
+            disabled={isExporting}
+            style={{ 
+              background: isExporting ? '#6c757d' : '#dc3545', 
+              color: 'white', 
+              padding: '10px 20px', 
+              border: 'none', 
+              borderRadius: '4px', 
+              fontWeight: 'bold', 
+              cursor: isExporting ? 'wait' : 'pointer' 
+            }}
+          >
+            {isExporting ? '⏳ Generating PDF...' : '📄 Export PDF'}
           </button>
 
           <Link to="/data-entry" style={{ background: '#0d6efd', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import myLogo from '../assets/logo.png';
 
 function Login() {
   const navigate = useNavigate();
@@ -42,6 +43,12 @@ function Login() {
       <div style={{ background: 'white', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
         
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+          {/* BRANDING: Logo inserted here */}
+          <img 
+            src={myLogo} 
+            alt="ESG Platform Logo" 
+            style={{ height: '60px', width: 'auto', marginBottom: '15px', borderRadius: '4px' }} 
+          />
           <h1 style={{ color: '#212529', margin: '0 0 10px 0' }}>ESG Platform</h1>
           <p style={{ color: '#6c757d', margin: 0 }}>
             {isRegistering ? 'Create your corporate workspace' : 'Log in to your workspace'}

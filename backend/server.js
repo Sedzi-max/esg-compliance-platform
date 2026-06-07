@@ -27,16 +27,17 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==========================================
-// ORGANIZATION UNIT ROUTES (Protected)
+// ORGANIZATION UNIT ROUTES (Multi-Tenant Protected)
 // ==========================================
 
 // CREATE a new Organization Unit
 app.post('/api/organizations', authorize, async (req, res) => {
     try {
         const { name, unit_type, jurisdiction } = req.body;
+        // SECURITY UPDATE: Lock this org to the user's company_id
         const newOrg = await pool.query(
-            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction) VALUES ($1, $2, $3) RETURNING *",
-            [name, unit_type, jurisdiction]
+            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, company_id) VALUES ($1, $2, $3, $4) RETURNING *",
+            [name, unit_type, jurisdiction, req.user.company_id]
         );
         res.json(newOrg.rows[0]);
     } catch (err) {
@@ -48,7 +49,11 @@ app.post('/api/organizations', authorize, async (req, res) => {
 // READ all Organization Units
 app.get('/api/organizations', authorize, async (req, res) => {
     try {
-        const allOrgs = await pool.query("SELECT * FROM Organization_Unit ORDER BY created_at DESC");
+        // SECURITY UPDATE: Only fetch orgs that belong to the user's company
+        const allOrgs = await pool.query(
+            "SELECT * FROM Organization_Unit WHERE company_id = $1 ORDER BY created_at DESC",
+            [req.user.company_id]
+        );
         res.json(allOrgs.rows);
     } catch (err) {
         console.error(err.message);
@@ -56,8 +61,39 @@ app.get('/api/organizations', authorize, async (req, res) => {
     }
 });
 
+// DELETE an Organization Unit
+app.delete('/api/organizations/:id', authorize, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        const { id } = req.params;
+
+        // SECURITY UPDATE: Ensure the org belongs to the user's company before deleting
+        const deletedOrg = await pool.query(
+            "DELETE FROM Organization_Unit WHERE unit_id = $1 AND company_id = $2 RETURNING *",
+            [id, req.user.company_id]
+        );
+
+        if (deletedOrg.rows.length === 0) {
+            return res.status(404).json({ error: "Organization not found or you do not have permission." });
+        }
+
+        res.json({ message: "Organization deleted successfully." });
+    } catch (err) {
+        console.error(err.message);
+        
+        // Safety Catch: If the org has emissions attached, Postgres will throw error code '23503'
+        if (err.code === '23503') {
+            return res.status(400).json({ error: "Cannot delete: This organization already has emissions or observations logged against it." });
+        }
+        res.status(500).json({ error: "Failed to delete organization" });
+    }
+});
+
 // ==========================================
-// METRIC DEFINITION ROUTES (Protected)
+// METRIC DEFINITION ROUTES (Global)
 // ==========================================
 
 // CREATE a new Metric
@@ -87,14 +123,13 @@ app.get('/api/metrics', authorize, async (req, res) => {
 });
 
 // ==========================================
-// ESG OBSERVATION (DATA ENTRY) ROUTES (Protected)
+// ESG OBSERVATION (DATA ENTRY) ROUTES (Multi-Tenant Protected)
 // ==========================================
 
 // CREATE a new ESG Observation
 app.post('/api/observations', authorize, async (req, res) => {
     try {
         const { unit_id, metric_id, numeric_value, text_value } = req.body;
-        
         const newObs = await pool.query(
             "INSERT INTO ESG_Observation (unit_id, metric_id, numeric_value, text_value, timestamp) VALUES ($1, $2, $3, $4, NOW()) RETURNING *",
             [unit_id, metric_id, numeric_value, text_value]
@@ -109,6 +144,7 @@ app.post('/api/observations', authorize, async (req, res) => {
 // READ all Observations
 app.get('/api/observations', authorize, async (req, res) => {
     try {
+        // SECURITY UPDATE: Join with orgs and filter by company_id
         const query = `
             SELECT 
                 o.observation_id, 
@@ -122,9 +158,10 @@ app.get('/api/observations', authorize, async (req, res) => {
             FROM ESG_Observation o
             JOIN Organization_Unit u ON o.unit_id = u.unit_id
             JOIN Metric_Definition m ON o.metric_id = m.metric_id
+            WHERE u.company_id = $1
             ORDER BY o.timestamp DESC
         `;
-        const allObs = await pool.query(query);
+        const allObs = await pool.query(query, [req.user.company_id]);
         res.json(allObs.rows);
     } catch (err) {
         console.error(err.message);
@@ -133,19 +170,23 @@ app.get('/api/observations', authorize, async (req, res) => {
 });
 
 // ==========================================
-// GHG EMISSIONS ROUTES (Protected)
+// GHG EMISSIONS ROUTES (Multi-Tenant Protected)
 // ==========================================
 
-// 1. GET Route: Fetch emissions (Admins see all, Data Entry sees only their org's/approved - simplified to all for now)
+// 1. GET Route: Fetch emissions 
 app.get('/api/emissions', authorize, async (req, res) => {
     try {
-        // We fetch the status column as well, sorting pending items to the top
+        // SECURITY UPDATE: Filter by company_id
         const result = await pool.query(
-            `SELECT * FROM ghg_emissions 
+            `SELECT e.*, u.name as organization_name
+             FROM ghg_emissions e
+             JOIN Organization_Unit u ON e.organization_id = u.unit_id
+             WHERE u.company_id = $1
              ORDER BY 
                 CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
                 created_at DESC 
-             LIMIT 100`
+             LIMIT 100`,
+             [req.user.company_id]
         );
         res.json(result.rows);
     } catch (err) {
@@ -179,17 +220,19 @@ app.post('/api/emissions', authorize, async (req, res) => {
 // 3. PUT Route: Admin Approval Workflow
 app.put('/api/emissions/:id/status', authorize, async (req, res) => {
     try {
-        // Security Check: Only allow Admins to approve/reject data
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Only Admins can approve data." });
         }
 
         const { id } = req.params;
-        const { status } = req.body; // Expecting 'Approved' or 'Rejected'
+        const { status } = req.body; 
 
+        // SECURITY UPDATE: Ensure the Admin only approves emissions for their own company
         const updatedEmission = await pool.query(
-            "UPDATE ghg_emissions SET status = $1 WHERE id = $2 RETURNING *",
-            [status, id]
+            `UPDATE ghg_emissions SET status = $1 
+             WHERE id = $2 AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $3)
+             RETURNING *`,
+            [status, id, req.user.company_id]
         );
 
         res.json(updatedEmission.rows[0]);
@@ -201,7 +244,6 @@ app.put('/api/emissions/:id/status', authorize, async (req, res) => {
 
 // 4. POST Route: Bulk Carbon Conversion Engine
 app.post('/api/emissions/bulk', authorize, async (req, res) => {
-    // We use a database 'client' directly so we can use a SQL Transaction (BEGIN/COMMIT)
     const client = await pool.connect();
     
     try {
@@ -210,14 +252,13 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
             return res.status(400).json({ error: "Expected an array of emissions data." });
         }
 
-        await client.query('BEGIN'); // Start Transaction
+        await client.query('BEGIN'); 
 
         let insertedCount = 0;
 
         for (const row of emissionsArray) {
             const { organization_id, scope_category, activity_type, raw_amount } = row;
             
-            // Look up the math multiplier safely
             const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
             if (multiplier === undefined) {
                 throw new Error(`Invalid category or activity: ${scope_category} / ${activity_type}`);
@@ -234,11 +275,11 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
             insertedCount++;
         }
 
-        await client.query('COMMIT'); // Save everything!
+        await client.query('COMMIT'); 
         res.json({ message: `Successfully processed ${insertedCount} bulk records.` });
 
     } catch (err) {
-        await client.query('ROLLBACK'); // Cancel everything if there is an error
+        await client.query('ROLLBACK'); 
         console.error("Bulk upload error:", err.message);
         res.status(500).json({ error: err.message || "Failed to process bulk upload." });
     } finally {
@@ -247,7 +288,7 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
 });
 
 // ==========================================
-// NET-ZERO TARGET ROUTES
+// NET-ZERO TARGET ROUTES (Multi-Tenant Protected)
 // ==========================================
 
 // 1. POST Route: Set a new reduction target (Admins Only)
@@ -273,12 +314,14 @@ app.post('/api/targets', authorize, async (req, res) => {
 // 2. GET Route: Fetch active targets
 app.get('/api/targets', authorize, async (req, res) => {
     try {
+        // SECURITY UPDATE: Filter targets by company_id
         const result = await pool.query(`
             SELECT t.*, o.name as organization_name 
             FROM reduction_targets t
             JOIN Organization_Unit o ON t.organization_id = o.unit_id
+            WHERE o.company_id = $1
             ORDER BY created_at DESC
-        `);
+        `, [req.user.company_id]);
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching targets:", err.message);
@@ -287,40 +330,53 @@ app.get('/api/targets', authorize, async (req, res) => {
 });
 
 // ==========================================
-// AUTHENTICATION ROUTES (Unprotected)
+// AUTHENTICATION ROUTES (Multi-Tenant Enabled)
 // ==========================================
 
-// --- 1. REGISTRATION ENDPOINT ---
+// --- 1. REGISTRATION ENDPOINT (Multi-Tenant Workspace Creation) ---
 app.post('/api/auth/register', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { email, password } = req.body;
+    const { email, password, company_name } = req.body;
+    console.log("Registering:", email, "for company:", company_name); // DEBUG
     
-    // Hash the password
+    if (!company_name) return res.status(400).json({ error: "Company name required." });
+
+    await client.query('BEGIN');
+
+    // Create Company
+    const newComp = await client.query(
+        "INSERT INTO Companies (company_name) VALUES ($1) RETURNING company_id",
+        [company_name]
+    );
+    console.log("Company created with ID:", newComp.rows[0].company_id); // DEBUG
+    const newCompanyId = newComp.rows[0].company_id;
+
+    // Hash & Create User
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
-    // Insert user (PostgreSQL will automatically assign the 'Data Entry' role)
-    const newUser = await pool.query(
-      'INSERT INTO Users (email, password_hash) VALUES ($1, $2) RETURNING user_id, email, role',
-      [email, password_hash]
+    const newUser = await client.query(
+      "INSERT INTO Users (email, password_hash, company_id, role) VALUES ($1, $2, $3, 'Admin') RETURNING user_id, company_id",
+      [email, password_hash, newCompanyId]
     );
 
-    // Create a token that includes their role
+    await client.query('COMMIT');
+    
+    // ... token generation ...
     const token = jwt.sign(
-      { id: newUser.rows[0].user_id, role: newUser.rows[0].role }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: '1h' }
+      { id: newUser.rows[0].user_id, role: 'Admin', company_id: newCompanyId }, 
+      process.env.JWT_SECRET, { expiresIn: '1h' }
     );
 
-    // Send the token AND the user data back to React
-    res.json({ 
-      token, 
-      user: { id: newUser.rows[0].user_id, email: newUser.rows[0].email, role: newUser.rows[0].role } 
-    });
+    res.json({ token, user: { id: newUser.rows[0].user_id, email, role: 'Admin' } });
 
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Server Error during registration" });
+    await client.query('ROLLBACK');
+    console.error("REGISTRATION FAILED:", err); // CHECK THIS IN YOUR TERMINAL
+    res.status(500).json({ error: "Check server logs for registration error." });
+  } finally {
+    client.release();
   }
 });
 
@@ -329,8 +385,9 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // SECURITY UPDATE: Fetch the company_id from the database
     const user = await pool.query(
-      'SELECT user_id, email, password_hash, role FROM Users WHERE email = $1',
+      'SELECT user_id, email, password_hash, role, company_id FROM Users WHERE email = $1',
       [email]
     );
 
@@ -343,14 +400,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: "Invalid Credentials" });
     }
 
-    // Create a token that includes their role
+    // SECURITY UPDATE: Embed company_id into the JWT token!
     const token = jwt.sign(
-      { id: user.rows[0].user_id, role: user.rows[0].role },
+      { id: user.rows[0].user_id, role: user.rows[0].role, company_id: user.rows[0].company_id },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Send the token AND the user data back to React
     res.json({ 
       token, 
       user: { id: user.rows[0].user_id, email: user.rows[0].email, role: user.rows[0].role } 
@@ -363,19 +419,20 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// USER MANAGEMENT ROUTES (Admin Only)
+// USER MANAGEMENT ROUTES (Multi-Tenant Protected)
 // ==========================================
 
 // GET all users
 app.get('/api/users', authorize, async (req, res) => {
     try {
-        // Security check: Ensure the user's token says they are an Admin
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
         }
 
+        // SECURITY UPDATE: Admins can ONLY see users in their own company
         const allUsers = await pool.query(
-            "SELECT user_id, email, role, created_at FROM Users ORDER BY created_at DESC"
+            "SELECT user_id, email, role, created_at FROM Users WHERE company_id = $1 ORDER BY created_at DESC",
+            [req.user.company_id]
         );
         res.json(allUsers.rows);
     } catch (err) {
@@ -394,9 +451,10 @@ app.put('/api/users/:id/role', authorize, async (req, res) => {
         const { id } = req.params;
         const { role } = req.body;
 
+        // SECURITY UPDATE: Admins can ONLY update roles for users in their own company
         const updatedUser = await pool.query(
-            "UPDATE Users SET role = $1 WHERE user_id = $2 RETURNING user_id, email, role",
-            [role, id]
+            "UPDATE Users SET role = $1 WHERE user_id = $2 AND company_id = $3 RETURNING user_id, email, role",
+            [role, id, req.user.company_id]
         );
 
         res.json(updatedUser.rows[0]);
