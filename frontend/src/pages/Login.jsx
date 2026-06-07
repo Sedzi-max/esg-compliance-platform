@@ -3,12 +3,15 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 function Login() {
+  const navigate = useNavigate();
   const [isRegistering, setIsRegistering] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [formData, setFormData] = useState({ email: '', password: '', company_name: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,86 +21,98 @@ function Login() {
     const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
 
     try {
-      const response = await axios.post(`${endpoint}`, { email, password });
+      const response = await axios.post(endpoint, formData);
       
-      // 1. Securely store the JWT token
+      // Save token and user data to local storage
       localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
       
-      // Optional: Store the user data if you want to display their email later
-      if (response.data.user) {
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-      }
-
-      // 2. Force a hard reload to the dashboard so the Axios Interceptor catches the new token
-      window.location.href = '/'; 
-      
+      // Send them to the dashboard!
+      navigate('/');
     } catch (err) {
-      console.error("Auth Error:", err);
-      // Display the exact error message from the Node backend if it exists
-      setError(err.response?.data?.error || "Authentication failed. Please try again.");
+      setError(err.response?.data?.error || 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fa', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif' }}>
+      
       <div style={{ background: 'white', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
         
-        <h1 style={{ marginTop: 0, textAlign: 'center', color: '#212529', marginBottom: '10px' }}>
-          ESG Platform
-        </h1>
-        <h2 style={{ fontSize: '1.2rem', textAlign: 'center', color: '#6c757d', marginBottom: '30px', fontWeight: 'normal' }}>
-          {isRegistering ? 'Create an Account' : 'Secure Login'}
-        </h2>
+        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+          <h1 style={{ color: '#212529', margin: '0 0 10px 0' }}>ESG Platform</h1>
+          <p style={{ color: '#6c757d', margin: 0 }}>
+            {isRegistering ? 'Create your corporate workspace' : 'Log in to your workspace'}
+          </p>
+        </div>
 
-        {error && (
-          <div style={{ background: '#f8d7da', color: '#dc3545', padding: '10px', borderRadius: '4px', marginBottom: '20px', textAlign: 'center', fontWeight: 'bold' }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ background: '#f8d7da', color: '#dc3545', padding: '10px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.9rem', textAlign: 'center' }}>{error}</div>}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.9rem' }}>Email Address</label>
+          
+          {isRegistering && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#495057' }}>Company / Organization Name</label>
+              <input 
+                type="text" 
+                name="company_name" 
+                required={isRegistering}
+                value={formData.company_name} 
+                onChange={handleChange} 
+                placeholder="e.g. Acme Logistics Corp"
+                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }} 
+              />
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#495057' }}>Email Address</label>
             <input 
               type="email" 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
+              name="email" 
               required 
-              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+              value={formData.email} 
+              onChange={handleChange} 
+              placeholder="name@company.com"
+              style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }} 
             />
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.9rem' }}>Password</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#495057' }}>Password</label>
             <input 
               type="password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
+              name="password" 
               required 
-              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+              value={formData.password} 
+              onChange={handleChange} 
+              placeholder="••••••••"
+              style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }} 
             />
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            style={{ marginTop: '10px', background: '#0d6efd', color: 'white', padding: '12px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '1rem' }}
+            style={{ marginTop: '10px', background: '#0d6efd', color: 'white', padding: '12px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer' }}
           >
-            {loading ? 'Processing...' : (isRegistering ? 'Register & Enter' : 'Log In')}
+            {loading ? 'Processing...' : (isRegistering ? 'Create Workspace' : 'Sign In')}
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.9rem', color: '#6c757d' }}>
-          {isRegistering ? 'Already have an account? ' : 'Need access? '}
-          <button 
-            onClick={() => { setIsRegistering(!isRegistering); setError(''); }} 
-            style={{ background: 'none', border: 'none', color: '#0d6efd', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}
-          >
-            {isRegistering ? 'Log in here' : 'Register here'}
-          </button>
-        </p>
+        <div style={{ marginTop: '25px', textAlign: 'center', borderTop: '1px solid #dee2e6', paddingTop: '15px' }}>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: '#6c757d' }}>
+            {isRegistering ? "Already have an account? " : "Don't have an account? "}
+            <button 
+              onClick={() => { setIsRegistering(!isRegistering); setError(''); }} 
+              style={{ background: 'none', border: 'none', color: '#0d6efd', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}
+            >
+              {isRegistering ? "Log in here" : "Register a new company"}
+            </button>
+          </p>
+        </div>
 
       </div>
     </div>

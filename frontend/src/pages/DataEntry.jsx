@@ -201,7 +201,16 @@ function DataEntry() {
               </div>
             )}
 
-            <button type="submit" disabled={!formData.activity_type || !formData.raw_amount || isSubmitting} style={{ padding: '12px 20px', background: isSubmitting ? '#6c757d' : '#198754', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
+            <button 
+              type="submit" 
+              disabled={!formData.activity_type || !formData.raw_amount || isSubmitting} 
+              style={{ 
+                padding: '12px 20px', 
+                background: (!formData.activity_type || !formData.raw_amount || isSubmitting) ? '#6c757d' : '#198754', 
+                cursor: (!formData.activity_type || !formData.raw_amount || isSubmitting) ? 'not-allowed' : 'pointer', 
+                color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' 
+              }}
+            >
               {isSubmitting ? 'Processing...' : 'Submit to Ledger'}
             </button>
           </form>

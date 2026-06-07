@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { PieChart, Pie, Cell, BarChart, Bar, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { 
+  PieChart, Pie, Cell, BarChart, Bar, Line, ComposedChart, 
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from 'recharts';
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
   const [emissions, setEmissions] = useState([]); 
-  const [targets, setTargets] = useState([]); // NEW: State for Targets
+  const [targets, setTargets] = useState([]); 
   const [organizations, setOrganizations] = useState([]);
   const [orgCount, setOrgCount] = useState(0);
   const [timeFilter, setTimeFilter] = useState('ALL'); 
@@ -21,7 +24,11 @@ function Dashboard() {
     organization_id: '', scope_category: 'All', baseline_year: new Date().getFullYear(), target_year: new Date().getFullYear() + 5, reduction_percentage: 15
   });
 
-  const COLORS = { E: '#2e7d32', S: '#1565c0', G: '#e65100', Actual: '#1976d2', Target: '#d32f2f' };
+  const COLORS = { 
+    E: '#2e7d32', S: '#1565c0', G: '#e65100', 
+    Actual: '#1976d2', Target: '#d32f2f',
+    Scope1: '#0088FE', Scope2: '#00C49F', Scope3: '#FFBB28'
+  };
 
   useEffect(() => {
     fetchAllData();
@@ -82,7 +89,7 @@ function Dashboard() {
       const token = localStorage.getItem('token');
       await axios.post('/api/targets', targetForm, { headers: { Authorization: `Bearer ${token}` } });
       alert("Target set successfully!");
-      fetchAllData(); // Refresh to show new target line
+      fetchAllData(); 
     } catch (err) {
       alert("Failed to set target.");
     }
@@ -103,17 +110,21 @@ function Dashboard() {
     return true;
   });
 
-  // --- FILTER 2: Carbon Emissions (STRICTLY 'Approved' ONLY) ---
+  // --- FILTER 2: Carbon Emissions ---
   const approvedEmissions = emissions.filter(e => {
     if (e.status !== 'Approved') return false; 
-    
     if (timeFilter === 'ALL') return true;
     const eDate = new Date(e.recorded_date);
     const diffDays = Math.ceil(Math.abs(now - eDate) / (1000 * 60 * 60 * 24));
-    if (timeFilter === '30') return diffDays <= 30;
-    if (timeFilter === '90') return diffDays <= 90;
-    if (timeFilter === '365') return diffDays <= 365;
-    return true;
+    return diffDays <= Number(timeFilter);
+  });
+
+  const pendingEmissions = emissions.filter(e => {
+    if (e.status !== 'Pending') return false; 
+    if (timeFilter === 'ALL') return true;
+    const eDate = new Date(e.recorded_date);
+    const diffDays = Math.ceil(Math.abs(now - eDate) / (1000 * 60 * 60 * 24));
+    return diffDays <= Number(timeFilter);
   });
 
   // --- STAT CALCULATIONS ---
@@ -121,28 +132,45 @@ function Dashboard() {
   const socCount = filteredObs.filter(o => o.pillar === 'S').length;
   const govCount = filteredObs.filter(o => o.pillar === 'G').length;
   const totalCO2e = approvedEmissions.reduce((sum, item) => sum + Number(item.calculated_co2e), 0);
+  const pendingCO2e = pendingEmissions.reduce((sum, item) => sum + Number(item.calculated_co2e), 0);
   
   const recentObs = filteredObs.slice(0, 5);
-  const numericObs = [...filteredObs].filter(obs => obs.numeric_value !== null).slice(0, 5);
 
-  const pieData = [
+  // --- CHART DATA PREP ---
+  const pieDataESG = [
     { name: 'Environmental', value: envCount, fill: COLORS.E },
     { name: 'Social', value: socCount, fill: COLORS.S },
     { name: 'Governance', value: govCount, fill: COLORS.G }
   ].filter(d => d.value > 0);
 
-  const barData = numericObs.reverse().map(obs => ({
-    name: obs.metric_name,
-    value: parseFloat(obs.numeric_value),
-    unit: obs.unit_of_measure,
-    fill: COLORS[obs.pillar]
+  const scopeTotals = { 'scope_1': 0, 'scope_2': 0, 'scope_3': 0 };
+  const timeSeries = {};
+
+  // Sort emissions chronologically for the timeline chart
+  const sortedEmissions = [...approvedEmissions].sort((a,b) => new Date(a.recorded_date) - new Date(b.recorded_date));
+
+  sortedEmissions.forEach(e => {
+    const amount = Number(e.calculated_co2e);
+    if (scopeTotals[e.scope_category] !== undefined) scopeTotals[e.scope_category] += amount;
+    
+    const dateStr = new Date(e.recorded_date).toLocaleDateString();
+    if (!timeSeries[dateStr]) timeSeries[dateStr] = 0;
+    timeSeries[dateStr] += amount;
+  });
+
+  const pieDataScope = [
+    { name: 'Scope 1', value: scopeTotals.scope_1, fill: COLORS.Scope1 },
+    { name: 'Scope 2', value: scopeTotals.scope_2, fill: COLORS.Scope2 },
+    { name: 'Scope 3', value: scopeTotals.scope_3, fill: COLORS.Scope3 }
+  ].filter(d => d.value > 0);
+
+  const barDataTimeline = Object.keys(timeSeries).map(date => ({
+    date, co2e: timeSeries[date]
   }));
 
   // ==============================================================
   // FORECASTING MATH ENGINE
   // ==============================================================
-  
-  // 1. Group emissions by Year
   const emissionsByYear = approvedEmissions.reduce((acc, curr) => {
     const year = new Date(curr.recorded_date).getFullYear();
     if (!acc[year]) acc[year] = 0;
@@ -150,9 +178,8 @@ function Dashboard() {
     return acc;
   }, {});
 
-  // 2. Build the multi-year trajectory array
   let forecastData = [];
-  const activeTarget = targets[0]; // Global view active target
+  const activeTarget = targets[0]; 
 
   if (activeTarget && Object.keys(emissionsByYear).length > 0) {
     const baseYear = activeTarget.baseline_year;
@@ -172,7 +199,6 @@ function Dashboard() {
       });
     }
   } else {
-    // Fallback if no targets set
     forecastData = Object.keys(emissionsByYear).sort().map(y => ({
       year: y,
       "Actual Emissions": emissionsByYear[y]
@@ -183,10 +209,10 @@ function Dashboard() {
     if (active && payload && payload.length) {
       return (
         <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>Year: {payload[0].payload.year}</p>
+          <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>{payload[0].payload.year || payload[0].payload.date}</p>
           {payload.map((entry, index) => (
             <p key={index} style={{ margin: 0, color: entry.color || entry.fill, fontWeight: 'bold' }}>
-              {entry.name}: {Number(entry.value).toLocaleString()} kg CO2e
+              {entry.name}: {Number(entry.value).toLocaleString()} {entry.name === 'Actual Emissions' || entry.name === 'co2e' ? 'kg' : ''}
             </p>
           ))}
         </div>
@@ -236,6 +262,13 @@ function Dashboard() {
           </p>
         </div>
 
+        <div style={{ padding: '20px', borderLeft: `5px solid #ffc107`, borderRadius: '8px', background: '#fffbeb', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#b48600', fontSize: '1rem' }}>Pending Audit (CO2e)</h3>
+          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>
+            {pendingCO2e.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kg</span>
+          </p>
+        </div>
+
         {activeTarget ? (
           <div style={{ padding: '20px', borderLeft: `5px solid #198754`, borderRadius: '8px', background: '#e8f5e9', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <h3 style={{ margin: '0 0 10px 0', color: '#198754', fontSize: '1rem' }}>Active Corporate Goal</h3>
@@ -253,10 +286,6 @@ function Dashboard() {
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.S}`, borderRadius: '8px', background: '#e3f2fd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>{socCount}</p>
-        </div>
-        <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.G}`, borderRadius: '8px', background: '#fff3e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: COLORS.G, fontSize: '1rem' }}>Governance Logs</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#bf360c' }}>{govCount}</p>
         </div>
       </div>
 
@@ -318,49 +347,65 @@ function Dashboard() {
         )}
       </div>
 
-      {/* --- SECONDARY DATA VISUALIZATION SECTION --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px', marginBottom: '40px' }}>
+      {/* --- SECONDARY DATA VISUALIZATION SECTION (THE BLEND) --- */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '40px' }}>
         
-        {/* Pie Chart Card */}
+        {/* CHART 1: Emissions by Scope */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>General ESG Distribution</h3>
-          {pieData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No data in this timeframe.</p> : (
-            <>
-              <div style={{ width: '100%', height: '300px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </>
+          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Emissions by Scope</h3>
+          {pieDataScope.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No scope data available.</p> : (
+            <div style={{ width: '100%', height: '250px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
+                    {pieDataScope.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `${value.toLocaleString()} kg`} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
 
-        {/* Restored: Bar Chart Card (Recent Entries) */}
+        {/* CHART 2: Ingestion Timeline */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Numeric Values</h3>
-          {barData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No numeric data in this timeframe.</p> : (
-            <>
-              <div style={{ width: '100%', height: '300px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{fontSize: 12}} />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </>
+          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Ingestion Timeline</h3>
+          {barDataTimeline.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No timeline data available.</p> : (
+            <div style={{ width: '100%', height: '250px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barDataTimeline} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tick={{fontSize: 12}} />
+                  <YAxis tick={{fontSize: 12}} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="co2e" fill="#0d6efd" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
+
+        {/* CHART 3: General ESG Distribution */}
+        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>ESG Log Distribution</h3>
+          {pieDataESG.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No ESG data available.</p> : (
+            <div style={{ width: '100%', height: '250px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
+                    {pieDataESG.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* --- RESTORED: RECENT ACTIVITY FEED --- */}

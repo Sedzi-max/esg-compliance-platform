@@ -5,8 +5,10 @@ import App from './App.jsx'
 import axios from 'axios'
 import './index.css'
 
-// 1. Set the global base URL for all backend requests (Powered by your new .env file!)
-axios.defaults.baseURL = import.meta.env.VITE_API_URL;
+// 1. Global API Configuration: Dynamically switch based on where the code is running
+axios.defaults.baseURL = import.meta.env.MODE === 'production' 
+  ? 'https://esg-compliance-platform.onrender.com' 
+  : 'http://localhost:5000';
 
 // 2. --- AXIOS INTERCEPTOR ---
 // This intercepts every outgoing request and automatically attaches the JWT token
