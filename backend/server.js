@@ -126,17 +126,29 @@ app.get('/api/metrics', authorize, async (req, res) => {
 // ESG OBSERVATION (DATA ENTRY) ROUTES (Multi-Tenant Protected)
 // ==========================================
 
-// CREATE a new ESG Observation
+// CREATE a new ESG Observation (Updated for new Frontend Payload)
 app.post('/api/observations', authorize, async (req, res) => {
     try {
-        const { unit_id, metric_id, numeric_value, text_value } = req.body;
+        // 1. Destructure EXACTLY what the React frontend is sending
+        const { organization_id, pillar, metric_name, numeric_value, unit_of_measure, text_value } = req.body;
+
+        // 2. Map the frontend data into the database
         const newObs = await pool.query(
-            "INSERT INTO ESG_Observation (unit_id, metric_id, numeric_value, text_value, timestamp) VALUES ($1, $2, $3, $4, NOW()) RETURNING *",
-            [unit_id, metric_id, numeric_value, text_value]
+            `INSERT INTO ESG_Observation 
+            (unit_id, pillar, metric_name, numeric_value, unit_of_measure, text_value, timestamp) 
+            VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *`,
+            [
+                organization_id,          // $1 (Mapped to unit_id)
+                pillar,                   // $2
+                metric_name,              // $3
+                numeric_value || null,    // $4 (Prevents errors if empty)
+                unit_of_measure || null,  // $5
+                text_value || null        // $6
+            ]
         );
         res.json(newObs.rows[0]);
     } catch (err) {
-        console.error(err.message);
+        console.error("Database Insert Error:", err.message);
         res.status(500).json({ error: "Failed to log observation" });
     }
 });
@@ -145,6 +157,7 @@ app.post('/api/observations', authorize, async (req, res) => {
 app.get('/api/observations', authorize, async (req, res) => {
     try {
         // SECURITY UPDATE: Join with orgs and filter by company_id
+        // UPGRADE: Use LEFT JOIN and COALESCE to support both strict metrics and flexible custom logs
         const query = `
             SELECT 
                 o.observation_id, 
@@ -152,12 +165,12 @@ app.get('/api/observations', authorize, async (req, res) => {
                 o.text_value, 
                 o.timestamp,
                 u.name AS organization_name,
-                m.name AS metric_name,
-                m.unit_of_measure,
-                m.pillar
+                COALESCE(o.metric_name, m.name) AS metric_name,
+                COALESCE(o.unit_of_measure, m.unit_of_measure) AS unit_of_measure,
+                COALESCE(o.pillar, m.pillar) AS pillar
             FROM ESG_Observation o
             JOIN Organization_Unit u ON o.unit_id = u.unit_id
-            JOIN Metric_Definition m ON o.metric_id = m.metric_id
+            LEFT JOIN Metric_Definition m ON o.metric_id = m.metric_id
             WHERE u.company_id = $1
             ORDER BY o.timestamp DESC
         `;

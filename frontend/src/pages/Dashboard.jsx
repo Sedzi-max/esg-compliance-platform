@@ -353,6 +353,13 @@ function Dashboard() {
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>{socCount}</p>
         </div>
+
+        {/* --- ADD THIS NEW GOVERNANCE CARD --- */}
+        <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.G}`, borderRadius: '8px', background: '#fff3e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: COLORS.G, fontSize: '1rem' }}>Governance Logs</h3>
+          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>{govCount}</p>
+        </div>
+
       </div>
 
       {/* --- FORECASTING CHART & TARGET SETTER --- */}
