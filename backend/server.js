@@ -347,12 +347,11 @@ app.get('/api/targets', authorize, async (req, res) => {
 // AUTHENTICATION ROUTES (Multi-Tenant Enabled)
 // ==========================================
 
-// --- 1. REGISTRATION ENDPOINT (Multi-Tenant Workspace Creation) ---
+// --- 1. REGISTRATION ENDPOINT (Manual Approval Workflow) ---
 app.post('/api/auth/register', async (req, res) => {
   const client = await pool.connect();
   try {
     const { email, password, company_name } = req.body;
-    console.log("Registering:", email, "for company:", company_name); // DEBUG
     
     if (!company_name) return res.status(400).json({ error: "Company name required." });
 
@@ -363,45 +362,40 @@ app.post('/api/auth/register', async (req, res) => {
         "INSERT INTO Companies (company_name) VALUES ($1) RETURNING company_id",
         [company_name]
     );
-    console.log("Company created with ID:", newComp.rows[0].company_id); // DEBUG
     const newCompanyId = newComp.rows[0].company_id;
 
-    // Hash & Create User
+    // Hash & Create User (Database automatically sets status to 'pending' from our SQL migration)
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
-    const newUser = await client.query(
-      "INSERT INTO Users (email, password_hash, company_id, role) VALUES ($1, $2, $3, 'Admin') RETURNING user_id, company_id",
+    await client.query(
+      "INSERT INTO Users (email, password_hash, company_id, role) VALUES ($1, $2, $3, 'Admin')",
       [email, password_hash, newCompanyId]
     );
 
     await client.query('COMMIT');
     
-    // ... token generation ...
-    const token = jwt.sign(
-      { id: newUser.rows[0].user_id, role: 'Admin', company_id: newCompanyId }, 
-      process.env.JWT_SECRET, { expiresIn: '1h' }
-    );
-
-    res.json({ token, user: { id: newUser.rows[0].user_id, email, role: 'Admin' } });
+    // SECURITY UPDATE: We no longer generate or send a JWT token here.
+    // We simply acknowledge receipt of the application.
+    res.json({ message: "Registration successful. Your account is pending admin approval." });
 
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error("REGISTRATION FAILED:", err); // CHECK THIS IN YOUR TERMINAL
+    console.error("REGISTRATION FAILED:", err); 
     res.status(500).json({ error: "Check server logs for registration error." });
   } finally {
     client.release();
   }
 });
 
-// --- 2. LOGIN ENDPOINT ---
+// --- 2. LOGIN ENDPOINT (The Gatekeeper) ---
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // SECURITY UPDATE: Fetch the company_id from the database
+    // SECURITY UPDATE: Fetch the status column from the database
     const user = await pool.query(
-      'SELECT user_id, email, password_hash, role, company_id FROM Users WHERE email = $1',
+      'SELECT user_id, email, password_hash, role, company_id, status FROM Users WHERE email = $1',
       [email]
     );
 
@@ -414,7 +408,12 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: "Invalid Credentials" });
     }
 
-    // SECURITY UPDATE: Embed company_id into the JWT token!
+    // SECURITY UPDATE: The Hard Stop. Block access if they are not approved.
+    if (user.rows[0].status === 'pending') {
+      return res.status(403).json({ error: "Access Denied: Your corporate account is still pending verification." });
+    }
+
+    // If they made it here, they are approved. Mint the token!
     const token = jwt.sign(
       { id: user.rows[0].user_id, role: user.rows[0].role, company_id: user.rows[0].company_id },
       process.env.JWT_SECRET,
@@ -431,7 +430,6 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: "Server Error during login" });
   }
 });
-
 // ==========================================
 // USER MANAGEMENT ROUTES (Multi-Tenant Protected)
 // ==========================================
