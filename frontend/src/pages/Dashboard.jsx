@@ -24,7 +24,7 @@ function Dashboard() {
   const reportRef = useRef();
   const [isExporting, setIsExporting] = useState(false);
 
-  // Check if current user is an Admin
+  // Check if current user is an Executive Admin
   const userStr = localStorage.getItem('user');
   const isAdmin = userStr ? JSON.parse(userStr).role === 'Admin' : false;
 
@@ -354,7 +354,6 @@ function Dashboard() {
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>{socCount}</p>
         </div>
 
-        {/* --- ADD THIS NEW GOVERNANCE CARD --- */}
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.G}`, borderRadius: '8px', background: '#fff3e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.G, fontSize: '1rem' }}>Governance Logs</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>{govCount}</p>
@@ -384,6 +383,7 @@ function Dashboard() {
           )}
         </div>
 
+        {/* --- RBAC: Only show to Admins --- */}
         {isAdmin && (
           <div style={{ background: '#f8f9fa', padding: '25px', border: '1px solid #dee2e6', borderRadius: '8px' }}>
             <h3 style={{ marginTop: 0, color: '#495057' }}>🎯 Set Reduction Goal</h3>

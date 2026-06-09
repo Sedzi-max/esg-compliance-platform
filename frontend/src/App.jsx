@@ -15,8 +15,9 @@ function App() {
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   
-  // Define what role counts as an Admin
+  // Define our RBAC Roles
   const isAdmin = user?.role === 'Admin'; 
+  const isManager = user?.role === 'Manager';
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -46,18 +47,22 @@ function App() {
                   <li><Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
                   <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
                   
-                  {/* ONLY ADMINS see these links */}
+                  {/* Both ADMINS and MANAGERS see the Audit Queue */}
+                  {(isAdmin || isManager) && (
+                    <>
+                      <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Review Data</li>
+                      <li>
+                        <Link to="/audit-queue" style={{ display: 'block', padding: '10px', color: 'white', textDecoration: 'none', fontSize: '1.1rem', marginLeft: '-10px', borderRadius: '4px' }}>
+                            ✅ Audit Queue
+                        </Link>
+                      </li>
+                    </>
+                  )}
+
+                  {/* ONLY ADMINS see these core system links */}
                   {isAdmin && (
                     <>
                       <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Admin Settings</li>
-                      
-                      {/* Integrated your exact custom link styling here! */}
-                      <li>
-                        <Link to="/audit-queue" style={{ display: 'block', padding: '10px', color: 'white', textDecoration: 'none', fontSize: '1.1rem', marginLeft: '-10px', borderRadius: '4px' }}>
-                           ✅ Audit Queue
-                        </Link>
-                      </li>
-                      
                       <li><Link to="/organizations" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link></li>
                       <li><Link to="/metrics" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link></li>
                       <li><Link to="/users" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>👥 Manage Users</Link></li>
@@ -68,6 +73,7 @@ function App() {
                 <div style={{ borderTop: '1px solid #495057', paddingTop: '15px', marginBottom: '15px' }}>
                    <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#adb5bd' }}>Logged in as:</p>
                    <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>{user?.email || 'User'}</p>
+                   <p style={{ margin: 0, fontSize: '0.75rem', color: '#198754' }}>Role: {user?.role}</p>
                 </div>
 
                 <button onClick={handleLogout} style={{ background: '#dc3545', color: 'white', padding: '10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
@@ -82,15 +88,17 @@ function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/data-entry" element={<DataEntry />} />
                   
-                  {/* Locked to Admins only! */}
+                  {/* Locked to Admins OR Managers! */}
                   <Route 
                     path="/audit-queue" 
                     element={
-                      <ProtectedRoute allowedRoles={['Admin']}>
+                      <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
                         <AuditQueue />
                       </ProtectedRoute>
                     } 
                   />
+
+                  {/* Locked strictly to Executive Admins only! */}
                   <Route 
                     path="/organizations" 
                     element={

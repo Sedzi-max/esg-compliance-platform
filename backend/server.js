@@ -230,17 +230,18 @@ app.post('/api/emissions', authorize, async (req, res) => {
     }
 });
 
-// 3. PUT Route: Admin Approval Workflow
+// 3. PUT Route: Audit Approval Workflow (Upgraded for RBAC)
 app.put('/api/emissions/:id/status', authorize, async (req, res) => {
     try {
-        if (req.user.role !== 'Admin') {
-            return res.status(403).json({ error: "Access Denied: Only Admins can approve data." });
+        // SECURITY UPDATE: Allow BOTH Admins and Compliance Managers to approve data
+        if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+            return res.status(403).json({ error: "Access Denied: Only Admins and Compliance Managers can approve data." });
         }
 
         const { id } = req.params;
         const { status } = req.body; 
 
-        // SECURITY UPDATE: Ensure the Admin only approves emissions for their own company
+        // SECURITY UPDATE: Ensure they only approve emissions for their own company
         const updatedEmission = await pool.query(
             `UPDATE ghg_emissions SET status = $1 
              WHERE id = $2 AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $3)

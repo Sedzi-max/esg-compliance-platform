@@ -68,9 +68,13 @@ function UserManagement() {
                 </td>
                 <td style={{ padding: '15px' }}>
                   <span style={{ 
-                    background: user.role === 'Admin' ? '#e8f5e9' : '#e3f2fd',
-                    color: user.role === 'Admin' ? '#2e7d32' : '#1565c0',
-                    padding: '5px 10px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold'
+                    padding: '5px 10px', 
+                    borderRadius: '20px', 
+                    fontWeight: 'bold', 
+                    fontSize: '0.85rem',
+                    // Dynamic color logic: Green for Admin, Purple for Manager, Blue for Data Entry
+                    color: user.role === 'Admin' ? '#198754' : user.role === 'Manager' ? '#6f42c1' : '#0d6efd', 
+                    background: user.role === 'Admin' ? '#e8f5e9' : user.role === 'Manager' ? '#f3e8fd' : '#e3f2fd'
                   }}>
                     {user.role}
                   </span>
@@ -82,6 +86,7 @@ function UserManagement() {
                     style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', fontWeight: 'bold' }}
                   >
                     <option value="Data Entry">Data Entry</option>
+                    <option value="Manager">Manager</option>
                     <option value="Admin">Admin</option>
                   </select>
                 </td>
