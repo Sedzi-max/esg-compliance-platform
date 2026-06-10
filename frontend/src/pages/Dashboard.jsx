@@ -246,6 +246,86 @@ function Dashboard() {
     }));
   }
 
+  // ==============================================================
+  // AUTOMATED INSIGHTS ENGINE
+  // ==============================================================
+  const generateInsights = () => {
+    const insights = [];
+    
+    if (approvedEmissions.length === 0) {
+      insights.push({ type: 'warning', text: 'No approved carbon data available to generate insights.' });
+      return insights;
+    }
+
+    // 1. Target Tracking Insight
+    if (activeTarget && forecastData.length > 0) {
+      const currentYear = new Date().getFullYear().toString();
+      const currentData = forecastData.find(d => d.year === currentYear);
+      
+      if (currentData && currentData["Actual Emissions"] && currentData["Target Trajectory"]) {
+        const actual = currentData["Actual Emissions"];
+        const target = currentData["Target Trajectory"];
+        const diff = Math.round(actual - target); // Round early to avoid floating point decimals
+
+        if (diff > 0) {
+          insights.push({ 
+            type: 'danger', 
+            icon: '⚠️',
+            title: 'Off-Track Target',
+            text: `You are currently exceeding your Net-Zero trajectory for this year by ${diff.toLocaleString()} kg CO2e. Immediate operational reductions are recommended.` 
+          });
+        } else if (diff === 0) {
+          insights.push({ 
+            type: 'success', 
+            icon: '🎯', // Changed to a bullseye!
+            title: 'Exact Target Met',
+            text: `Excellent. You are perfectly aligned with your Net-Zero trajectory for this year.` 
+          });
+        } else {
+          insights.push({ 
+            type: 'success', 
+            icon: '✅',
+            title: 'Ahead of Target',
+            text: `Outstanding. You are currently beating your Net-Zero trajectory by ${Math.abs(diff).toLocaleString()} kg CO2e.` 
+          });
+        }
+      }
+    }
+
+    // 2. Identify the Primary Emission Source (Scope)
+    const highestScope = Object.keys(scopeTotals).reduce((a, b) => scopeTotals[a] > scopeTotals[b] ? a : b);
+    if (scopeTotals[highestScope] > 0) {
+      const scopePercentage = ((scopeTotals[highestScope] / totalCO2e) * 100).toFixed(1);
+      const scopeName = highestScope.replace('_', ' ').toUpperCase();
+      
+      let suggestion = "";
+      if (highestScope === 'scope_1') suggestion = "Consider transitioning mobile fleets to EV or auditing stationary generator usage.";
+      if (highestScope === 'scope_2') suggestion = "Evaluate purchasing Renewable Energy Certificates (RECs) or auditing facility HVAC efficiency.";
+      if (highestScope === 'scope_3') suggestion = "Initiate supplier sustainability audits and evaluate employee business travel policies.";
+
+      insights.push({
+        type: 'info',
+        icon: '🔍',
+        title: `Primary Emitter: ${scopeName}`,
+        text: `${scopeName} accounts for a massive ${scopePercentage}% of your total footprint. ${suggestion}`
+      });
+    }
+
+    // 3. ESG Pillar Balance Check
+    if (totalCO2e > 0 && (socCount === 0 || govCount === 0)) {
+      insights.push({
+        type: 'warning',
+        icon: '⚖️',
+        title: 'Lopsided ESG Reporting',
+        text: 'Your platform has strong Environmental tracking, but lacks comprehensive Social or Governance logs. True ESG compliance requires all three pillars.'
+      });
+    }
+
+    return insights;
+  };
+
+  const dynamicInsights = generateInsights();
+
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
@@ -360,6 +440,36 @@ function Dashboard() {
         </div>
 
       </div>
+
+      {/* --- AI INSIGHTS ENGINE --- */}
+      {dynamicInsights.length > 0 && (
+        <div style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            ⚡ Strategic Insights
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
+            {dynamicInsights.map((insight, index) => {
+              // Dynamic color themes based on the insight type
+              const theme = {
+                danger: { bg: '#fff5f5', border: '#ffc9c9', text: '#c92a2a' },
+                success: { bg: '#f4fce3', border: '#d8f5a2', text: '#5c940d' },
+                info: { bg: '#e7f5ff', border: '#a5d8ff', text: '#1864ab' },
+                warning: { bg: '#fff9db', border: '#ffec99', text: '#e67700' }
+              }[insight.type];
+
+              return (
+                <div key={index} style={{ background: theme.bg, border: `1px solid ${theme.border}`, padding: '20px', borderRadius: '8px', display: 'flex', gap: '15px' }}>
+                  <div style={{ fontSize: '1.5rem' }}>{insight.icon}</div>
+                  <div>
+                    <h4 style={{ margin: '0 0 5px 0', color: theme.text, fontSize: '1rem' }}>{insight.title}</h4>
+                    <p style={{ margin: 0, color: '#495057', fontSize: '0.9rem', lineHeight: '1.4' }}>{insight.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* --- FORECASTING CHART & TARGET SETTER --- */}
       <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '20px', marginBottom: '40px' }}>

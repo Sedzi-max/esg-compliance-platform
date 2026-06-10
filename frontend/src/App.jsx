@@ -1,4 +1,5 @@
 import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
+import LandingPage from './pages/LandingPage'; // <-- NEW STOREFRONT
 import Dashboard from './pages/Dashboard';
 import Organizations from './pages/Organizations';
 import Metrics from './pages/Metrics';
@@ -27,6 +28,8 @@ function App() {
 
   return (
     <Routes>
+      {/* --- PUBLIC MARKETING SITE --- */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
 
       {/* --- SECURE PLATFORM --- */}
@@ -44,7 +47,8 @@ function App() {
                 
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
                   {/* Everyone gets to see the Dashboard and Data Entry */}
-                  <li><Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
+                  {/* UPDATE: Pointed link to /dashboard instead of / */}
+                  <li><Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
                   <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
                   
                   {/* Both ADMINS and MANAGERS see the Audit Queue */}
@@ -85,7 +89,7 @@ function App() {
               <main style={{ flex: 1, padding: '40px', background: '#ffffff', overflowY: 'auto' }}>
                 <Routes>
                   {/* Open to all authenticated users */}
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/data-entry" element={<DataEntry />} />
                   
                   {/* Locked to Admins OR Managers! */}
@@ -124,7 +128,8 @@ function App() {
                     } 
                   />
                   
-                  <Route path="*" element={<Navigate to="/" replace />} />
+                  {/* UPDATE: Catch-all redirects safely to /dashboard now */}
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </main>
 
