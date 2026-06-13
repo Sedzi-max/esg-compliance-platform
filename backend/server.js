@@ -301,6 +301,32 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
     }
 });
 
+// 5. PUT Route: Bulk Approve All Pending Emissions
+app.put('/api/emissions/bulk-approve', authorize, async (req, res) => {
+    try {
+        // SECURITY: Only Admins and Managers can bulk approve
+        if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+            return res.status(403).json({ error: "Access Denied: Only Admins and Compliance Managers can approve data." });
+        }
+
+        // Mass update all pending records for this specific company
+        const updatedEmissions = await pool.query(
+            `UPDATE ghg_emissions SET status = 'Approved' 
+             WHERE status = 'Pending' AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $1)
+             RETURNING *`,
+            [req.user.company_id]
+        );
+
+        res.json({ 
+            message: `Successfully approved ${updatedEmissions.rowCount} records.`, 
+            count: updatedEmissions.rowCount 
+        });
+    } catch (err) {
+        console.error("Error in bulk approval:", err.message);
+        res.status(500).send('Server error during bulk approval');
+    }
+});
+
 // ==========================================
 // NET-ZERO TARGET ROUTES (Multi-Tenant Protected)
 // ==========================================
@@ -344,6 +370,40 @@ app.get('/api/targets', authorize, async (req, res) => {
 });
 
 // ==========================================
+// SUPER ADMIN: APPROVAL WORKFLOW
+// ==========================================
+
+// 1. Fetch all pending corporate registrations
+app.get('/api/admin/pending', async (req, res) => {
+  try {
+    // We join the Companies table so you can actually see the company name you are approving
+    const result = await pool.query(`
+      SELECT u.user_id, u.email, u.created_at, c.company_name
+      FROM Users u
+      JOIN Companies c ON u.company_id = c.company_id
+      WHERE u.status = 'pending'
+      ORDER BY u.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching pending accounts:", err);
+    res.status(500).json({ error: "Failed to fetch pending accounts." });
+  }
+});
+
+// 2. Approve a specific corporate account
+app.put('/api/admin/approve/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("UPDATE Users SET status = 'approved' WHERE user_id = $1", [id]);
+    res.json({ message: "Corporate account approved successfully." });
+  } catch (err) {
+    console.error("Error approving account:", err);
+    res.status(500).json({ error: "Failed to approve account." });
+  }
+});
+
+// ==========================================
 // AUTHENTICATION ROUTES (Multi-Tenant Enabled)
 // ==========================================
 
@@ -364,19 +424,18 @@ app.post('/api/auth/register', async (req, res) => {
     );
     const newCompanyId = newComp.rows[0].company_id;
 
-    // Hash & Create User (Database automatically sets status to 'pending' from our SQL migration)
+    // Hash & Create User
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
+    // HARDENED SECURITY: Explicitly force the status to 'pending'
     await client.query(
-      "INSERT INTO Users (email, password_hash, company_id, role) VALUES ($1, $2, $3, 'Admin')",
+      "INSERT INTO Users (email, password_hash, company_id, role, status) VALUES ($1, $2, $3, 'Admin', 'pending')",
       [email, password_hash, newCompanyId]
     );
 
     await client.query('COMMIT');
     
-    // SECURITY UPDATE: We no longer generate or send a JWT token here.
-    // We simply acknowledge receipt of the application.
     res.json({ message: "Registration successful. Your account is pending admin approval." });
 
   } catch (err) {
@@ -393,7 +452,6 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // SECURITY UPDATE: Fetch the status column from the database
     const user = await pool.query(
       'SELECT user_id, email, password_hash, role, company_id, status FROM Users WHERE email = $1',
       [email]
@@ -408,12 +466,12 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: "Invalid Credentials" });
     }
 
-    // SECURITY UPDATE: The Hard Stop. Block access if they are not approved.
-    if (user.rows[0].status === 'pending') {
+    // HARDENED SECURITY: Default Deny. If they are not strictly 'approved', block them.
+    if (user.rows[0].status !== 'approved') {
       return res.status(403).json({ error: "Access Denied: Your corporate account is still pending verification." });
     }
 
-    // If they made it here, they are approved. Mint the token!
+    // Mint the token!
     const token = jwt.sign(
       { id: user.rows[0].user_id, role: user.rows[0].role, company_id: user.rows[0].company_id },
       process.env.JWT_SECRET,
@@ -430,6 +488,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: "Server Error during login" });
   }
 });
+
 // ==========================================
 // USER MANAGEMENT ROUTES (Multi-Tenant Protected)
 // ==========================================

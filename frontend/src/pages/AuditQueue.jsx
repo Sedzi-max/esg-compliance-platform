@@ -6,6 +6,7 @@ function AuditQueue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false); // Added to prevent double-clicks
 
   // Fetch the data when the page loads
   useEffect(() => {
@@ -22,7 +23,6 @@ function AuditQueue() {
       setLoading(false);
     } catch (err) {
       console.error("Error fetching audit queue:", err);
-      // If the backend returns 403, it means they aren't an admin!
       if (err.response && err.response.status === 403) {
         setError("🔒 Access Denied. Only Admins can view the Audit Queue.");
       } else {
@@ -32,24 +32,44 @@ function AuditQueue() {
     }
   };
 
-  // The function that talks to your new PUT route
+  // The function that talks to your single PUT route
   const handleStatusUpdate = async (id, newStatus) => {
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      // Send the approval/rejection to the backend
       await axios.put(`/api/emissions/${id}/status`, { status: newStatus }, config);
       
-      // Show a success message
       setSuccessMsg(`✅ Record successfully ${newStatus.toLowerCase()}!`);
       setTimeout(() => setSuccessMsg(''), 3000);
 
-      // Refresh the table to show the new status
       fetchEmissions();
     } catch (err) {
       console.error("Error updating status:", err);
       setError("Failed to update status. You may not have Admin privileges.");
+    }
+  };
+
+  // NEW: The function that bulk approves everything at once
+  const handleApproveAll = async () => {
+    if (!window.confirm("Are you sure you want to approve ALL pending records? This will instantly populate your Dashboard charts.")) return;
+    
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.put('/api/emissions/bulk-approve', {}, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+      
+      setSuccessMsg(`✅ ${response.data.message || 'All pending records approved!'}`);
+      setTimeout(() => setSuccessMsg(''), 5000);
+      
+      fetchEmissions(); // Refresh the table
+    } catch (err) {
+      console.error("Error bulk approving:", err);
+      setError("Failed to bulk approve records.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -67,12 +87,30 @@ function AuditQueue() {
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
       
+      {/* UPGRADED HEADER WITH BULK APPROVE BUTTON */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>
-        <h1 style={{ margin: 0, color: '#212529' }}>Admin Audit Queue</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <h1 style={{ margin: 0, color: '#212529' }}>Admin Audit Queue</h1>
+          {pendingCount > 0 && (
+            <span style={{ background: '#ffc107', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem' }}>
+              {pendingCount} Pending Review
+            </span>
+          )}
+        </div>
+
+        {/* The New Bulk Approve Button */}
         {pendingCount > 0 && (
-          <span style={{ background: '#ffc107', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem' }}>
-            {pendingCount} Pending Review
-          </span>
+          <button 
+            onClick={handleApproveAll}
+            disabled={isSubmitting}
+            style={{ 
+              background: '#198754', color: 'white', padding: '10px 20px', border: 'none', 
+              borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer',
+              fontSize: '1rem', boxShadow: '0 2px 4px rgba(25, 135, 84, 0.2)'
+            }}
+          >
+            {isSubmitting ? 'Approving Data...' : '✅ Approve All Pending'}
+          </button>
         )}
       </div>
       
@@ -98,7 +136,7 @@ function AuditQueue() {
               {emissions.map((data) => (
                 <tr key={data.id} style={{ borderBottom: '1px solid #eee', background: data.status === 'Pending' ? '#fffdf5' : 'white' }}>
                   <td style={{ padding: '15px', color: '#6c757d', fontSize: '0.9rem' }}>
-                    {new Date(data.recorded_date).toLocaleDateString()}
+                    {new Date(data.recorded_date || data.created_at).toLocaleDateString()}
                   </td>
                   <td style={{ padding: '15px' }}>
                     <div style={{ fontWeight: 'bold', color: '#212529' }}>{formatScope(data.scope_category)}</div>
@@ -109,7 +147,6 @@ function AuditQueue() {
                     {Number(data.calculated_co2e).toLocaleString()} kg
                   </td>
                   <td style={{ padding: '15px' }}>
-                    {/* Dynamic Status Badges */}
                     <span style={{ 
                       padding: '5px 10px', 
                       borderRadius: '4px', 
@@ -122,7 +159,6 @@ function AuditQueue() {
                     </span>
                   </td>
                   <td style={{ padding: '15px', textAlign: 'center' }}>
-                    {/* Only show the buttons if the item is Pending! */}
                     {data.status === 'Pending' ? (
                       <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                         <button 

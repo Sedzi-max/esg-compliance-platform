@@ -91,29 +91,44 @@ function Dashboard() {
     document.body.removeChild(link); 
   };
 
-  // 2. The PDF Generation Engine
+  // 2. The Upgraded Multi-Page PDF Generation Engine
   const generatePDF = async () => {
     setIsExporting(true);
     try {
       const element = reportRef.current;
       
-      // Take a high-res screenshot of the dashboard
+      // 1. Take the high-res screenshot, forcing it to capture the full scroll height
       const canvas = await html2canvas(element, { 
-        scale: 2, // Doubles the resolution for crisp text
-        useCORS: true, // Ensures charts render correctly
-        backgroundColor: '#f8f9fa' // Matches your app background
+        scale: 2, 
+        useCORS: true, 
+        backgroundColor: '#f8f9fa',
+        windowHeight: element.scrollHeight // Forces capture of off-screen content
       });
       
       const imgData = canvas.toDataURL('image/png');
-      
-      // Initialize an A4, Portrait PDF
       const pdf = new jsPDF('p', 'mm', 'a4');
       
-      // Calculate dimensions to fit the image perfectly on the page
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      // Calculate how tall the image is in PDF millimeters
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      // 2. Paste the first page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // 3. Keep adding new pages as long as there is dashboard left to print!
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight; // Shifts the image up for the next slice
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
       pdf.save(`ESG_Executive_Report_${new Date().toISOString().split('T')[0]}.pdf`);
       
     } catch (error) {
@@ -477,7 +492,7 @@ function Dashboard() {
         <div style={{ background: '#fff', padding: '25px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057' }}>Net-Zero Trajectory vs Actuals</h3>
           {forecastData.length === 0 ? <p style={{ color: '#666' }}>No approved data available.</p> : (
-            <div style={{ width: '100%', height: '350px' }}>
+            <div style={{ width: '100%', height: '350px', minHeight: '350px', minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={forecastData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -537,7 +552,7 @@ function Dashboard() {
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Emissions by Scope</h3>
           {pieDataScope.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No scope data available.</p> : (
-            <div style={{ width: '100%', height: '250px' }}>
+            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
@@ -556,7 +571,7 @@ function Dashboard() {
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Ingestion Timeline</h3>
           {barDataTimeline.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No timeline data available.</p> : (
-            <div style={{ width: '100%', height: '250px' }}>
+            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barDataTimeline} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -574,7 +589,7 @@ function Dashboard() {
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>ESG Log Distribution</h3>
           {pieDataESG.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No ESG data available.</p> : (
-            <div style={{ width: '100%', height: '250px' }}>
+            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>

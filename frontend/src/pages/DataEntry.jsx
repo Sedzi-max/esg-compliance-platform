@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Papa from 'papaparse'; 
-import { useNavigate } from 'react-router-dom';
 
 const ACTIVITY_OPTIONS = {
   scope_1: [
@@ -23,45 +22,90 @@ const ACTIVITY_OPTIONS = {
   ]
 };
 
+// --- ENTERPRISE SMART MAPPER DICTIONARIES ---
+const SMART_MAPPER = {
+  scopes: {
+    'scope 1': 'scope_1',
+    'scope 1 emissions': 'scope_1',
+    'direct emissions': 'scope_1',
+    'direct fuel combustion': 'scope_1',
+    'scope 2': 'scope_2',
+    'scope 2 emissions': 'scope_2',
+    'purchased electricity': 'scope_2',
+    'indirect emissions': 'scope_2',
+    'scope 3': 'scope_3',
+    'value chain': 'scope_3',
+    'supply chain': 'scope_3'
+  },
+  activities: {
+    // Scope 1
+    'diesel': 'mobile_diesel_liters',
+    'diesel (mobile fleet)': 'mobile_diesel_liters',
+    'mobile diesel': 'mobile_diesel_liters',
+    'petrol': 'mobile_petrol_liters',
+    'gasoline': 'mobile_petrol_liters',
+    'natural gas': 'stationary_natural_gas_therms',
+    'generator diesel': 'generator_diesel_liters',
+    // Scope 2
+    'grid electricity': 'electricity_grid_kwh',
+    'electricity': 'electricity_grid_kwh',
+    'purchased electricity': 'electricity_grid_kwh',
+    'energy consumed': 'electricity_grid_kwh',
+    'district heating': 'district_heating_kwh',
+    // Scope 3
+    'short haul flights': 'travel_flight_short_haul_km',
+    'long haul flights': 'travel_flight_long_haul_km',
+    'hotel stays': 'travel_hotel_stay_nights',
+    'waste (landfill)': 'waste_landfill_kg',
+    'landfill waste': 'waste_landfill_kg',
+    'waste (recycled)': 'waste_recycled_kg',
+    'recycled waste': 'waste_recycled_kg'
+  }
+};
+
+// --- AUTO-INFER SCOPE LOGIC ---
+// If the CSV doesn't specify a scope, we can guess it from the activity ID
+const ACTIVITY_TO_SCOPE_MAP = {
+  'mobile_diesel_liters': 'scope_1',
+  'mobile_petrol_liters': 'scope_1',
+  'stationary_natural_gas_therms': 'scope_1',
+  'generator_diesel_liters': 'scope_1',
+  'electricity_grid_kwh': 'scope_2',
+  'district_heating_kwh': 'scope_2',
+  'travel_flight_short_haul_km': 'scope_3',
+  'travel_flight_long_haul_km': 'scope_3',
+  'travel_hotel_stay_nights': 'scope_3',
+  'waste_landfill_kg': 'scope_3',
+  'waste_recycled_kg': 'scope_3'
+};
+
 function DataEntry() {
-  const navigate = useNavigate();
   const [organizations, setOrganizations] = useState([]);
   const [emissionsData, setEmissionsData] = useState([]);
+  const [metrics, setMetrics] = useState([]);
   
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const fileInputRef = useRef(null);
 
-  // UI State to toggle between Environmental, Social, and Governance forms
-  const [entryMode, setEntryMode] = useState('E'); // 'E', 'S', or 'G'
+  const [entryMode, setEntryMode] = useState('E'); 
+  const [envType, setEnvType] = useState('GHG'); 
 
-  // 1. State for Environmental (Carbon) Data
   const [envFormData, setEnvFormData] = useState({
-    organization_id: '',
-    scope_category: '',
-    activity_type: '',
-    raw_amount: ''
+    organization_id: '', scope_category: '', activity_type: '', raw_amount: ''
   });
 
-  // 2. State for Social Data (NEW)
+  const [genEnvFormData, setGenEnvFormData] = useState({
+    organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
+  });
+
   const [socFormData, setSocFormData] = useState({
-    organization_id: '',
-    pillar: 'S', 
-    metric_name: 'Employee Turnover Rate',
-    numeric_value: '',
-    unit_of_measure: '%',
-    text_value: ''
+    organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
   });
 
-  // 3. State for Governance Data
   const [govFormData, setGovFormData] = useState({
-    organization_id: '',
-    pillar: 'G', 
-    metric_name: 'Board Independence Ratio',
-    numeric_value: '',
-    unit_of_measure: '%',
-    text_value: ''
+    organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
   });
 
   useEffect(() => {
@@ -73,13 +117,15 @@ function DataEntry() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const [orgRes, emissionsRes] = await Promise.all([
+      const [orgRes, emissionsRes, metricsRes] = await Promise.all([
         axios.get('/api/organizations', config),
-        axios.get('/api/emissions', config).catch(() => ({ data: [] }))
+        axios.get('/api/emissions', config).catch(() => ({ data: [] })),
+        axios.get('/api/metrics', config).catch(() => ({ data: [] }))
       ]);
       
       setOrganizations(orgRes.data);
       setEmissionsData(emissionsRes.data);
+      setMetrics(metricsRes.data); 
     } catch (err) {
       setError("Failed to load data. Ensure you are logged in.");
     }
@@ -92,7 +138,6 @@ function DataEntry() {
     }));
   };
 
-  // --- SUBMIT: ENVIRONMENTAL DATA ---
   const handleEnvSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -115,7 +160,25 @@ function DataEntry() {
     }
   };
 
-  // --- SUBMIT: SOCIAL DATA (NEW) ---
+  const handleGenEnvSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('/api/observations', genEnvFormData, { headers: { Authorization: `Bearer ${token}` } });
+      
+      setGenEnvFormData({ ...genEnvFormData, numeric_value: '', text_value: '' }); 
+      fetchAllData();
+      showSuccess("General Environmental metric securely logged!");
+    } catch (err) {
+      setError('Error logging general environmental data. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSocSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -123,12 +186,11 @@ function DataEntry() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('/api/observations', socFormData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post('/api/observations', socFormData, { headers: { Authorization: `Bearer ${token}` } });
       
       setSocFormData({ ...socFormData, numeric_value: '', text_value: '' }); 
-      navigate('/'); 
+      fetchAllData();
+      showSuccess("Social metric securely logged!");
     } catch (err) {
       setError('Error logging social data. Please try again.');
     } finally {
@@ -136,7 +198,6 @@ function DataEntry() {
     }
   };
 
-  // --- SUBMIT: GOVERNANCE DATA ---
   const handleGovSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -144,12 +205,11 @@ function DataEntry() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('/api/observations', govFormData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post('/api/observations', govFormData, { headers: { Authorization: `Bearer ${token}` } });
       
       setGovFormData({ ...govFormData, numeric_value: '', text_value: '' }); 
-      navigate('/'); 
+      fetchAllData();
+      showSuccess("Governance metric securely logged!");
     } catch (err) {
       setError('Error logging governance data. Please try again.');
     } finally {
@@ -157,7 +217,7 @@ function DataEntry() {
     }
   };
 
-  // --- BULK CSV INGESTION ---
+ // --- UPGRADED: SMART BULK CSV INGESTION (WIDE-FORMAT UNPACKER) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -171,25 +231,75 @@ function DataEntry() {
       complete: async (results) => {
         try {
           const rawRows = results.data;
-          const payload = rawRows.map((row, index) => {
-            const org = organizations.find(o => o.name.toLowerCase().trim() === row.organization_name?.toLowerCase().trim());
-            if (!org) throw new Error(`Row ${index + 1}: Organization '${row.organization_name}' not found.`);
-            if (!row.scope_category || !row.activity_type || !row.raw_amount) throw new Error(`Row ${index + 1}: Missing required fields.`);
+          const fallbackOrgId = envFormData.organization_id || socFormData.organization_id || govFormData.organization_id;
+          
+          let payload = [];
 
-            return {
-              organization_id: org.unit_id,
-              scope_category: row.scope_category.trim(),
-              activity_type: row.activity_type.trim(),
-              raw_amount: Number(row.raw_amount)
-            };
+          rawRows.forEach((row, index) => {
+            // 1. Find the Company/Organization
+            const rawOrgName = row.Company || row.organization_name || row.Organization || row.Facility || row.company || '';
+            let finalOrgId = fallbackOrgId;
+            
+            if (rawOrgName) {
+              const org = organizations.find(o => o.name.toLowerCase().trim() === rawOrgName.toLowerCase().trim());
+              if (org) finalOrgId = org.unit_id;
+            }
+            if (!finalOrgId) return; // Skip if we really can't find an org
+
+            // 2. Unpack the "Wide" columns into individual database rows
+            // We look at every column header in this row
+            Object.keys(row).forEach(columnHeader => {
+              // Skip the metadata columns
+              if (['Year', 'Industry', 'Company', 'Organization', 'Facility'].includes(columnHeader)) return;
+
+              const rawAmount = row[columnHeader];
+              if (!rawAmount || rawAmount === '0' || rawAmount === '') return; // Skip empty cells
+
+              const normalizedColumn = columnHeader.toLowerCase().replace(/_/g, ' ').trim();
+              
+              // 3. Try to translate the column header into a strict DB Activity ID
+              let translatedActivity = SMART_MAPPER.activities[normalizedColumn] || normalizedColumn;
+              let translatedScope = SMART_MAPPER.scopes[normalizedColumn] || null;
+
+              // If it's a generic column like "Scope1 Emissions tCO2e", map it to a generic activity
+              if (normalizedColumn.includes('scope1') || normalizedColumn.includes('scope 1')) {
+                  translatedScope = 'scope_1';
+                  translatedActivity = 'mobile_diesel_liters'; // Default proxy if not specified
+              } else if (normalizedColumn.includes('scope2') || normalizedColumn.includes('scope 2') || normalizedColumn.includes('energy')) {
+                  translatedScope = 'scope_2';
+                  translatedActivity = 'electricity_grid_kwh';
+              } else if (normalizedColumn.includes('scope3') || normalizedColumn.includes('scope 3') || normalizedColumn.includes('waste')) {
+                  translatedScope = 'scope_3';
+                  translatedActivity = 'waste_landfill_kg';
+              }
+
+              // Auto-Infer scope if missing
+              if (!translatedScope && ACTIVITY_TO_SCOPE_MAP[translatedActivity]) {
+                translatedScope = ACTIVITY_TO_SCOPE_MAP[translatedActivity];
+              }
+
+              // Only push to payload if we successfully mapped it to an environmental scope
+              if (translatedScope && translatedActivity) {
+                payload.push({
+                  organization_id: finalOrgId,
+                  scope_category: translatedScope,
+                  activity_type: translatedActivity,
+                  raw_amount: Number(rawAmount.toString().replace(/,/g, ''))
+                });
+              }
+            });
           });
+
+          if (payload.length === 0) {
+            throw new Error("No valid environmental data found to unpack. Check organization names and column headers.");
+          }
 
           const token = localStorage.getItem('token');
           await axios.post('/api/emissions/bulk', payload, { headers: { Authorization: `Bearer ${token}` } });
 
           fileInputRef.current.value = ""; 
           fetchAllData();
-          showSuccess(`Successfully processed ${payload.length} bulk records! Check Audit Queue.`);
+          showSuccess(`Unpacked Wide CSV: Processed ${payload.length} individual metric records successfully!`);
         } catch (err) {
           setError(err.message || "Failed to process CSV. Check formatting.");
         } finally {
@@ -197,7 +307,7 @@ function DataEntry() {
         }
       },
       error: () => {
-        setError("Error reading CSV file.");
+        setError("Error parsing the CSV file.");
         setIsSubmitting(false);
       }
     });
@@ -225,7 +335,6 @@ function DataEntry() {
         {/* MANUAL ENTRY FORM CONTAINER */}
         <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
           
-          {/* THREE-WAY TAB TOGGLE */}
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
             <button 
               onClick={() => setEntryMode('E')}
@@ -251,62 +360,152 @@ function DataEntry() {
             Log Single {entryMode === 'E' ? 'Activity' : 'Metric'}
           </h2>
           
-          {/* ================= ENVIRONMENTAL FORM ================= */}
           {entryMode === 'E' && (
-            <form onSubmit={handleEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
-                <select name="organization_id" value={envFormData.organization_id} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                  <option value="">-- Select Organization --</option>
-                  {organizations.map(org => (<option key={org.unit_id} value={org.unit_id}>{org.name}</option>))}
-                </select>
+            <>
+              <div style={{ display: 'flex', background: '#e9ecef', borderRadius: '20px', padding: '4px', marginBottom: '20px' }}>
+                <button 
+                  onClick={() => setEnvType('GHG')}
+                  style={{ flex: 1, background: envType === 'GHG' ? '#198754' : 'transparent', color: envType === 'GHG' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+                >
+                  Carbon Tracker (GHG)
+                </button>
+                <button 
+                  onClick={() => setEnvType('GENERAL')}
+                  style={{ flex: 1, background: envType === 'GENERAL' ? '#198754' : 'transparent', color: envType === 'GENERAL' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+                >
+                  General Env. Metrics
+                </button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Emission Scope</label>
-                <select name="scope_category" value={envFormData.scope_category} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                  <option value="">-- Select Scope --</option>
-                  <option value="scope_1">Scope 1: Direct Emissions</option>
-                  <option value="scope_2">Scope 2: Purchased Electricity</option>
-                  <option value="scope_3">Scope 3: Value Chain</option>
-                </select>
-              </div>
+              {envType === 'GHG' ? (
+                <form onSubmit={handleEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
+                    <select name="organization_id" value={envFormData.organization_id} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                      <option value="">-- Select Organization --</option>
+                      {organizations.map(org => (<option key={org.unit_id} value={org.unit_id}>{org.name}</option>))}
+                    </select>
+                  </div>
 
-              {envFormData.scope_category && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Activity Type</label>
-                  <select name="activity_type" value={envFormData.activity_type} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                    <option value="">-- Select Activity --</option>
-                    {ACTIVITY_OPTIONS[envFormData.scope_category].map(activity => (
-                      <option key={activity.id} value={activity.id}>{activity.label}</option>
-                    ))}
-                  </select>
-                </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Emission Scope</label>
+                    <select name="scope_category" value={envFormData.scope_category} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                      <option value="">-- Select Scope --</option>
+                      <option value="scope_1">Scope 1: Direct Emissions</option>
+                      <option value="scope_2">Scope 2: Purchased Electricity</option>
+                      <option value="scope_3">Scope 3: Value Chain</option>
+                    </select>
+                  </div>
+
+                  {envFormData.scope_category && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Activity Type</label>
+                      <select name="activity_type" value={envFormData.activity_type} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                        <option value="">-- Select Activity --</option>
+                        {ACTIVITY_OPTIONS[envFormData.scope_category].map(activity => (
+                          <option key={activity.id} value={activity.id}>{activity.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {envFormData.activity_type && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Raw Amount</label>
+                      <input type="number" step="any" min="0" name="raw_amount" placeholder="Enter value..." value={envFormData.raw_amount} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                    </div>
+                  )}
+
+                  <button 
+                    type="submit" 
+                    disabled={!envFormData.activity_type || !envFormData.raw_amount || isSubmitting} 
+                    style={{ 
+                      padding: '12px 20px', 
+                      background: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? '#6c757d' : '#198754', 
+                      cursor: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? 'not-allowed' : 'pointer', 
+                      color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', marginTop: '10px' 
+                    }}
+                  >
+                    {isSubmitting ? 'Processing...' : 'Submit to GHG Ledger'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleGenEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
+                    <select 
+                      required 
+                      value={genEnvFormData.organization_id}
+                      onChange={(e) => setGenEnvFormData({...genEnvFormData, organization_id: e.target.value})}
+                      style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    >
+                      <option value="">-- Select Organization --</option>
+                      {organizations.map(org => (
+                        <option key={org.unit_id} value={org.unit_id}>{org.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Environmental Metric Focus</label>
+                    <select 
+                      required 
+                      value={genEnvFormData.metric_name}
+                      onChange={(e) => {
+                        const selectedMetric = metrics.find(m => m.name === e.target.value);
+                        setGenEnvFormData({
+                          ...genEnvFormData, 
+                          metric_name: selectedMetric?.name || '', 
+                          unit_of_measure: selectedMetric?.unit_of_measure || ''
+                        });
+                      }}
+                      style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    >
+                      <option value="">-- Select Dynamic Metric --</option>
+                      {metrics
+                        .filter(metric => metric.pillar === 'E')
+                        .map(metric => (
+                          <option key={metric.metric_id} value={metric.name}>
+                            {metric.name} {metric.unit_of_measure ? `(${metric.unit_of_measure})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {genEnvFormData.metric_name && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                        Result / Value {genEnvFormData.unit_of_measure ? `(${genEnvFormData.unit_of_measure})` : ''}
+                      </label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        required 
+                        min="0" 
+                        placeholder="Enter value..."
+                        value={genEnvFormData.numeric_value}
+                        onChange={(e) => setGenEnvFormData({...genEnvFormData, numeric_value: e.target.value})}
+                        style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      />
+                    </div>
+                  )}
+
+                  <button 
+                    type="submit" 
+                    disabled={isSubmitting || !genEnvFormData.metric_name}
+                    style={{ 
+                      background: (isSubmitting || !genEnvFormData.metric_name) ? '#6c757d' : '#198754', 
+                      color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: (isSubmitting || !genEnvFormData.metric_name) ? 'not-allowed' : 'pointer', marginTop: '10px' 
+                    }}
+                  >
+                    {isSubmitting ? 'Logging Data...' : 'Submit Env. Log'}
+                  </button>
+                </form>
               )}
-
-              {envFormData.activity_type && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Raw Amount</label>
-                  <input type="number" step="any" min="0" name="raw_amount" placeholder="Enter value..." value={envFormData.raw_amount} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
-                </div>
-              )}
-
-              <button 
-                type="submit" 
-                disabled={!envFormData.activity_type || !envFormData.raw_amount || isSubmitting} 
-                style={{ 
-                  padding: '12px 20px', 
-                  background: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? '#6c757d' : '#198754', 
-                  cursor: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? 'not-allowed' : 'pointer', 
-                  color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', marginTop: '10px' 
-                }}
-              >
-                {isSubmitting ? 'Processing...' : 'Submit to Ledger'}
-              </button>
-            </form>
+            </>
           )}
 
-          {/* ================= SOCIAL FORM (NEW) ================= */}
+          {/* ================= SOCIAL FORM ================= */}
           {entryMode === 'S' && (
             <form onSubmit={handleSocSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -330,44 +529,50 @@ function DataEntry() {
                   required 
                   value={socFormData.metric_name}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    let unit = '%';
-                    if (val.includes('Hours')) unit = 'Hours';
-                    if (val.includes('Rate') && val.includes('Injury')) unit = 'Per 1M Hours';
-                    setSocFormData({...socFormData, metric_name: val, unit_of_measure: unit});
+                    const selectedMetric = metrics.find(m => m.name === e.target.value);
+                    setSocFormData({
+                      ...socFormData, 
+                      metric_name: selectedMetric?.name || '', 
+                      unit_of_measure: selectedMetric?.unit_of_measure || ''
+                    });
                   }}
                   style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
                 >
-                  <option value="Employee Turnover Rate">Employee Turnover Rate</option>
-                  <option value="Gender Pay Gap">Gender Pay Gap</option>
-                  <option value="Diversity Ratio (Management)">Diversity Ratio (Management)</option>
-                  <option value="Lost Time Injury Rate (LTIR)">Lost Time Injury Rate (LTIR)</option>
-                  <option value="Average Training Hours">Average Training Hours per Employee</option>
+                  <option value="">-- Select Dynamic Metric --</option>
+                  {metrics
+                    .filter(metric => metric.pillar === 'S')
+                    .map(metric => (
+                      <option key={metric.metric_id} value={metric.name}>
+                        {metric.name} {metric.unit_of_measure ? `(${metric.unit_of_measure})` : ''}
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
-                  Result / Value ({socFormData.unit_of_measure})
-                </label>
-                <input 
-                  type="number" 
-                  step="any"
-                  required 
-                  min="0" 
-                  placeholder={`e.g., ${socFormData.unit_of_measure === '%' ? '15' : '40'}`}
-                  value={socFormData.numeric_value}
-                  onChange={(e) => setSocFormData({...socFormData, numeric_value: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-                />
-              </div>
+              {socFormData.metric_name && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                    Result / Value {socFormData.unit_of_measure ? `(${socFormData.unit_of_measure})` : ''}
+                  </label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    required 
+                    min="0" 
+                    placeholder="Enter value..."
+                    value={socFormData.numeric_value}
+                    onChange={(e) => setSocFormData({...socFormData, numeric_value: e.target.value})}
+                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+              )}
 
               <button 
                 type="submit" 
-                disabled={isSubmitting}
+                disabled={isSubmitting || !socFormData.metric_name}
                 style={{ 
-                  background: isSubmitting ? '#6c757d' : '#0d6efd', 
-                  color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '10px' 
+                  background: (isSubmitting || !socFormData.metric_name) ? '#6c757d' : '#0d6efd', 
+                  color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: (isSubmitting || !socFormData.metric_name) ? 'not-allowed' : 'pointer', marginTop: '10px' 
                 }}
               >
                 {isSubmitting ? 'Logging Data...' : 'Submit Social Log'}
@@ -394,59 +599,67 @@ function DataEntry() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Metric Focus</label>
+                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Governance Metric Focus</label>
                 <select 
                   required 
                   value={govFormData.metric_name}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    let unit = '%';
-                    if (val.includes('Audit') || val.includes('Training')) unit = 'Status';
-                    setGovFormData({...govFormData, metric_name: val, unit_of_measure: unit});
+                    const selectedMetric = metrics.find(m => m.name === e.target.value);
+                    setGovFormData({
+                      ...govFormData, 
+                      metric_name: selectedMetric?.name || '', 
+                      unit_of_measure: selectedMetric?.unit_of_measure || ''
+                    });
                   }}
                   style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
                 >
-                  <option value="Board Independence Ratio">Board Independence Ratio</option>
-                  <option value="Women on Board Ratio">Women on Board Ratio</option>
-                  <option value="Data Privacy Audit Completion">Data Privacy Audit Completion</option>
-                  <option value="Anti-Bribery Training Coverage">Anti-Bribery Training Coverage</option>
+                  <option value="">-- Select Dynamic Metric --</option>
+                  {metrics
+                    .filter(metric => metric.pillar === 'G')
+                    .map(metric => (
+                      <option key={metric.metric_id} value={metric.name}>
+                        {metric.name} {metric.unit_of_measure ? `(${metric.unit_of_measure})` : ''}
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
-                  Result / Value ({govFormData.unit_of_measure})
-                </label>
-                {govFormData.unit_of_measure === 'Status' ? (
-                  <select 
-                    required
-                    onChange={(e) => setGovFormData({...govFormData, text_value: e.target.value, numeric_value: e.target.value === 'Pass' ? 100 : 0})}
-                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-                  >
-                    <option value="">Select Status...</option>
-                    <option value="Pass">Pass / Completed</option>
-                    <option value="Fail">Fail / Incomplete</option>
-                  </select>
-                ) : (
-                  <input 
-                    type="number" 
-                    required 
-                    min="0" 
-                    max="100"
-                    placeholder="e.g., 45"
-                    value={govFormData.numeric_value}
-                    onChange={(e) => setGovFormData({...govFormData, numeric_value: e.target.value})}
-                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-                  />
-                )}
-              </div>
+              {govFormData.metric_name && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                    Result / Value {govFormData.unit_of_measure ? `(${govFormData.unit_of_measure})` : ''}
+                  </label>
+                  {govFormData.unit_of_measure === 'Status' ? (
+                    <select 
+                      required
+                      onChange={(e) => setGovFormData({...govFormData, text_value: e.target.value, numeric_value: e.target.value === 'Pass' ? 100 : 0})}
+                      style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    >
+                      <option value="">Select Status...</option>
+                      <option value="Pass">Pass / Completed</option>
+                      <option value="Fail">Fail / Incomplete</option>
+                    </select>
+                  ) : (
+                    <input 
+                      type="number" 
+                      required 
+                      min="0" 
+                      max="100"
+                      placeholder="e.g., 45"
+                      value={govFormData.numeric_value}
+                      onChange={(e) => setGovFormData({...govFormData, numeric_value: e.target.value})}
+                      style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    />
+                  )}
+                </div>
+              )}
 
               <button 
                 type="submit" 
-                disabled={isSubmitting}
+                disabled={isSubmitting || !govFormData.metric_name}
                 style={{ 
-                  background: isSubmitting ? '#6c757d' : '#e65100', 
-                  color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '10px' 
+                  background: (isSubmitting || !govFormData.metric_name) ? '#6c757d' : '#e65100', 
+                  color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: (isSubmitting || !govFormData.metric_name) ? 'not-allowed' : 'pointer', marginTop: '10px' 
                 }}
               >
                 {isSubmitting ? 'Logging Data...' : 'Submit Governance Log'}
@@ -461,8 +674,8 @@ function DataEntry() {
           <p style={{ color: '#1976d2', fontSize: '0.9rem', marginBottom: '20px' }}>Upload hundreds of records instantly. Ensure your headers match the required format exactly.</p>
           
           <div style={{ background: '#fff', padding: '15px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.8rem', color: '#666', textAlign: 'left', width: '100%', border: '1px solid #bbdefb' }}>
-            <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>Required CSV Headers:</p>
-            <code style={{ background: '#f1f3f5', padding: '2px 5px' }}>organization_name, scope_category, activity_type, raw_amount</code>
+            <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>Fuzzy Matching Enabled:</p>
+            <p style={{ margin: '0', fontSize: '0.75rem' }}>Upload files with headers like: <code>Facility</code>, <code>Metric</code>, <code>Value</code></p>
           </div>
 
           <label style={{ cursor: 'pointer', background: '#0d6efd', color: 'white', padding: '12px 20px', borderRadius: '4px', fontWeight: 'bold', width: '100%', display: 'inline-block' }}>
