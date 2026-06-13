@@ -328,6 +328,45 @@ app.put('/api/emissions/bulk-approve', authorize, async (req, res) => {
 });
 
 // ==========================================
+// AUTOMATED FRAMEWORK REPORTING
+// ==========================================
+app.get('/api/reports/framework', authorize, async (req, res) => {
+    try {
+        const { framework, year } = req.query;
+
+        if (!framework || !year) {
+            return res.status(400).json({ error: "Framework and year parameters are required." });
+        }
+
+        // The Engine: Join Emissions with Mappings, Filter by Approved & Year, then SUM the totals.
+        const query = `
+            SELECT 
+                fm.framework_code,
+                fm.description as disclosure_requirement,
+                SUM(e.calculated_co2e) as total_tco2e,
+                SUM(e.raw_amount) as total_raw_amount
+            FROM ghg_emissions e
+            JOIN Organization_Unit u ON e.organization_id = u.unit_id
+            JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
+            WHERE u.company_id = $1 
+              AND e.status = 'Approved'
+              AND fm.framework_name = $2
+              -- Assuming your data has timestamps in created_at, we filter by the requested year
+              AND EXTRACT(YEAR FROM e.created_at) = $3 
+            GROUP BY fm.framework_code, fm.description
+            ORDER BY fm.framework_code;
+        `;
+
+        const reportData = await pool.query(query, [req.user.company_id, framework, year]);
+        
+        res.json(reportData.rows);
+    } catch (err) {
+        console.error("Report Engine Error:", err.message);
+        res.status(500).json({ error: "Failed to compile framework report." });
+    }
+});
+
+// ==========================================
 // NET-ZERO TARGET ROUTES (Multi-Tenant Protected)
 // ==========================================
 
