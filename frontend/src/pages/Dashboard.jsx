@@ -9,6 +9,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 // Import your new logo
 import myLogo from '../assets/logo.png';
+import ReportGenerator from './ReportGenerator';
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
@@ -454,6 +455,11 @@ function Dashboard() {
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>{govCount}</p>
         </div>
 
+      </div>
+
+      {/* --- ADDED: REPORT GENERATOR --- */}
+      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'center' }}>
+        <ReportGenerator />
       </div>
 
       {/* --- AI INSIGHTS ENGINE --- */}
