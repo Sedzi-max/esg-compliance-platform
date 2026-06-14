@@ -63,6 +63,9 @@ function ReportGenerator() {
             <option value="GRI">GRI (Global Reporting Initiative)</option>
             <option value="CSRD">CSRD (European Standard)</option>
             <option value="TCFD">TCFD (Financial Disclosures)</option>
+            <option value="GSE_MANDATORY">GSE Mandatory Disclosures</option>
+            <option value="SDG">UN Sustainable Development Goals (SDG)</option>
+        
           </select>
         </div>
 

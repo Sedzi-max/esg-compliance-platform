@@ -10,6 +10,9 @@ import jsPDF from 'jspdf';
 // Import your new logo
 import myLogo from '../assets/logo.png';
 import ReportGenerator from './ReportGenerator';
+import MaterialityMatrix from '../components/MaterialityMatrix';
+import SDGTracker from '../components/SDGTracker';
+import SectorOnboarding from '../components/SectorOnboarding';
 
 function Dashboard() {
   const [rawObservations, setRawObservations] = useState([]);
@@ -462,6 +465,12 @@ function Dashboard() {
         <ReportGenerator />
       </div>
 
+      {/* --- NEW: SECTOR ONBOARDING WIZARD --- */}
+      <SectorOnboarding />
+
+      {/* --- ADDED: MATERIALITY MATRIX --- */}
+      <MaterialityMatrix />
+
       {/* --- AI INSIGHTS ENGINE --- */}
       {dynamicInsights.length > 0 && (
         <div style={{ marginBottom: '40px' }}>
@@ -554,6 +563,11 @@ function Dashboard() {
       {/* --- SECONDARY DATA VISUALIZATION SECTION (THE BLEND) --- */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '40px' }}>
         
+        {/* Drop it right here! */}
+        <div style={{ gridColumn: '1 / -1' }}> 
+          <SDGTracker />
+        </div>
+
         {/* CHART 1: Emissions by Scope */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Emissions by Scope</h3>

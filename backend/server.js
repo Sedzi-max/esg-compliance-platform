@@ -6,12 +6,27 @@ const jwt = require('jsonwebtoken');
 const authorize = require('./middleware/authorize'); // Our bouncer
 require('dotenv').config();
 const CARBON_MULTIPLIERS = require('./utils/carbonFactors');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+// NEW: Expose the uploads folder so the React frontend can fetch the files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Setup local storage for files (MVP approach)
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/') // Make sure to create an 'uploads' folder in your backend directory!
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname))
+  }
+});
+const upload = multer({ storage: storage });
 
 // ==========================================
 // HEALTH CHECK ROUTE (Unprotected)
@@ -126,30 +141,24 @@ app.get('/api/metrics', authorize, async (req, res) => {
 // ESG OBSERVATION (DATA ENTRY) ROUTES (Multi-Tenant Protected)
 // ==========================================
 
-// CREATE a new ESG Observation (Updated for new Frontend Payload)
-app.post('/api/observations', authorize, async (req, res) => {
+// CREATE a new ESG Observation (Updated for new Frontend Payload with File Upload)
+app.post('/api/observations', authorize, upload.single('evidence_file'), async (req, res) => {
     try {
-        // 1. Destructure EXACTLY what the React frontend is sending
-        const { organization_id, pillar, metric_name, numeric_value, unit_of_measure, text_value } = req.body;
+        // Because we are uploading a file, data comes in req.body (strings) and req.file (the physical file)
+        const { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
+        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-        // 2. Map the frontend data into the database
-        const newObs = await pool.query(
-            `INSERT INTO ESG_Observation 
-            (unit_id, pillar, metric_name, numeric_value, unit_of_measure, text_value, timestamp) 
-            VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *`,
-            [
-                organization_id,          // $1 (Mapped to unit_id)
-                pillar,                   // $2
-                metric_name,              // $3
-                numeric_value || null,    // $4 (Prevents errors if empty)
-                unit_of_measure || null,  // $5
-                text_value || null        // $6
-            ]
-        );
-        res.json(newObs.rows[0]);
+        const result = await pool.query(`
+            INSERT INTO Observations 
+            (organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_file_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *;
+        `, [organization_id, metric_name, numeric_value || null, text_value, unit_of_measure, pillar, evidence_url]);
+
+        res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
-        console.error("Database Insert Error:", err.message);
-        res.status(500).json({ error: "Failed to log observation" });
+        console.error("Error saving observation:", err);
+        res.status(500).json({ error: "Failed to log data." });
     }
 });
 
@@ -207,20 +216,22 @@ app.get('/api/emissions', authorize, async (req, res) => {
         res.status(500).send('Server error fetching emissions');
     }
 });
-
-// 2. POST Route: The Carbon Conversion Engine
-app.post('/api/emissions', authorize, async (req, res) => {
+// 2. POST Route: The Carbon Conversion Engine (Upgraded for External Assurance)
+app.post('/api/emissions', authorize, upload.single('evidence_file'), async (req, res) => {
     try {
         const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
+
+        // Calculate Carbon Footprint using our dynamic multipliers
         const multiplier = CARBON_MULTIPLIERS[scope_category][activity_type];
-        const calculated_co2e = raw_amount * multiplier;
+        const calculated_co2e = Number(raw_amount) * multiplier;
 
         const newEmission = await pool.query(
             `INSERT INTO ghg_emissions 
-            (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
-            VALUES ($1, $2, $3, $4, $5) 
+            (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_file_url) 
+            VALUES ($1, $2, $3, $4, $5, $6) 
             RETURNING *`,
-            [organization_id, scope_category, activity_type, raw_amount, calculated_co2e]
+            [organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url]
         );
 
         res.json(newEmission.rows[0]);
@@ -571,6 +582,71 @@ app.put('/api/users/:id/role', authorize, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: "Failed to update user role" });
+    }
+});
+
+// ==========================================
+// MATERIALITY ASSESSMENT ROUTES
+// ==========================================
+app.post('/api/materiality', authorize, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        const { organization_id, assessment_year, topics, overwrite_all } = req.body;
+
+        if (!organization_id) {
+            return res.status(400).json({ error: "Organization ID is required." });
+        }
+
+        await client.query('BEGIN');
+
+        // NEW: If deploying a starter kit, wipe the slate clean first!
+        if (overwrite_all) {
+            await client.query(`
+                DELETE FROM Materiality_Scores 
+                WHERE organization_id = $1 AND assessment_year = $2
+            `, [organization_id, assessment_year]);
+        }
+
+        for (const topic of topics) {
+            await client.query(`
+                INSERT INTO Materiality_Scores 
+                (organization_id, topic_name, stakeholder_importance_score, business_impact_score, assessment_year)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (organization_id, topic_name, assessment_year) 
+                DO UPDATE SET 
+                    stakeholder_importance_score = EXCLUDED.stakeholder_importance_score,
+                    business_impact_score = EXCLUDED.business_impact_score;
+            `, [organization_id, topic.name, topic.y, topic.x, assessment_year]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: "Materiality profile saved successfully!" });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Error saving materiality:", err.message);
+        res.status(500).json({ error: "Failed to save materiality scores." });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/materiality/:orgId', authorize, async (req, res) => {
+    try {
+        const { orgId } = req.params;
+        const currentYear = new Date().getFullYear();
+        
+        const result = await pool.query(`
+            SELECT topic_name as name, stakeholder_importance_score as y, business_impact_score as x
+            FROM Materiality_Scores
+            WHERE organization_id = $1 AND assessment_year = $2
+        `, [orgId, currentYear]);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching materiality:", err.message);
+        res.status(500).json({ error: "Failed to fetch scores." });
     }
 });
 

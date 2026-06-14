@@ -38,7 +38,6 @@ const SMART_MAPPER = {
     'supply chain': 'scope_3'
   },
   activities: {
-    // Scope 1
     'diesel': 'mobile_diesel_liters',
     'diesel (mobile fleet)': 'mobile_diesel_liters',
     'mobile diesel': 'mobile_diesel_liters',
@@ -46,13 +45,11 @@ const SMART_MAPPER = {
     'gasoline': 'mobile_petrol_liters',
     'natural gas': 'stationary_natural_gas_therms',
     'generator diesel': 'generator_diesel_liters',
-    // Scope 2
     'grid electricity': 'electricity_grid_kwh',
     'electricity': 'electricity_grid_kwh',
     'purchased electricity': 'electricity_grid_kwh',
     'energy consumed': 'electricity_grid_kwh',
     'district heating': 'district_heating_kwh',
-    // Scope 3
     'short haul flights': 'travel_flight_short_haul_km',
     'long haul flights': 'travel_flight_long_haul_km',
     'hotel stays': 'travel_hotel_stay_nights',
@@ -63,8 +60,6 @@ const SMART_MAPPER = {
   }
 };
 
-// --- AUTO-INFER SCOPE LOGIC ---
-// If the CSV doesn't specify a scope, we can guess it from the activity ID
 const ACTIVITY_TO_SCOPE_MAP = {
   'mobile_diesel_liters': 'scope_1',
   'mobile_petrol_liters': 'scope_1',
@@ -91,21 +86,24 @@ function DataEntry() {
 
   const [entryMode, setEntryMode] = useState('E'); 
   const [envType, setEnvType] = useState('GHG'); 
+  
+  const [filePreviewName, setFilePreviewName] = useState("");
 
+  // UPDATED: Added evidence_file field to state
   const [envFormData, setEnvFormData] = useState({
-    organization_id: '', scope_category: '', activity_type: '', raw_amount: ''
+    organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null
   });
 
   const [genEnvFormData, setGenEnvFormData] = useState({
-    organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
+    organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null
   });
 
   const [socFormData, setSocFormData] = useState({
-    organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
+    organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null
   });
 
   const [govFormData, setGovFormData] = useState({
-    organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: ''
+    organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null
   });
 
   useEffect(() => {
@@ -138,6 +136,18 @@ function DataEntry() {
     }));
   };
 
+  const handleFileChange = (e, formType) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (formType === 'ghg') setEnvFormData({ ...envFormData, evidence_file: file });
+      if (formType === 'genEnv') setGenEnvFormData({ ...genEnvFormData, evidence_file: file });
+      if (formType === 'soc') setSocFormData({ ...socFormData, evidence_file: file });
+      if (formType === 'gov') setGovFormData({ ...govFormData, evidence_file: file });
+      setFilePreviewName(file.name);
+    }
+  };
+
+  // UPDATED: Converted to FormData submission for physical files
   const handleEnvSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -145,14 +155,27 @@ function DataEntry() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('/api/emissions', 
-        { ...envFormData, raw_amount: Number(envFormData.raw_amount) }, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const submitData = new FormData();
       
-      setEnvFormData({ ...envFormData, scope_category: '', activity_type: '', raw_amount: '' });
+      submitData.append('organization_id', envFormData.organization_id);
+      submitData.append('scope_category', envFormData.scope_category);
+      submitData.append('activity_type', envFormData.activity_type);
+      submitData.append('raw_amount', envFormData.raw_amount);
+      if (envFormData.evidence_file) {
+        submitData.append('evidence_file', envFormData.evidence_file);
+      }
+
+      await axios.post('/api/emissions', submitData, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      setEnvFormData({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
+      setFilePreviewName('');
       fetchAllData();
-      showSuccess("GHG Emission securely logged and sent to Audit Queue!");
+      showSuccess("GHG Emission securely logged with verification invoice!");
     } catch (err) {
       setError("Failed to save data. Please check your connection.");
     } finally {
@@ -160,64 +183,55 @@ function DataEntry() {
     }
   };
 
-  const handleGenEnvSubmit = async (e) => {
-    e.preventDefault();
+  const submitObservationWithEvidence = async (formDataState, successMessage, resetStateFn) => {
     setIsSubmitting(true);
     setError(null);
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('/api/observations', genEnvFormData, { headers: { Authorization: `Bearer ${token}` } });
+      const submitData = new FormData();
+      submitData.append('organization_id', formDataState.organization_id);
+      submitData.append('pillar', formDataState.pillar);
+      submitData.append('metric_name', formDataState.metric_name);
+      submitData.append('unit_of_measure', formDataState.unit_of_measure || '');
       
-      setGenEnvFormData({ ...genEnvFormData, numeric_value: '', text_value: '' }); 
+      if (formDataState.numeric_value) submitData.append('numeric_value', formDataState.numeric_value);
+      if (formDataState.text_value) submitData.append('text_value', formDataState.text_value);
+      if (formDataState.evidence_file) submitData.append('evidence_file', formDataState.evidence_file);
+
+      await axios.post('/api/observations', submitData, { 
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        } 
+      });
+      
+      resetStateFn({ ...formDataState, numeric_value: '', text_value: '', evidence_file: null }); 
+      setFilePreviewName(''); 
       fetchAllData();
-      showSuccess("General Environmental metric securely logged!");
+      showSuccess(successMessage);
     } catch (err) {
-      setError('Error logging general environmental data. Please try again.');
+      setError(`Error logging ${formDataState.pillar} data. Please try again.`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleSocSubmit = async (e) => {
+  const handleGenEnvSubmit = (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post('/api/observations', socFormData, { headers: { Authorization: `Bearer ${token}` } });
-      
-      setSocFormData({ ...socFormData, numeric_value: '', text_value: '' }); 
-      fetchAllData();
-      showSuccess("Social metric securely logged!");
-    } catch (err) {
-      setError('Error logging social data. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
+    submitObservationWithEvidence(genEnvFormData, "General Environmental metric securely logged with evidence!", setGenEnvFormData);
   };
 
-  const handleGovSubmit = async (e) => {
+  const handleSocSubmit = (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post('/api/observations', govFormData, { headers: { Authorization: `Bearer ${token}` } });
-      
-      setGovFormData({ ...govFormData, numeric_value: '', text_value: '' }); 
-      fetchAllData();
-      showSuccess("Governance metric securely logged!");
-    } catch (err) {
-      setError('Error logging governance data. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
+    submitObservationWithEvidence(socFormData, "Social metric securely logged with evidence!", setSocFormData);
   };
 
- // --- UPGRADED: SMART BULK CSV INGESTION (WIDE-FORMAT UNPACKER) ---
+  const handleGovSubmit = (e) => {
+    e.preventDefault();
+    submitObservationWithEvidence(govFormData, "Governance metric securely logged with evidence!", setGovFormData);
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -236,7 +250,6 @@ function DataEntry() {
           let payload = [];
 
           rawRows.forEach((row, index) => {
-            // 1. Find the Company/Organization
             const rawOrgName = row.Company || row.organization_name || row.Organization || row.Facility || row.company || '';
             let finalOrgId = fallbackOrgId;
             
@@ -244,41 +257,34 @@ function DataEntry() {
               const org = organizations.find(o => o.name.toLowerCase().trim() === rawOrgName.toLowerCase().trim());
               if (org) finalOrgId = org.unit_id;
             }
-            if (!finalOrgId) return; // Skip if we really can't find an org
+            if (!finalOrgId) return; 
 
-            // 2. Unpack the "Wide" columns into individual database rows
-            // We look at every column header in this row
             Object.keys(row).forEach(columnHeader => {
-              // Skip the metadata columns
               if (['Year', 'Industry', 'Company', 'Organization', 'Facility'].includes(columnHeader)) return;
 
               const rawAmount = row[columnHeader];
-              if (!rawAmount || rawAmount === '0' || rawAmount === '') return; // Skip empty cells
+              if (!rawAmount || rawAmount === '0' || rawAmount === '') return; 
 
               const normalizedColumn = columnHeader.toLowerCase().replace(/_/g, ' ').trim();
               
-              // 3. Try to translate the column header into a strict DB Activity ID
               let translatedActivity = SMART_MAPPER.activities[normalizedColumn] || normalizedColumn;
               let translatedScope = SMART_MAPPER.scopes[normalizedColumn] || null;
 
-              // If it's a generic column like "Scope1 Emissions tCO2e", map it to a generic activity
               if (normalizedColumn.includes('scope1') || normalizedColumn.includes('scope 1')) {
-                  translatedScope = 'scope_1';
-                  translatedActivity = 'mobile_diesel_liters'; // Default proxy if not specified
+                translatedScope = 'scope_1';
+                translatedActivity = 'mobile_diesel_liters'; 
               } else if (normalizedColumn.includes('scope2') || normalizedColumn.includes('scope 2') || normalizedColumn.includes('energy')) {
-                  translatedScope = 'scope_2';
-                  translatedActivity = 'electricity_grid_kwh';
+                translatedScope = 'scope_2';
+                translatedActivity = 'electricity_grid_kwh';
               } else if (normalizedColumn.includes('scope3') || normalizedColumn.includes('scope 3') || normalizedColumn.includes('waste')) {
-                  translatedScope = 'scope_3';
-                  translatedActivity = 'waste_landfill_kg';
+                translatedScope = 'scope_3';
+                translatedActivity = 'waste_landfill_kg';
               }
 
-              // Auto-Infer scope if missing
               if (!translatedScope && ACTIVITY_TO_SCOPE_MAP[translatedActivity]) {
                 translatedScope = ACTIVITY_TO_SCOPE_MAP[translatedActivity];
               }
 
-              // Only push to payload if we successfully mapped it to an environmental scope
               if (translatedScope && translatedActivity) {
                 payload.push({
                   organization_id: finalOrgId,
@@ -323,6 +329,30 @@ function DataEntry() {
     return map[scope] || scope;
   };
 
+  const EvidenceAttachmentUI = ({ formType }) => (
+    <div style={{ background: '#f8f9fa', border: '2px dashed #ced4da', borderRadius: '8px', padding: '20px', textAlign: 'center', transition: 'border 0.3s', marginTop: '10px' }}>
+      <label style={{ display: 'block', fontWeight: 'bold', color: '#495057', marginBottom: '10px' }}>
+        📎 Attach Audit Evidence (Optional)
+      </label>
+      <input 
+        type="file" id={`evidence_upload_${formType}`} onChange={(e) => handleFileChange(e, formType)}
+        style={{ display: 'none' }} accept=".pdf,.jpg,.jpeg,.png,.csv"
+      />
+      <button 
+        type="button" 
+        onClick={() => document.getElementById(`evidence_upload_${formType}`).click()}
+        style={{ background: '#e9ecef', color: '#495057', border: '1px solid #ced4da', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+      >
+        Browse Files
+      </button>
+      {filePreviewName && (
+        <p style={{ marginTop: '10px', color: '#198754', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: 0 }}>
+          ✓ {filePreviewName} attached
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
       <h1 style={{ marginBottom: '30px', color: '#212529' }}>Data Ingestion</h1>
@@ -337,19 +367,19 @@ function DataEntry() {
           
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
             <button 
-              onClick={() => setEntryMode('E')}
+              onClick={() => { setEntryMode('E'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'E' ? '#198754' : '#e9ecef', color: entryMode === 'E' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🌱 Env.
             </button>
             <button 
-              onClick={() => setEntryMode('S')}
+              onClick={() => { setEntryMode('S'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'S' ? '#0d6efd' : '#e9ecef', color: entryMode === 'S' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🤝 Social
             </button>
             <button 
-              onClick={() => setEntryMode('G')}
+              onClick={() => { setEntryMode('G'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'G' ? '#e65100' : '#e9ecef', color: entryMode === 'G' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🏛️ Gov.
@@ -364,13 +394,13 @@ function DataEntry() {
             <>
               <div style={{ display: 'flex', background: '#e9ecef', borderRadius: '20px', padding: '4px', marginBottom: '20px' }}>
                 <button 
-                  onClick={() => setEnvType('GHG')}
+                  onClick={() => { setEnvType('GHG'); setFilePreviewName(''); }}
                   style={{ flex: 1, background: envType === 'GHG' ? '#198754' : 'transparent', color: envType === 'GHG' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   Carbon Tracker (GHG)
                 </button>
                 <button 
-                  onClick={() => setEnvType('GENERAL')}
+                  onClick={() => { setEnvType('GENERAL'); setFilePreviewName(''); }}
                   style={{ flex: 1, background: envType === 'GENERAL' ? '#198754' : 'transparent', color: envType === 'GENERAL' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   General Env. Metrics
@@ -414,6 +444,11 @@ function DataEntry() {
                       <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Raw Amount</label>
                       <input type="number" step="any" min="0" name="raw_amount" placeholder="Enter value..." value={envFormData.raw_amount} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
                     </div>
+                  )}
+
+                  {/* NEW: Evidence File UI added directly into Carbon Tracker */}
+                  {envFormData.activity_type && (
+                    <EvidenceAttachmentUI formType="ghg" />
                   )}
 
                   <button 
@@ -478,17 +513,15 @@ function DataEntry() {
                         Result / Value {genEnvFormData.unit_of_measure ? `(${genEnvFormData.unit_of_measure})` : ''}
                       </label>
                       <input 
-                        type="number" 
-                        step="any"
-                        required 
-                        min="0" 
-                        placeholder="Enter value..."
+                        type="number" step="any" required min="0" placeholder="Enter value..."
                         value={genEnvFormData.numeric_value}
                         onChange={(e) => setGenEnvFormData({...genEnvFormData, numeric_value: e.target.value})}
                         style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
                       />
                     </div>
                   )}
+
+                  <EvidenceAttachmentUI formType="genEnv" />
 
                   <button 
                     type="submit" 
@@ -555,17 +588,15 @@ function DataEntry() {
                     Result / Value {socFormData.unit_of_measure ? `(${socFormData.unit_of_measure})` : ''}
                   </label>
                   <input 
-                    type="number" 
-                    step="any"
-                    required 
-                    min="0" 
-                    placeholder="Enter value..."
+                    type="number" step="any" required min="0" placeholder="Enter value..."
                     value={socFormData.numeric_value}
                     onChange={(e) => setSocFormData({...socFormData, numeric_value: e.target.value})}
-                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}  
                   />
                 </div>
               )}
+
+              <EvidenceAttachmentUI formType="soc" />
 
               <button 
                 type="submit" 
@@ -641,11 +672,7 @@ function DataEntry() {
                     </select>
                   ) : (
                     <input 
-                      type="number" 
-                      required 
-                      min="0" 
-                      max="100"
-                      placeholder="e.g., 45"
+                      type="number" required min="0" max="100" placeholder="e.g., 45"
                       value={govFormData.numeric_value}
                       onChange={(e) => setGovFormData({...govFormData, numeric_value: e.target.value})}
                       style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
@@ -653,6 +680,8 @@ function DataEntry() {
                   )}
                 </div>
               )}
+
+              <EvidenceAttachmentUI formType="gov" />
 
               <button 
                 type="submit" 

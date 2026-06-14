@@ -6,9 +6,8 @@ function AuditQueue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // Added to prevent double-clicks
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch the data when the page loads
   useEffect(() => {
     fetchEmissions();
   }, []);
@@ -32,7 +31,6 @@ function AuditQueue() {
     }
   };
 
-  // The function that talks to your single PUT route
   const handleStatusUpdate = async (id, newStatus) => {
     try {
       const token = localStorage.getItem('token');
@@ -50,7 +48,6 @@ function AuditQueue() {
     }
   };
 
-  // NEW: The function that bulk approves everything at once
   const handleApproveAll = async () => {
     if (!window.confirm("Are you sure you want to approve ALL pending records? This will instantly populate your Dashboard charts.")) return;
     
@@ -64,7 +61,7 @@ function AuditQueue() {
       setSuccessMsg(`✅ ${response.data.message || 'All pending records approved!'}`);
       setTimeout(() => setSuccessMsg(''), 5000);
       
-      fetchEmissions(); // Refresh the table
+      fetchEmissions();
     } catch (err) {
       console.error("Error bulk approving:", err);
       setError("Failed to bulk approve records.");
@@ -73,7 +70,6 @@ function AuditQueue() {
     }
   };
 
-  // Helper to make the scopes look nice
   const formatScope = (scope) => {
     const map = { scope_1: 'Scope 1', scope_2: 'Scope 2', scope_3: 'Scope 3' };
     return map[scope] || scope;
@@ -81,24 +77,22 @@ function AuditQueue() {
 
   if (loading) return <p style={{ textAlign: 'center', marginTop: '50px', color: '#666' }}>Loading Audit Queue...</p>;
 
-  // Count how many items actually need attention
   const pendingCount = emissions.filter(e => e.status === 'Pending').length;
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
       
-      {/* UPGRADED HEADER WITH BULK APPROVE BUTTON */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <h1 style={{ margin: 0, color: '#212529' }}>Admin Audit Queue</h1>
+      {/* --- RESPONSIVE HEADER --- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #eee', paddingBottom: '10px', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+          <h1 style={{ margin: 0, color: '#212529', lineHeight: '1.2' }}>Admin Audit Queue</h1>
           {pendingCount > 0 && (
-            <span style={{ background: '#ffc107', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem' }}>
+            <span style={{ background: '#ffc107', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
               {pendingCount} Pending Review
             </span>
           )}
         </div>
 
-        {/* The New Bulk Approve Button */}
         {pendingCount > 0 && (
           <button 
             onClick={handleApproveAll}
@@ -106,7 +100,7 @@ function AuditQueue() {
             style={{ 
               background: '#198754', color: 'white', padding: '10px 20px', border: 'none', 
               borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer',
-              fontSize: '1rem', boxShadow: '0 2px 4px rgba(25, 135, 84, 0.2)'
+              fontSize: '1rem', boxShadow: '0 2px 4px rgba(25, 135, 84, 0.2)', whiteSpace: 'nowrap'
             }}
           >
             {isSubmitting ? 'Approving Data...' : '✅ Approve All Pending'}
@@ -120,14 +114,17 @@ function AuditQueue() {
       {emissions.length === 0 ? (
         <p style={{ color: '#6c757d' }}>No emissions data found.</p>
       ) : (
-        <div style={{ background: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        /* --- RESPONSIVE TABLE CONTAINER --- */
+        <div style={{ background: '#fff', borderRadius: '8px', overflowX: 'auto', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
+          
+          <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Date</th>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Activity</th>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Raw Input</th>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Total CO2e</th>
+                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057', textAlign: 'center' }}>Evidence</th>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Status</th>
                 <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057', textAlign: 'center' }}>Admin Action</th>
               </tr>
@@ -146,6 +143,23 @@ function AuditQueue() {
                   <td style={{ padding: '15px', fontWeight: 'bold', color: '#d9534f' }}>
                     {Number(data.calculated_co2e).toLocaleString()} kg
                   </td>
+                  
+                  {/* --- EVIDENCE LINK --- */}
+                  <td style={{ padding: '15px', textAlign: 'center' }}>
+                    {data.evidence_file_url ? (
+                      <a 
+                        href={`http://localhost:5000${data.evidence_file_url}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: '#0d6efd', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                      >
+                        📄 View
+                      </a>
+                    ) : (
+                      <span style={{ color: '#adb5bd', fontSize: '0.85rem' }}>- None -</span>
+                    )}
+                  </td>
+
                   <td style={{ padding: '15px' }}>
                     <span style={{ 
                       padding: '5px 10px', 
