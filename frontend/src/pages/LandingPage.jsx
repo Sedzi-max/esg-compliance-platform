@@ -31,11 +31,14 @@ function LandingPage() {
 
       {/* --- HERO SECTION --- */}
       <header style={{ textAlign: 'center', padding: '100px 20px 40px 20px', background: 'linear-gradient(135deg, #e8f5e9 0%, #f8f9fa 100%)' }}>
-        <h1 style={{ fontSize: '3.5rem', fontWeight: '800', color: '#212529', marginBottom: '20px', maxWidth: '800px', margin: '0 auto', lineHeight: '1.2' }}>
-          Transform ESG from a Document into an <span style={{ color: '#198754' }}>Execution Engine.</span>
+        <span style={{ background: '#d1e7dd', color: '#0f5132', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', display: 'inline-block', marginBottom: '20px' }}>
+          GSE Compliance Ready
+        </span>
+        <h1 style={{ fontSize: '3.5rem', fontWeight: '800', color: '#212529', marginBottom: '20px', maxWidth: '850px', margin: '0 auto', lineHeight: '1.2' }}>
+          Automate Your <span style={{ color: '#198754' }}>ESG Reporting</span> & Carbon Accounting.
         </h1>
-        <p style={{ fontSize: '1.2rem', color: '#6c757d', maxWidth: '600px', margin: '20px auto 40px auto', lineHeight: '1.6' }}>
-          The enterprise-grade platform for BRSR assurance, Net-Zero trajectory mapping, and cross-functional compliance. Secure your data. Prove your impact.
+        <p style={{ fontSize: '1.2rem', color: '#6c757d', maxWidth: '700px', margin: '20px auto 40px auto', lineHeight: '1.6' }}>
+          Replace fragmented spreadsheets with a secure, unified digital ledger. Instantly calculate Scope 1-3 emissions, map Double Materiality, and provide auditors with a verified chain of evidence.
         </p>
         <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginBottom: '20px' }}>
           <button 
@@ -47,7 +50,7 @@ function LandingPage() {
         </div>
       </header>
 
-      {/* --- NEW SECTION: INTERACTIVE DASHBOARD PREVIEW --- */}
+      {/* --- INTERACTIVE DASHBOARD PREVIEW --- */}
       <section style={{ padding: '0 20px 80px 20px', background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)', display: 'flex', justifyContent: 'center' }}>
         <div style={{ width: '100%', maxWidth: '1000px', background: 'white', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', border: '1px solid #dee2e6', overflow: 'hidden' }}>
           
@@ -142,42 +145,78 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* --- FEATURE GRID --- */}
+      {/* --- UPDATED FEATURE GRID (6 Enterprise Capabilities) --- */}
       <section style={{ padding: '80px 50px', background: 'white' }}>
         <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-          <h2 style={{ fontSize: '2.5rem', color: '#212529', marginBottom: '10px' }}>Built for Audit-Ready Compliance</h2>
-          <p style={{ color: '#6c757d', fontSize: '1.1rem' }}>Engineered to handle the complexities of modern corporate sustainability.</p>
+          <h2 style={{ fontSize: '2.5rem', color: '#212529', marginBottom: '10px', fontWeight: '800' }}>Built for the Modern Audit</h2>
+          <p style={{ color: '#6c757d', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>Engineered to handle the complexities of corporate sustainability mandates.</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '40px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '40px', maxWidth: '1200px', margin: '0 auto' }}>
           
           {/* Feature 1 */}
           <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>🛡️</div>
-            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>BRSR & Assurance Readiness</h3>
-            <p style={{ color: '#6c757d', lineHeight: '1.5' }}>Centralized logs with strict Role-Based Access Control. Every metric is backed by a human-verified audit trail.</p>
+            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>☁️</div>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Automated Carbon Engine</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Input raw data (fuel, kWh, flight miles) and our GHG Protocol engine instantly calculates standardized Scope 1, 2, and 3 CO2e metrics.</p>
           </div>
 
           {/* Feature 2 */}
           <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>📉</div>
-            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Net-Zero Trajectory Mapping</h3>
-            <p style={{ color: '#6c757d', lineHeight: '1.5' }}>Automated carbon conversion engines map your raw operational data directly against your corporate reduction targets.</p>
+            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>📊</div>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Double Materiality Matrix</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Deploy sector-specific starter kits to instantly map your operational risks against stakeholder importance and financial business impact.</p>
           </div>
 
           {/* Feature 3 */}
           <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>📎</div>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>External Assurance Workflows</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Ensure 100% audit readiness. Our platform mandates physical evidence uploads backed by a strict Admin Approval queue.</p>
+          </div>
+
+          {/* Feature 4 */}
+          <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>⚡</div>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Smart Bulk Ingestion</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Upload years of legacy spreadsheet data using our fuzzy-matching CSV unpacker to populate your corporate ledger in seconds.</p>
+          </div>
+
+          {/* Feature 5 */}
+          <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '15px' }}>🌍</div>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>UN SDG Alignment</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Automatically map your localized operations directly to global UN Sustainable Development Goals for international investor reporting.</p>
+          </div>
+
+          {/* Feature 6 */}
+          <div style={{ padding: '30px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
             <div style={{ fontSize: '2rem', marginBottom: '15px' }}>🏢</div>
-            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Multi-Tenant Isolation</h3>
-            <p style={{ color: '#6c757d', lineHeight: '1.5' }}>Bank-grade database separation ensures your subsidiary and aggregate data remains completely secure and distinct.</p>
+            <h3 style={{ fontSize: '1.3rem', marginBottom: '10px' }}>Multi-Tenant Architecture</h3>
+            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Bank-grade database separation ensures subsidiary and aggregate data remains completely secure and distinct under one umbrella.</p>
           </div>
 
         </div>
       </section>
 
+      {/* --- CALL TO ACTION --- */}
+      <section style={{ background: '#198754', color: 'white', textAlign: 'center', padding: '80px 20px' }}>
+        <h2 style={{ fontSize: '2.5rem', fontWeight: '800', margin: '0 0 20px 0' }}>Ready to digitize your compliance?</h2>
+        <p style={{ fontSize: '1.2rem', opacity: '0.9', marginBottom: '40px', maxWidth: '600px', margin: '0 auto 40px auto' }}>
+          Join leading corporations standardizing their environmental and social reporting on ESG Radar.
+        </p>
+        <button 
+          onClick={() => navigate('/register')}
+          style={{ border: 'none', cursor: 'pointer', background: 'white', color: '#198754', fontWeight: 'bold', padding: '15px 40px', borderRadius: '6px', fontSize: '1.1rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+        >
+          Create Corporate Account
+        </button>
+      </section>
+
       {/* --- FOOTER --- */}
       <footer style={{ background: '#212529', color: '#adb5bd', padding: '40px 50px', textAlign: 'center' }}>
-        <p style={{ margin: 0 }}>&copy; {new Date().getFullYear()} ESG Radar. Enterprise Compliance Systems.</p>
+        <p style={{ margin: 0, fontWeight: 'bold' }}>&copy; {new Date().getFullYear()} Route Radar Limited. All rights reserved.</p>
+        <p style={{ margin: '10px 0 0 0', fontSize: '0.85rem' }}>Built for Global and Regional Stock Exchange Compliance.</p>
       </footer>
 
     </div>
