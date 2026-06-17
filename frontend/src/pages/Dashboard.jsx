@@ -7,7 +7,6 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-// Import your new logo
 import myLogo from '../assets/logo.png';
 import ReportGenerator from './ReportGenerator';
 import MaterialityMatrix from '../components/MaterialityMatrix';
@@ -24,11 +23,9 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // 1. Create a reference to the main dashboard container and export state
   const reportRef = useRef();
   const [isExporting, setIsExporting] = useState(false);
 
-  // Check if current user is an Executive Admin
   const userStr = localStorage.getItem('user');
   const isAdmin = userStr ? JSON.parse(userStr).role === 'Admin' : false;
 
@@ -39,7 +36,8 @@ function Dashboard() {
   const COLORS = { 
     E: '#2e7d32', S: '#1565c0', G: '#e65100', 
     Actual: '#1976d2', Target: '#d32f2f',
-    Scope1: '#0088FE', Scope2: '#00C49F', Scope3: '#FFBB28'
+    Scope1: '#0088FE', Scope2: '#00C49F', Scope3: '#FFBB28',
+    Chart1: '#0d6efd', Chart2: '#198754', Chart3: '#ffc107', Chart4: '#dc3545', Chart5: '#6f42c1'
   };
 
   useEffect(() => {
@@ -95,39 +93,31 @@ function Dashboard() {
     document.body.removeChild(link); 
   };
 
-  // 2. The Upgraded Multi-Page PDF Generation Engine
   const generatePDF = async () => {
     setIsExporting(true);
     try {
       const element = reportRef.current;
-      
-      // 1. Take the high-res screenshot, forcing it to capture the full scroll height
       const canvas = await html2canvas(element, { 
         scale: 2, 
         useCORS: true, 
         backgroundColor: '#f8f9fa',
-        windowHeight: element.scrollHeight // Forces capture of off-screen content
+        windowHeight: element.scrollHeight 
       });
       
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Calculate how tall the image is in PDF millimeters
       const imgHeight = (canvas.height * pdfWidth) / canvas.width;
       
       let heightLeft = imgHeight;
       let position = 0;
       
-      // 2. Paste the first page
       pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
       heightLeft -= pageHeight;
       
-      // 3. Keep adding new pages as long as there is dashboard left to print!
       while (heightLeft >= 0) {
-        position = heightLeft - imgHeight; // Shifts the image up for the next slice
+        position = heightLeft - imgHeight; 
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
         heightLeft -= pageHeight;
@@ -159,7 +149,6 @@ function Dashboard() {
 
   const now = new Date();
 
-  // --- FILTER 1: Generic Observations ---
   const filteredObs = rawObservations.filter(obs => {
     if (timeFilter === 'ALL') return true;
     const obsDate = new Date(obs.timestamp);
@@ -170,7 +159,6 @@ function Dashboard() {
     return true;
   });
 
-  // --- FILTER 2: Carbon Emissions ---
   const approvedEmissions = emissions.filter(e => {
     if (e.status !== 'Approved') return false; 
     if (timeFilter === 'ALL') return true;
@@ -187,16 +175,13 @@ function Dashboard() {
     return diffDays <= Number(timeFilter);
   });
 
-  // --- STAT CALCULATIONS ---
   const envCount = filteredObs.filter(o => o.pillar === 'E').length;
   const socCount = filteredObs.filter(o => o.pillar === 'S').length;
   const govCount = filteredObs.filter(o => o.pillar === 'G').length;
   const totalCO2e = approvedEmissions.reduce((sum, item) => sum + Number(item.calculated_co2e), 0);
   const pendingCO2e = pendingEmissions.reduce((sum, item) => sum + Number(item.calculated_co2e), 0);
-  
   const recentObs = filteredObs.slice(0, 5);
 
-  // --- CHART DATA PREP ---
   const pieDataESG = [
     { name: 'Environmental', value: envCount, fill: COLORS.E },
     { name: 'Social', value: socCount, fill: COLORS.S },
@@ -205,8 +190,8 @@ function Dashboard() {
 
   const scopeTotals = { 'scope_1': 0, 'scope_2': 0, 'scope_3': 0 };
   const timeSeries = {};
+  const facilities = {}; // NEW: For Leaderboard
 
-  // Sort emissions chronologically for the timeline chart
   const sortedEmissions = [...approvedEmissions].sort((a,b) => new Date(a.recorded_date) - new Date(b.recorded_date));
 
   sortedEmissions.forEach(e => {
@@ -216,6 +201,10 @@ function Dashboard() {
     const dateStr = new Date(e.recorded_date).toLocaleDateString();
     if (!timeSeries[dateStr]) timeSeries[dateStr] = 0;
     timeSeries[dateStr] += amount;
+
+    // Build facility map for leaderboard
+    const orgName = e.organization_name || 'Unknown Facility';
+    facilities[orgName] = (facilities[orgName] || 0) + amount;
   });
 
   const pieDataScope = [
@@ -228,9 +217,13 @@ function Dashboard() {
     date, co2e: timeSeries[date]
   }));
 
-  // ==============================================================
-  // FORECASTING MATH ENGINE
-  // ==============================================================
+  // NEW: Sort facility data for leaderboard
+  const facilityData = Object.keys(facilities)
+    .map(key => ({ name: key, CO2e: facilities[key] }))
+    .sort((a, b) => b.CO2e - a.CO2e);
+
+  const activeFacilitiesCount = facilityData.length;
+
   const emissionsByYear = approvedEmissions.reduce((acc, curr) => {
     const year = new Date(curr.recorded_date).getFullYear();
     if (!acc[year]) acc[year] = 0;
@@ -265,18 +258,13 @@ function Dashboard() {
     }));
   }
 
-  // ==============================================================
-  // AUTOMATED INSIGHTS ENGINE
-  // ==============================================================
   const generateInsights = () => {
     const insights = [];
-    
     if (approvedEmissions.length === 0) {
       insights.push({ type: 'warning', text: 'No approved carbon data available to generate insights.' });
       return insights;
     }
 
-    // 1. Target Tracking Insight
     if (activeTarget && forecastData.length > 0) {
       const currentYear = new Date().getFullYear().toString();
       const currentData = forecastData.find(d => d.year === currentYear);
@@ -284,34 +272,27 @@ function Dashboard() {
       if (currentData && currentData["Actual Emissions"] && currentData["Target Trajectory"]) {
         const actual = currentData["Actual Emissions"];
         const target = currentData["Target Trajectory"];
-        const diff = Math.round(actual - target); // Round early to avoid floating point decimals
+        const diff = Math.round(actual - target); 
 
         if (diff > 0) {
           insights.push({ 
-            type: 'danger', 
-            icon: '⚠️',
-            title: 'Off-Track Target',
+            type: 'danger', icon: '⚠️', title: 'Off-Track Target',
             text: `You are currently exceeding your Net-Zero trajectory for this year by ${diff.toLocaleString()} kg CO2e. Immediate operational reductions are recommended.` 
           });
         } else if (diff === 0) {
           insights.push({ 
-            type: 'success', 
-            icon: '🎯', // Changed to a bullseye!
-            title: 'Exact Target Met',
+            type: 'success', icon: '🎯', title: 'Exact Target Met',
             text: `Excellent. You are perfectly aligned with your Net-Zero trajectory for this year.` 
           });
         } else {
           insights.push({ 
-            type: 'success', 
-            icon: '✅',
-            title: 'Ahead of Target',
+            type: 'success', icon: '✅', title: 'Ahead of Target',
             text: `Outstanding. You are currently beating your Net-Zero trajectory by ${Math.abs(diff).toLocaleString()} kg CO2e.` 
           });
         }
       }
     }
 
-    // 2. Identify the Primary Emission Source (Scope)
     const highestScope = Object.keys(scopeTotals).reduce((a, b) => scopeTotals[a] > scopeTotals[b] ? a : b);
     if (scopeTotals[highestScope] > 0) {
       const scopePercentage = ((scopeTotals[highestScope] / totalCO2e) * 100).toFixed(1);
@@ -323,19 +304,14 @@ function Dashboard() {
       if (highestScope === 'scope_3') suggestion = "Initiate supplier sustainability audits and evaluate employee business travel policies.";
 
       insights.push({
-        type: 'info',
-        icon: '🔍',
-        title: `Primary Emitter: ${scopeName}`,
+        type: 'info', icon: '🔍', title: `Primary Emitter: ${scopeName}`,
         text: `${scopeName} accounts for a massive ${scopePercentage}% of your total footprint. ${suggestion}`
       });
     }
 
-    // 3. ESG Pillar Balance Check
     if (totalCO2e > 0 && (socCount === 0 || govCount === 0)) {
       insights.push({
-        type: 'warning',
-        icon: '⚖️',
-        title: 'Lopsided ESG Reporting',
+        type: 'warning', icon: '⚖️', title: 'Lopsided ESG Reporting',
         text: 'Your platform has strong Environmental tracking, but lacks comprehensive Social or Governance logs. True ESG compliance requires all three pillars.'
       });
     }
@@ -352,7 +328,7 @@ function Dashboard() {
           <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>{payload[0].payload.year || payload[0].payload.date}</p>
           {payload.map((entry, index) => (
             <p key={index} style={{ margin: 0, color: entry.color || entry.fill, fontWeight: 'bold' }}>
-              {entry.name}: {Number(entry.value).toLocaleString()} {entry.name === 'Actual Emissions' || entry.name === 'co2e' ? 'kg' : ''}
+              {entry.name}: {Number(entry.value).toLocaleString()} {entry.name === 'Actual Emissions' || entry.name === 'co2e' || entry.name === 'CO2e' ? 'kg' : ''}
             </p>
           ))}
         </div>
@@ -366,21 +342,14 @@ function Dashboard() {
       
       {/* --- RESPONSIVE HEADER SECTION --- */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-
-        {/* BRANDING CONTAINER: Logo + Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <img 
-            src={myLogo} 
-            alt="ESG Platform Logo" 
-            style={{ height: '40px', width: 'auto', borderRadius: '4px' }} 
-          />
+          <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto', borderRadius: '4px' }} />
           <h1 style={{ margin: 0, color: '#212529', whiteSpace: 'nowrap', lineHeight: '1.2' }}>Platform Overview</h1>
         </div>
         
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select 
-            value={timeFilter} 
-            onChange={(e) => setTimeFilter(e.target.value)}
+            value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}
             style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold', cursor: 'pointer', background: 'white' }}
           >
             <option value="ALL">All Time</option>
@@ -394,17 +363,8 @@ function Dashboard() {
           </button>
 
           <button 
-            onClick={generatePDF} 
-            disabled={isExporting}
-            style={{ 
-              background: isExporting ? '#6c757d' : '#dc3545', 
-              color: 'white', 
-              padding: '10px 20px', 
-              border: 'none', 
-              borderRadius: '4px', 
-              fontWeight: 'bold', 
-              cursor: isExporting ? 'wait' : 'pointer' 
-            }}
+            onClick={generatePDF} disabled={isExporting}
+            style={{ background: isExporting ? '#6c757d' : '#dc3545', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isExporting ? 'wait' : 'pointer' }}
           >
             {isExporting ? '⏳ Generating PDF...' : '📄 Export PDF'}
           </button>
@@ -434,19 +394,13 @@ function Dashboard() {
           </p>
         </div>
 
-        {activeTarget ? (
-          <div style={{ padding: '20px', borderLeft: `5px solid #198754`, borderRadius: '8px', background: '#e8f5e9', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ margin: '0 0 10px 0', color: '#198754', fontSize: '1rem' }}>Active Corporate Goal</h3>
-            <p style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: 0, color: '#155724' }}>
-              Reduce by {activeTarget.reduction_percentage}% by {activeTarget.target_year}
-            </p>
-          </div>
-        ) : (
-          <div style={{ padding: '20px', borderLeft: '5px solid #6c757d', borderRadius: '8px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ margin: '0 0 10px 0', color: '#6c757d', fontSize: '1rem' }}>Total Organizations</h3>
-            <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>{orgCount}</p>
-          </div>
-        )}
+        {/* UPDATED: Dynamic Active Facilities count replaces static Total Organizations */}
+        <div style={{ padding: '20px', borderLeft: '5px solid #6c757d', borderRadius: '8px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#6c757d', fontSize: '1rem' }}>Active Reporting Nodes</h3>
+          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>
+            {activeFacilitiesCount} <span style={{ fontSize: '1rem', color: '#6c757d' }}>Facilities</span>
+          </p>
+        </div>
 
         <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.S}`, borderRadius: '8px', background: '#e3f2fd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
@@ -460,15 +414,11 @@ function Dashboard() {
 
       </div>
 
-      {/* --- ADDED: REPORT GENERATOR --- */}
       <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'center' }}>
         <ReportGenerator />
       </div>
 
-      {/* --- NEW: SECTOR ONBOARDING WIZARD --- */}
       <SectorOnboarding />
-
-      {/* --- ADDED: MATERIALITY MATRIX --- */}
       <MaterialityMatrix />
 
       {/* --- AI INSIGHTS ENGINE --- */}
@@ -479,7 +429,6 @@ function Dashboard() {
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
             {dynamicInsights.map((insight, index) => {
-              // Dynamic color themes based on the insight type
               const theme = {
                 danger: { bg: '#fff5f5', border: '#ffc9c9', text: '#c92a2a' },
                 success: { bg: '#f4fce3', border: '#d8f5a2', text: '#5c940d' },
@@ -523,7 +472,6 @@ function Dashboard() {
           )}
         </div>
 
-        {/* --- RBAC: Only show to Admins --- */}
         {isAdmin && (
           <div style={{ background: '#f8f9fa', padding: '25px', border: '1px solid #dee2e6', borderRadius: '8px' }}>
             <h3 style={{ marginTop: 0, color: '#495057' }}>🎯 Set Reduction Goal</h3>
@@ -560,10 +508,9 @@ function Dashboard() {
         )}
       </div>
 
-      {/* --- SECONDARY DATA VISUALIZATION SECTION (THE BLEND) --- */}
+      {/* --- SECONDARY DATA VISUALIZATION SECTION --- */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '40px' }}>
         
-        {/* Drop it right here! */}
         <div style={{ gridColumn: '1 / -1' }}> 
           <SDGTracker />
         </div>
@@ -587,7 +534,30 @@ function Dashboard() {
           )}
         </div>
 
-        {/* CHART 2: Ingestion Timeline */}
+        {/* NEW CHART 2: Facility Leaderboard */}
+        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Facility Leaderboard</h3>
+          {facilityData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No facility data available.</p> : (
+            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={facilityData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                  <XAxis type="number" />
+                  <YAxis dataKey="name" type="category" tick={{fontSize: 12}} width={100} />
+                  <Tooltip formatter={(value) => `${value.toLocaleString()} kg CO₂e`} content={<CustomTooltip />} />
+                  <Bar dataKey="CO2e" fill="#0d6efd" radius={[0, 4, 4, 0]}>
+                    {facilityData.map((entry, index) => {
+                      const dynamicColors = [COLORS.Chart1, COLORS.Chart2, COLORS.Chart3, COLORS.Chart4, COLORS.Chart5];
+                      return <Cell key={`cell-${index}`} fill={dynamicColors[index % dynamicColors.length]} />
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        {/* CHART 3: Ingestion Timeline */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Ingestion Timeline</h3>
           {barDataTimeline.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No timeline data available.</p> : (
@@ -598,14 +568,14 @@ function Dashboard() {
                   <XAxis dataKey="date" tick={{fontSize: 12}} />
                   <YAxis tick={{fontSize: 12}} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="co2e" fill="#0d6efd" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="co2e" fill="#198754" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
         </div>
 
-        {/* CHART 3: General ESG Distribution */}
+        {/* CHART 4: General ESG Distribution */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>ESG Log Distribution</h3>
           {pieDataESG.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No ESG data available.</p> : (
@@ -626,7 +596,7 @@ function Dashboard() {
 
       </div>
 
-      {/* --- RESTORED: RECENT ACTIVITY FEED --- */}
+      {/* --- RECENT ACTIVITY FEED --- */}
       <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
         Recent Activity Log
       </h2>

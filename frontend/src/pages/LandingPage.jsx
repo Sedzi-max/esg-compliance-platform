@@ -60,7 +60,7 @@ function LandingPage() {
             <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ffbd2e' }}></div>
             <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#27c93f' }}></div>
             <div style={{ background: 'white', margin: '0 auto', padding: '4px 40px', borderRadius: '4px', fontSize: '0.75rem', color: '#6c757d', fontFamily: 'monospace', width: '300px', textAlign: 'center', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)' }}>
-              app.esgradar.com/dashboard
+              app.esgradarcompliance.com/dashboard
             </div>
           </div>
 
