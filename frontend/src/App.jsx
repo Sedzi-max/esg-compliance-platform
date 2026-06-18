@@ -1,5 +1,5 @@
 import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import LandingPage from './pages/LandingPage'; // <-- NEW STOREFRONT
+import LandingPage from './pages/LandingPage'; 
 import Dashboard from './pages/Dashboard';
 import Organizations from './pages/Organizations';
 import Metrics from './pages/Metrics';
@@ -8,6 +8,8 @@ import Login from './pages/Login';
 import UserManagement from './pages/UserManagement'; 
 import ProtectedRoute from './components/ProtectedRoute';
 import AuditQueue from './pages/AuditQueue'; 
+import SurveyCampaigns from './pages/SurveyCampaigns';
+import SupplierPortal from './pages/SupplierPortal';
 
 function App() {
   const navigate = useNavigate();
@@ -28,11 +30,14 @@ function App() {
 
   return (
     <Routes>
-      {/* --- PUBLIC MARKETING SITE --- */}
+      {/* --- PUBLIC MARKETING & SUPPLIER PORTS (NO AUTH MANDATED) --- */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
+      
+      {/* CRITICAL FIX: Public portal must sit outside ProtectedRoute so vendors can submit records */}
+      <Route path="/supplier-portal/:token" element={<SupplierPortal />} />
 
-      {/* --- SECURE PLATFORM --- */}
+      {/* --- SECURE PLATFORM PORTAL --- */}
       <Route 
         path="/*" 
         element={
@@ -47,17 +52,21 @@ function App() {
                 
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
                   {/* Everyone gets to see the Dashboard and Data Entry */}
-                  {/* UPDATE: Pointed link to /dashboard instead of / */}
                   <li><Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
                   <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
                   
-                  {/* Both ADMINS and MANAGERS see the Audit Queue */}
+                  {/* Both ADMINS and MANAGERS see the Audit Queue & Campaigns */}
                   {(isAdmin || isManager) && (
                     <>
                       <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Review Data</li>
                       <li>
-                        <Link to="/audit-queue" style={{ display: 'block', padding: '10px', color: 'white', textDecoration: 'none', fontSize: '1.1rem', marginLeft: '-10px', borderRadius: '4px' }}>
-                            ✅ Audit Queue
+                        <Link to="/audit-queue" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
+                          ✅ Audit Queue
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="/campaigns" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
+                          🚀 Scope 3 Campaigns
                         </Link>
                       </li>
                     </>
@@ -76,7 +85,7 @@ function App() {
 
                 <div style={{ borderTop: '1px solid #495057', paddingTop: '15px', marginBottom: '15px' }}>
                    <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#adb5bd' }}>Logged in as:</p>
-                   <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>{user?.email || 'User'}</p>
+                   <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>={user?.email || 'User'}</p>
                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#198754' }}>Role: {user?.role}</p>
                 </div>
 
@@ -98,6 +107,14 @@ function App() {
                     element={
                       <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
                         <AuditQueue />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/campaigns" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                        <SurveyCampaigns />
                       </ProtectedRoute>
                     } 
                   />
@@ -128,7 +145,7 @@ function App() {
                     } 
                   />
                   
-                  {/* UPDATE: Catch-all redirects safely to /dashboard now */}
+                  {/* Catch-all redirects safely to /dashboard now */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </main>

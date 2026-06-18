@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 function Organizations() {
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState({ message: '', type: '' });
-  
+
+  // Using your existing data schema
   const [formData, setFormData] = useState({
     name: '',
     unit_type: 'Facility',
@@ -23,9 +25,12 @@ function Organizations() {
       const res = await axios.get('/api/organizations', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setOrganizations(res.data);
+      // Add a mock 'status' property to the incoming data just for UI flair
+      const enhancedData = res.data.map(org => ({ ...org, status: 'Active' }));
+      setOrganizations(enhancedData);
     } catch (err) {
       console.error("Failed to load organizations");
+      setError("Failed to load connected assets. Check your server connection.");
     } finally {
       setLoading(false);
     }
@@ -38,7 +43,8 @@ function Organizations() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setFeedback({ message: '', type: '' });
+    setError(null);
+    setSuccessMsg('');
 
     try {
       const token = localStorage.getItem('token');
@@ -46,132 +52,147 @@ function Organizations() {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // Flash success message
-      setFeedback({ message: 'Organization successfully added!', type: 'success' });
-      
-      // Clear the form
+      setSuccessMsg(`🏢 Infrastructure '${formData.name}' successfully provisioned!`);
       setFormData({ name: '', unit_type: 'Facility', jurisdiction: '' });
+      fetchOrganizations(); // Refresh the directory
       
-      // Refresh the list
-      fetchOrganizations();
-
-      // Clear the success message after 3 seconds
-      setTimeout(() => setFeedback({ message: '', type: '' }), 3000);
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setFeedback({ message: 'Failed to add organization. Please try again.', type: 'error' });
+      setError('Failed to deploy infrastructure. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (loading) return <p style={{ textAlign: 'center', marginTop: '50px' }}>Loading organizations...</p>;
+  // UI mock toggle for the enterprise feel
+  const toggleStatus = (unit_id) => {
+    setOrganizations(organizations.map(org => 
+      org.unit_id === unit_id 
+        ? { ...org, status: org.status === 'Active' ? 'Inactive' : 'Active' } 
+        : org
+    ));
+  };
+
+  if (loading) return <p style={{ textAlign: 'center', marginTop: '50px', color: '#666' }}>Loading Asset Matrix...</p>;
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '30px' }}>Manage Organizations</h1>
-
-      {feedback.message && (
-        <div style={{ 
-          padding: '15px', 
-          marginBottom: '20px', 
-          borderRadius: '4px', 
-          background: feedback.type === 'success' ? '#d1e7dd' : '#f8d7da',
-          color: feedback.type === 'success' ? '#0f5132' : '#842029',
-          fontWeight: 'bold'
-        }}>
-          {feedback.message}
-        </div>
-      )}
-
-      {/* NEW ORGANIZATION FORM */}
-      <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6', marginBottom: '40px' }}>
-        <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#495057' }}>Add New Organization</h2>
-        
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Organization Name</label>
-            <input 
-              type="text" 
-              name="name" 
-              value={formData.name} 
-              onChange={handleChange} 
-              required 
-              placeholder="e.g. Tema Plant"
-              style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} 
-            />
-          </div>
-
-          <div style={{ flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Facility Type</label>
-            <select 
-              name="unit_type" 
-              value={formData.unit_type} 
-              onChange={handleChange} 
-              style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-            >
-              <option value="HQ">Headquarters (HQ)</option>
-              <option value="Facility">Facility</option>
-              <option value="Retail">Retail Store</option>
-              <option value="Fleet">Vehicle Fleet</option>
-            </select>
-          </div>
-
-          <div style={{ flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Jurisdiction</label>
-            <input 
-              type="text" 
-              name="jurisdiction" 
-              value={formData.jurisdiction} 
-              onChange={handleChange} 
-              required 
-              placeholder="e.g. Ghana"
-              style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} 
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={isSubmitting}
-            style={{ 
-              padding: '10px 20px', 
-              background: isSubmitting ? '#6c757d' : '#0d6efd', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '4px', 
-              fontWeight: 'bold', 
-              cursor: isSubmitting ? 'not-allowed' : 'pointer',
-              height: '42px'
-            }}
-          >
-            {isSubmitting ? 'Saving...' : 'Save'}
-          </button>
-        </form>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
+      
+      {/* --- HEADER --- */}
+      <div style={{ marginBottom: '30px', borderBottom: '2px solid #eee', paddingBottom: '15px' }}>
+        <h1 style={{ margin: '0 0 10px 0', color: '#212529' }}>Corporate Facility Manager</h1>
+        <p style={{ margin: 0, color: '#6c757d', fontSize: '1.1rem' }}>Configure and track physical assets, plants, and operational nodes across your enterprise.</p>
       </div>
 
-      {/* CONNECTED ORGANIZATIONS LIST */}
-      <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
-        Connected Organizations
-      </h2>
-      
-      {organizations.length === 0 ? (
-        <p style={{ color: '#666' }}>No organizations found for your company.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-          {organizations.map(org => (
-            <div key={org.unit_id} style={{ background: '#fff', border: '1px solid #dee2e6', padding: '15px 20px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div>
-                <h3 style={{ margin: '0 0 5px 0', color: '#212529' }}>{org.name}</h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#6c757d' }}>
-                  Type: {org.unit_type} | Jurisdiction: {org.jurisdiction}
-                </p>
-              </div>
-              <div style={{ fontSize: '0.85rem', color: '#adb5bd' }}>
-                ID: {org.unit_id}
-              </div>
+      {successMsg && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#d4edda', color: '#155724', fontWeight: 'bold' }}>{successMsg}</div>}
+      {error && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#f8d7da', color: '#721c24', fontWeight: 'bold' }}>{error}</div>}
+
+      {/* --- RESPONSIVE FLEX LAYOUT --- */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px' }}>
+        
+        {/* LEFT COLUMN: Create Organization Form */}
+        <div style={{ flex: '1 1 300px', background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6', height: 'fit-content', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#212529', marginBottom: '20px' }}>➕ Provision New Asset</h2>
+          
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Facility Name</label>
+              <input 
+                type="text" name="name" placeholder="e.g., Tema Distribution Center"
+                value={formData.name} onChange={handleChange} required
+                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }}
+              />
             </div>
-          ))}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Facility Type</label>
+              <select 
+                name="unit_type" value={formData.unit_type} onChange={handleChange} required
+                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da', background: 'white' }}
+              >
+                <option value="HQ">Headquarters (HQ)</option>
+                <option value="Facility">Manufacturing / General Facility</option>
+                <option value="Retail">Retail Store</option>
+                <option value="Fleet">Vehicle Fleet</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Jurisdiction</label>
+              <input 
+                type="text" name="jurisdiction" placeholder="e.g., Ghana"
+                value={formData.jurisdiction} onChange={handleChange} required
+                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }}
+              />
+            </div>
+
+            <button 
+              type="submit" disabled={isSubmitting}
+              style={{ background: '#212529', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', fontSize: '1rem', marginTop: '10px' }}
+            >
+              {isSubmitting ? 'Provisioning...' : 'Deploy Infrastructure'}
+            </button>
+          </form>
         </div>
-      )}
+
+        {/* RIGHT COLUMN: Active Facilities Table */}
+        <div style={{ flex: '2 1 600px', background: '#fff', borderRadius: '8px', border: '1px solid #dee2e6', overflowX: 'auto', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+          <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
+                <th style={{ padding: '15px 20px', color: '#495057', width: '40%' }}>Asset / Facility</th>
+                <th style={{ padding: '15px 20px', color: '#495057', width: '25%' }}>Sector Data</th>
+                <th style={{ padding: '15px 20px', color: '#495057', textAlign: 'center', width: '15%' }}>Status</th>
+                <th style={{ padding: '15px 20px', color: '#495057', textAlign: 'right', width: '20%' }}>Controls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organizations.map((org) => (
+                <tr key={org.unit_id} style={{ borderBottom: '1px solid #eee', opacity: org.status === 'Inactive' ? 0.6 : 1 }}>
+                  <td style={{ padding: '15px 20px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontWeight: 'bold', color: '#212529', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{org.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#6c757d', fontFamily: 'monospace' }}>ID: {org.unit_id}</div>
+                  </td>
+                  <td style={{ padding: '15px 20px' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#495057' }}>{org.unit_type}</div>
+                    <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>{org.jurisdiction}</div>
+                  </td>
+                  <td style={{ padding: '15px 20px', textAlign: 'center' }}>
+                    <span style={{ 
+                      padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', display: 'inline-block',
+                      background: org.status === 'Active' ? '#d1e7dd' : '#e2e3e5',
+                      color: org.status === 'Active' ? '#0f5132' : '#41464b'
+                    }}>
+                      {org.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '15px 20px', textAlign: 'right' }}>
+                    <button 
+                      onClick={() => toggleStatus(org.unit_id)}
+                      style={{ 
+                        background: 'transparent', 
+                        color: org.status === 'Active' ? '#dc3545' : '#198754', 
+                        border: `1px solid ${org.status === 'Active' ? '#dc3545' : '#198754'}`, 
+                        padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {org.status === 'Active' ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {organizations.length === 0 && (
+                <tr>
+                  <td colSpan="4" style={{ padding: '30px', textAlign: 'center', color: '#6c757d' }}>
+                    No infrastructure assets found. Provision a facility to begin data tracking.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
     </div>
   );
 }

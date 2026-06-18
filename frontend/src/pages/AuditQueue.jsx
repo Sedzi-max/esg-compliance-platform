@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import TraceabilityDrawer from '../components/TraceabilityDrawer';
 
 function AuditQueue() {
   const [emissions, setEmissions] = useState([]);
@@ -7,6 +8,15 @@ function AuditQueue() {
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Drawer State
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState(null);
+
+  const openDrawer = (record) => {
+    setSelectedRecord(record);
+    setDrawerOpen(true);
+  };
 
   useEffect(() => {
     fetchEmissions();
@@ -31,7 +41,8 @@ function AuditQueue() {
     }
   };
 
-  const handleStatusUpdate = async (id, newStatus) => {
+  const handleStatusUpdate = async (e, id, newStatus) => {
+    e.stopPropagation(); // Prevents the row click from opening the drawer
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -131,7 +142,15 @@ function AuditQueue() {
             </thead>
             <tbody>
               {emissions.map((data) => (
-                <tr key={data.id} style={{ borderBottom: '1px solid #eee', background: data.status === 'Pending' ? '#fffdf5' : 'white' }}>
+                <tr 
+                  key={data.id} 
+                  onClick={() => openDrawer(data)} // Drawer trigger
+                  style={{ 
+                    borderBottom: '1px solid #eee', 
+                    background: data.status === 'Pending' ? '#fffdf5' : 'white',
+                    cursor: 'pointer' // Visual indicator
+                  }}
+                >
                   <td style={{ padding: '15px', color: '#6c757d', fontSize: '0.9rem' }}>
                     {new Date(data.recorded_date || data.created_at).toLocaleDateString()}
                   </td>
@@ -151,6 +170,7 @@ function AuditQueue() {
                         href={`http://localhost:5000${data.evidence_file_url}`} 
                         target="_blank" 
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()} // Prevent drawer from opening when clicking the link
                         style={{ color: '#0d6efd', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                       >
                         📄 View
@@ -176,13 +196,13 @@ function AuditQueue() {
                     {data.status === 'Pending' ? (
                       <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                         <button 
-                          onClick={() => handleStatusUpdate(data.id, 'Approved')}
+                          onClick={(e) => handleStatusUpdate(e, data.id, 'Approved')} // Added 'e'
                           style={{ background: '#198754', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                         >
                           Approve
                         </button>
                         <button 
-                          onClick={() => handleStatusUpdate(data.id, 'Rejected')}
+                          onClick={(e) => handleStatusUpdate(e, data.id, 'Rejected')} // Added 'e'
                           style={{ background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                         >
                           Reject
@@ -198,6 +218,14 @@ function AuditQueue() {
           </table>
         </div>
       )}
+
+      {/* --- THE AUDIT TRACEABILITY DRAWER --- */}
+      <TraceabilityDrawer 
+        isOpen={drawerOpen} 
+        onClose={() => setDrawerOpen(false)} 
+        record={selectedRecord} 
+      />
+
     </div>
   );
 }

@@ -14,7 +14,7 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
-// NEW: Expose the uploads folder so the React frontend can fetch the files
+// Expose the uploads folder so the React frontend can fetch the files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Setup local storage for files (MVP approach)
@@ -40,7 +40,21 @@ app.get('/api/health', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-
+// ==========================================
+// TEMPORARY DATABASE PATCH ROUTE
+// ==========================================
+app.get('/api/fix-db', async (req, res) => {
+    try {
+        await pool.query(`
+            ALTER TABLE ghg_emissions 
+            ADD COLUMN IF NOT EXISTS unit_of_measure VARCHAR(50) DEFAULT 'units';
+        `);
+        res.send("<h1>✅ Success! unit_of_measure column permanently added.</h1>");
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Error patching database: " + err.message);
+    }
+});
 // ==========================================
 // ORGANIZATION UNIT ROUTES (Multi-Tenant Protected)
 // ==========================================
@@ -216,28 +230,59 @@ app.get('/api/emissions', authorize, async (req, res) => {
         res.status(500).send('Server error fetching emissions');
     }
 });
-// 2. POST Route: The Carbon Conversion Engine (Upgraded for External Assurance)
+
+// 2. POST Route: The Carbon Conversion Engine (Upgraded for External Assurance & Atomic Checkout)
 app.post('/api/emissions', authorize, upload.single('evidence_file'), async (req, res) => {
     try {
-        const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+        const { organization_id, scope_category, activity_type, raw_amount, unit_of_measure } = req.body;
+        
+        // Handle physical evidence files via Multer
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-        // Calculate Carbon Footprint using our dynamic multipliers
-        const multiplier = CARBON_MULTIPLIERS[scope_category][activity_type];
-        const calculated_co2e = Number(raw_amount) * multiplier;
+        // 1. Fetch the base multiplier from your existing utility
+        const baseMultiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
 
-        const newEmission = await pool.query(
-            `INSERT INTO ghg_emissions 
-            (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_file_url) 
-            VALUES ($1, $2, $3, $4, $5, $6) 
-            RETURNING *`,
-            [organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url]
-        );
+        if (baseMultiplier === undefined) {
+            return res.status(400).json({ error: `Unrecognized activity type: ${activity_type}. No emission factor found.` });
+        }
 
-        res.json(newEmission.rows[0]);
+        // 2. Define Audit-Grade Metadata for the snapshot
+        const factorMetadata = {
+            multiplier: baseMultiplier,
+            source: scope_category === 'scope_1' ? 'GHG Protocol Stationary' : 'EPA eGRID 2026',
+            version: 'v3.2.1'
+        };
+
+        // 3. Perform the exact calculation
+        const calculated_co2e = Number(raw_amount) * factorMetadata.multiplier;
+
+        // 4. THE ATOMIC CHECKOUT: Write data, evidence, AND mathematical logic to the DB
+        const insertQuery = `
+            INSERT INTO ghg_emissions 
+            (organization_id, scope_category, activity_type, raw_amount, unit_of_measure, calculated_co2e, status, evidence_file_url, emission_factor_used, factor_source, methodology_version) 
+            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, $9, $10) 
+            RETURNING *;
+        `;
+
+        const values = [
+            organization_id, 
+            scope_category, 
+            activity_type, 
+            raw_amount, 
+            unit_of_measure || 'units', // fallback if unit is missing
+            calculated_co2e,
+            evidence_url,               // Snapshot: The uploaded evidence file
+            factorMetadata.multiplier,  // Snapshot: Exact number used
+            factorMetadata.source,      // Snapshot: Where the number came from
+            factorMetadata.version      // Snapshot: The methodology version
+        ];
+
+        const newEmission = await pool.query(insertQuery, values);
+
+        res.status(201).json(newEmission.rows[0]);
     } catch (err) {
-        console.error("Error saving emission:", err.message);
-        res.status(500).send('Server error saving emission');
+        console.error("Error saving atomic emission transaction:", err.message);
+        res.status(500).send('Server error sealing atomic transaction');
     }
 });
 

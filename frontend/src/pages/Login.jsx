@@ -1,187 +1,201 @@
-import { useState } from 'react';
-import axios from 'axios';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import myLogo from '../assets/logo.png'; // Assuming you have your logo here
+import axios from 'axios';
 
 function Login() {
   const navigate = useNavigate();
   
-  // Toggles between Login and Register views
+  // Dual-view state management
   const [isRegistering, setIsRegistering] = useState(false);
-  
-  // The new state to handle the Pending Approval screen
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
-
-  const [formData, setFormData] = useState({
-    company_name: '',
-    email: '',
-    password: ''
-  });
   
+  const [formData, setFormData] = useState({ email: '', password: '', company_name: '' });
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const handleInputChange = (e) => {
+  const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsAuthenticating(true);
     setError('');
-    setLoading(true);
 
     try {
       if (isRegistering) {
-        // --- THE NEW REGISTRATION FLOW ---
-        // We do not expect a token here anymore, just a success message.
+        // --- REGISTRATION FLOW ---
         await axios.post('/api/auth/register', {
-          company_name: formData.company_name,
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          company_name: formData.company_name
         });
-        
-        // Trigger the success UI instead of logging them in
         setRegistrationSuccess(true);
       } else {
-        // --- THE LOGIN FLOW ---
+        // --- LOGIN FLOW ---
         const response = await axios.post('/api/auth/login', {
           email: formData.email,
           password: formData.password
         });
-
-        // If successful, save the token and the user payload
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
         
-        // Push them directly into the secure platform
+        const { token, user } = response.data;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user)); // Saves role for Sidebar
+
         navigate('/dashboard');
       }
     } catch (err) {
-      console.error("Auth Error:", err);
-      // Display the specific 403 Forbidden error if they are still pending
-      setError(err.response?.data?.error || "Authentication failed. Please try again.");
+      console.error("Authentication failed:", err);
+      setError(err.response?.data?.error || 'System error. Please verify your connection.');
     } finally {
-      setLoading(false);
+      setIsAuthenticating(false);
     }
   };
 
-  // --- UI: THE SUCCESS SCREEN ---
+  // --- THE SUCCESS SCREEN ---
   if (registrationSuccess) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f8f9fa' }}>
-        <div style={{ background: '#fff', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxWidth: '500px', textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '20px' }}>⏳</div>
-          <h2 style={{ color: '#212529', marginBottom: '15px' }}>Application Received</h2>
-          <p style={{ color: '#495057', lineHeight: '1.6', marginBottom: '30px' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', background: '#f8f9fa' }}>
+        <div style={{ background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', maxWidth: '500px', textAlign: 'center', border: '1px solid #dee2e6' }}>
+          <div style={{ fontSize: '3.5rem', marginBottom: '20px' }}>⏳</div>
+          <h2 style={{ color: '#0a192f', marginBottom: '15px', fontWeight: '800' }}>Application Received</h2>
+          <p style={{ color: '#64748b', lineHeight: '1.6', marginBottom: '35px', fontSize: '1.05rem' }}>
             Thank you for registering <strong>{formData.company_name}</strong>. 
-            Your corporate account is currently <strong>pending admin approval</strong> to ensure platform security. 
-            You will be notified once your workspace is unlocked.
+            Your corporate account is currently <strong>pending admin approval</strong> to ensure platform security.
           </p>
           <button 
             onClick={() => {
               setRegistrationSuccess(false);
               setIsRegistering(false);
             }} 
-            style={{ background: '#0d6efd', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}
+            style={{ background: '#10b981', color: 'white', border: 'none', padding: '14px 24px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', width: '100%', fontSize: '1.05rem' }}
           >
-            Return to Login
+            Return to Login Portal
           </button>
         </div>
       </div>
     );
   }
 
-  // --- UI: THE STANDARD AUTH FORMS ---
+  // --- THE DUAL-VIEW PORTAL ---
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f8f9fa' }}>
-      <div style={{ background: '#fff', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', fontFamily: 'system-ui, sans-serif', background: '#f8f9fa' }}>
+      
+      {/* LEFT SIDE: Classic Corporate Navy Design */}
+      <div style={{ flex: 1, background: 'linear-gradient(135deg, #0a192f 0%, #112240 100%)', padding: '60px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-15%', right: '-10%', width: '600px', height: '600px', border: '2px solid rgba(255,255,255,0.03)', borderRadius: '50%' }}></div>
+        <div style={{ position: 'absolute', top: '-5%', right: '-5%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(13,110,253,0.05) 0%, transparent 70%)', borderRadius: '50%' }}></div>
         
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <img src={myLogo} alt="ESG Platform" style={{ height: '50px', marginBottom: '15px' }} />
-          <h2 style={{ margin: 0, color: '#212529' }}>
-            {isRegistering ? 'Register Organization' : 'Platform Login'}
-          </h2>
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '50px' }}>
+            <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#10b981', letterSpacing: '-0.5px' }}>ESG Radar</span>
+          </div>
+          
+          <h1 style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: '1.1', marginBottom: '25px', color: '#ffffff', letterSpacing: '-1px' }}>
+            Secure Corporate <br />Compliance Portal.
+          </h1>
+          <p style={{ fontSize: '1.25rem', color: '#94a3b8', lineHeight: '1.6', maxWidth: '480px', margin: 0 }}>
+            Access your cryptographically secured ledger, approve value chain data, and generate auditor-ready disclosures.
+          </p>
         </div>
 
-        {error && (
-          <div style={{ background: '#f8d7da', color: '#dc3545', padding: '12px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.9rem', textAlign: 'center' }}>
-            {error}
+        <div style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '30px' }}>
+          <div style={{ fontSize: '0.9rem', color: '#94a3b8', display: 'flex', gap: '25px', fontWeight: '500' }}>
+            <span>✓ Bank-Grade Encryption</span>
+            <span>✓ Role-Based Access Control</span>
+            <span>✓ Audit Trailed</span>
           </div>
-        )}
+        </div>
+      </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          {isRegistering && (
-            <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.85rem' }}>Company Name</label>
-              <input 
-                type="text" 
-                name="company_name" 
-                value={formData.company_name} 
-                onChange={handleInputChange} 
-                required 
-                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
-              />
+      {/* RIGHT SIDE: Authentication Form */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
+        <div style={{ width: '100%', maxWidth: '420px', background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
+          
+          <h2 style={{ fontSize: '2rem', color: '#0a192f', margin: '0 0 10px 0', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            {isRegistering ? 'Register Entity' : 'Executive Login'}
+          </h2>
+          <p style={{ color: '#64748b', marginBottom: '35px', fontSize: '1rem' }}>
+            {isRegistering ? 'Apply for network access.' : 'Enter credentials to access the secure environment.'}
+          </p>
+
+          {error && (
+            <div style={{ padding: '14px 15px', marginBottom: '25px', background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', fontSize: '0.95rem', fontWeight: '600' }}>
+              ⚠️ {error}
             </div>
           )}
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.85rem' }}>Corporate Email</label>
-            <input 
-              type="email" 
-              name="email" 
-              value={formData.email} 
-              onChange={handleInputChange} 
-              required 
-              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
-            />
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            
+            {isRegistering && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Company Name</label>
+                <input 
+                  type="text" 
+                  name="company_name" 
+                  value={formData.company_name} 
+                  onChange={handleChange} 
+                  required 
+                  placeholder="Acme Corp"
+                  style={{ padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Corporate Email</label>
+              <input 
+                type="email" 
+                name="email" 
+                value={formData.email} 
+                onChange={handleChange} 
+                required 
+                placeholder="cso@corporate.com"
+                style={{ padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Password</label>
+                {!isRegistering && <span style={{ fontSize: '0.85rem', color: '#3b82f6', cursor: 'pointer', fontWeight: '600' }}>Forgot Protocol?</span>}
+              </div>
+              <input 
+                type="password" 
+                name="password" 
+                value={formData.password} 
+                onChange={handleChange} 
+                required 
+                placeholder="••••••••••••"
+                style={{ padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={isAuthenticating}
+              style={{ background: '#10b981', color: 'white', padding: '16px', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: isAuthenticating ? 'wait' : 'pointer', fontSize: '1.1rem', marginTop: '15px' }}
+            >
+              {isAuthenticating ? 'Processing...' : (isRegistering ? 'Submit Application' : 'Initialize Secure Session')}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '35px', textAlign: 'center', fontSize: '0.95rem', color: '#64748b' }}>
+            {isRegistering ? 'Already provisioned?' : 'System requires a provisioned account.'} <br />
+            <button 
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setError('');
+              }}
+              style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '700', cursor: 'pointer', marginTop: '8px', fontSize: '0.95rem' }}
+            >
+              {isRegistering ? 'Return to Login' : 'Request Admin Access'}
+            </button>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.85rem' }}>Password</label>
-            <input 
-              type="password" 
-              name="password" 
-              value={formData.password} 
-              onChange={handleInputChange} 
-              required 
-              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            style={{ 
-              background: '#198754', 
-              color: 'white', 
-              border: 'none', 
-              padding: '12px', 
-              borderRadius: '4px', 
-              fontWeight: 'bold', 
-              cursor: loading ? 'wait' : 'pointer',
-              marginTop: '10px'
-            }}
-          >
-            {loading ? 'Processing...' : (isRegistering ? 'Submit Application' : 'Secure Login')}
-          </button>
-        </form>
-
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#6c757d' }}>
-            {isRegistering ? 'Already have an account?' : 'Need to onboard your company?'}
-          </p>
-          <button 
-            onClick={() => {
-              setIsRegistering(!isRegistering);
-              setError('');
-            }}
-            style={{ background: 'none', border: 'none', color: '#0d6efd', fontWeight: 'bold', cursor: 'pointer', marginTop: '5px', textDecoration: 'underline' }}
-          >
-            {isRegistering ? 'Log in here' : 'Apply for access'}
-          </button>
         </div>
-
       </div>
+
     </div>
   );
 }

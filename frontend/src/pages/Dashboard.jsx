@@ -69,25 +69,44 @@ function Dashboard() {
     }
   };
 
+  // --- UPDATED CSV EXPORT ENGINE ---
   const exportToCSV = () => {
-    const headers = ["Date", "Organization", "Metric Name", "Numeric Value", "Unit of Measure"];
-    const csvRows = rawObservations.map(obs => {
-      const dateObj = new Date(obs.timestamp);
+    // 1. Define standard headers for the auditor
+    const headers = ["Date", "Facility", "Category/Metric", "Raw Input", "Calculated CO2e (kg)", "Record Type/Status"];
+    
+    // 2. Map the Carbon Emissions Data
+    const emissionRows = emissions.map(e => {
+      const dateObj = new Date(e.recorded_date || e.created_at);
       return [
         dateObj.toLocaleDateString(),
-        `"${obs.organization_name}"`, 
-        `"${obs.metric_name}"`,
-        obs.numeric_value !== null ? obs.numeric_value : "",
-        obs.unit_of_measure || ""
+        `"${e.organization_name || 'Unknown'}"`, 
+        `"${e.scope_category}: ${e.activity_type}"`,
+        e.raw_amount,
+        e.calculated_co2e,
+        `Carbon Emission (${e.status})`
       ].join(','); 
     });
 
-    const csvString = [headers.join(','), ...csvRows].join('\n');
+    // 3. Map the General ESG Observations Data
+    const obsRows = rawObservations.map(obs => {
+      const dateObj = new Date(obs.timestamp);
+      return [
+        dateObj.toLocaleDateString(),
+        `"${obs.organization_name || 'Unknown'}"`, 
+        `"${obs.pillar} Pillar: ${obs.metric_name}"`,
+        obs.numeric_value !== null ? obs.numeric_value : `"${obs.text_value}"`,
+        "N/A", // General logs don't have a CO2e calculation
+        "General Observation"
+      ].join(','); 
+    });
+
+    // 4. Combine, generate Blob, and trigger download
+    const csvString = [headers.join(','), ...emissionRows, ...obsRows].join('\n');
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `ESG_Compliance_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `ESG_Full_Ledger_Export_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link); 
@@ -190,7 +209,7 @@ function Dashboard() {
 
   const scopeTotals = { 'scope_1': 0, 'scope_2': 0, 'scope_3': 0 };
   const timeSeries = {};
-  const facilities = {}; // NEW: For Leaderboard
+  const facilities = {}; 
 
   const sortedEmissions = [...approvedEmissions].sort((a,b) => new Date(a.recorded_date) - new Date(b.recorded_date));
 
@@ -202,7 +221,6 @@ function Dashboard() {
     if (!timeSeries[dateStr]) timeSeries[dateStr] = 0;
     timeSeries[dateStr] += amount;
 
-    // Build facility map for leaderboard
     const orgName = e.organization_name || 'Unknown Facility';
     facilities[orgName] = (facilities[orgName] || 0) + amount;
   });
@@ -217,7 +235,6 @@ function Dashboard() {
     date, co2e: timeSeries[date]
   }));
 
-  // NEW: Sort facility data for leaderboard
   const facilityData = Object.keys(facilities)
     .map(key => ({ name: key, CO2e: facilities[key] }))
     .sort((a, b) => b.CO2e - a.CO2e);
@@ -340,7 +357,7 @@ function Dashboard() {
   return (
     <div ref={reportRef} style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', background: '#f8f9fa', padding: '20px' }}>
       
-      {/* --- RESPONSIVE HEADER SECTION --- */}
+      {/* --- RESPONSIVE HEADER SECTION WITH NEW CAMPAIGNS LINK --- */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto', borderRadius: '4px' }} />
@@ -369,6 +386,11 @@ function Dashboard() {
             {isExporting ? '⏳ Generating PDF...' : '📄 Export PDF'}
           </button>
 
+          {/* NEW BUTTON: Quick Shortcut to Value Chain Tracking */}
+          <Link to="/campaigns" style={{ background: '#764ba2', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(118, 75, 162, 0.2)' }}>
+            🚀 Scope 3 Campaigns
+          </Link>
+
           <Link to="/data-entry" style={{ background: '#0d6efd', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
             + Log New Data
           </Link>
@@ -394,7 +416,6 @@ function Dashboard() {
           </p>
         </div>
 
-        {/* UPDATED: Dynamic Active Facilities count replaces static Total Organizations */}
         <div style={{ padding: '20px', borderLeft: '5px solid #6c757d', borderRadius: '8px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#6c757d', fontSize: '1rem' }}>Active Reporting Nodes</h3>
           <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>
@@ -534,7 +555,7 @@ function Dashboard() {
           )}
         </div>
 
-        {/* NEW CHART 2: Facility Leaderboard */}
+        {/* CHART 2: Facility Leaderboard */}
         <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
           <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Facility Leaderboard</h3>
           {facilityData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No facility data available.</p> : (
