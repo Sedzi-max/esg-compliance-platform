@@ -8,6 +8,7 @@ require('dotenv').config();
 const CARBON_MULTIPLIERS = require('./utils/carbonFactors');
 const multer = require('multer');
 const path = require('path');
+const auditorGuard = require('./middleware/auditorGuard');
 
 const app = express();
 
@@ -40,27 +41,13 @@ app.get('/api/health', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-// ==========================================
-// TEMPORARY DATABASE PATCH ROUTE
-// ==========================================
-app.get('/api/fix-db', async (req, res) => {
-    try {
-        await pool.query(`
-            ALTER TABLE ghg_emissions 
-            ADD COLUMN IF NOT EXISTS unit_of_measure VARCHAR(50) DEFAULT 'units';
-        `);
-        res.send("<h1>✅ Success! unit_of_measure column permanently added.</h1>");
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Error patching database: " + err.message);
-    }
-});
+
 // ==========================================
 // ORGANIZATION UNIT ROUTES (Multi-Tenant Protected)
 // ==========================================
 
 // CREATE a new Organization Unit
-app.post('/api/organizations', authorize, async (req, res) => {
+app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
         const { name, unit_type, jurisdiction } = req.body;
         // SECURITY UPDATE: Lock this org to the user's company_id
@@ -91,7 +78,7 @@ app.get('/api/organizations', authorize, async (req, res) => {
 });
 
 // DELETE an Organization Unit
-app.delete('/api/organizations/:id', authorize, async (req, res) => {
+app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
@@ -126,7 +113,7 @@ app.delete('/api/organizations/:id', authorize, async (req, res) => {
 // ==========================================
 
 // CREATE a new Metric
-app.post('/api/metrics', authorize, async (req, res) => {
+app.post('/api/metrics', authorize, auditorGuard, async (req, res) => {
     try {
         const { pillar, name, data_type, unit_of_measure, aggregation_type } = req.body;
         const newMetric = await pool.query(
@@ -156,7 +143,7 @@ app.get('/api/metrics', authorize, async (req, res) => {
 // ==========================================
 
 // CREATE a new ESG Observation (Updated for new Frontend Payload with File Upload)
-app.post('/api/observations', authorize, upload.single('evidence_file'), async (req, res) => {
+app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
         // Because we are uploading a file, data comes in req.body (strings) and req.file (the physical file)
         const { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
@@ -232,7 +219,7 @@ app.get('/api/emissions', authorize, async (req, res) => {
 });
 
 // 2. POST Route: The Carbon Conversion Engine (Upgraded for External Assurance & Atomic Checkout)
-app.post('/api/emissions', authorize, upload.single('evidence_file'), async (req, res) => {
+app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
         const { organization_id, scope_category, activity_type, raw_amount, unit_of_measure } = req.body;
         
@@ -287,7 +274,7 @@ app.post('/api/emissions', authorize, upload.single('evidence_file'), async (req
 });
 
 // 3. PUT Route: Audit Approval Workflow (Upgraded for RBAC)
-app.put('/api/emissions/:id/status', authorize, async (req, res) => {
+app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) => {
     try {
         // SECURITY UPDATE: Allow BOTH Admins and Compliance Managers to approve data
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -313,7 +300,7 @@ app.put('/api/emissions/:id/status', authorize, async (req, res) => {
 });
 
 // 4. POST Route: Bulk Carbon Conversion Engine
-app.post('/api/emissions/bulk', authorize, async (req, res) => {
+app.post('/api/emissions/bulk', authorize, auditorGuard, async (req, res) => {
     const client = await pool.connect();
     
     try {
@@ -358,7 +345,7 @@ app.post('/api/emissions/bulk', authorize, async (req, res) => {
 });
 
 // 5. PUT Route: Bulk Approve All Pending Emissions
-app.put('/api/emissions/bulk-approve', authorize, async (req, res) => {
+app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res) => {
     try {
         // SECURITY: Only Admins and Managers can bulk approve
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -427,7 +414,7 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
 // ==========================================
 
 // 1. POST Route: Set a new reduction target (Admins Only)
-app.post('/api/targets', authorize, async (req, res) => {
+app.post('/api/targets', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') return res.status(403).json({ error: "Admins only." });
 
@@ -588,6 +575,53 @@ app.post('/api/auth/login', async (req, res) => {
 // USER MANAGEMENT ROUTES (Multi-Tenant Protected)
 // ==========================================
 
+// CREATE a new user within the Admin's company (Internal Invite)
+app.post('/api/users', authorize, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        // SECURITY: Only Admins can invite new users
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        const { email, password, role } = req.body;
+
+        if (!email || !password || !role) {
+            return res.status(400).json({ error: "Email, password, and role are required." });
+        }
+
+        await client.query('BEGIN');
+
+        // Check if user already exists
+        const userExists = await client.query("SELECT * FROM Users WHERE email = $1", [email]);
+        if (userExists.rows.length > 0) {
+            return res.status(400).json({ error: "A user with this email already exists." });
+        }
+
+        // Hash the password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(password, salt);
+
+        // Insert user explicitly bound to the Admin's company and auto-approved
+        const newUser = await client.query(
+            `INSERT INTO Users (email, password_hash, company_id, role, status) 
+             VALUES ($1, $2, $3, $4, 'approved') 
+             RETURNING user_id, email, role, status, created_at`,
+            [email, password_hash, req.user.company_id, role]
+        );
+
+        await client.query('COMMIT');
+        res.status(201).json(newUser.rows[0]);
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Error creating user:", err.message);
+        res.status(500).json({ error: "Failed to create new user." });
+    } finally {
+        client.release();
+    }
+});
+
 // GET all users
 app.get('/api/users', authorize, async (req, res) => {
     try {
@@ -608,7 +642,7 @@ app.get('/api/users', authorize, async (req, res) => {
 });
 
 // UPDATE a user's role
-app.put('/api/users/:id/role', authorize, async (req, res) => {
+app.put('/api/users/:id/role', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
@@ -633,7 +667,7 @@ app.put('/api/users/:id/role', authorize, async (req, res) => {
 // ==========================================
 // MATERIALITY ASSESSMENT ROUTES
 // ==========================================
-app.post('/api/materiality', authorize, async (req, res) => {
+app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
     const client = await pool.connect();
     
     try {
@@ -695,6 +729,91 @@ app.get('/api/materiality/:orgId', authorize, async (req, res) => {
     }
 });
 
+// ==========================================
+// SCOPE 3 CAMPAIGNS (External Supplier Portal)
+// ==========================================
+
+// 1. PROTECTED: Create a new Campaign (Called by Manager from Dashboard)
+app.post('/api/campaigns', authorize, async (req, res) => {
+    try {
+        const { token, supplier_name, activity_type, deadline } = req.body;
+        const newCamp = await pool.query(
+            `INSERT INTO Supplier_Campaigns (token, supplier_name, activity_type, deadline, company_id)
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [token, supplier_name, activity_type, deadline, req.user.company_id]
+        );
+        res.status(201).json(newCamp.rows[0]);
+    } catch (err) {
+        console.error("Error creating campaign:", err.message);
+        res.status(500).json({ error: "Failed to create campaign" });
+    }
+});
+
+// 2. PUBLIC: Fetch campaign details for the Supplier Portal
+app.get('/api/public/campaigns/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        // Join with Companies table so the portal can display the host's real name!
+        const result = await pool.query(
+            `SELECT sc.*, c.company_name
+             FROM Supplier_Campaigns sc
+             JOIN Companies c ON sc.company_id = c.company_id
+             WHERE sc.token = $1`,
+            [token]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Campaign not found or expired." });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error("Error fetching campaign:", err.message);
+        res.status(500).json({ error: "Server error fetching campaign" });
+    }
+});
+
+// 3. PUBLIC: Supplier submits their data anonymously
+app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (req, res) => {
+    try {
+        const { campaign_token, raw_amount } = req.body;
+        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
+
+        // Mark the campaign as completed and save the vendor's submitted data
+        const updateResult = await pool.query(
+            `UPDATE Supplier_Campaigns 
+             SET status = 'Completed', submitted_amount = $1, evidence_url = $2 
+             WHERE token = $3 RETURNING *`,
+            [raw_amount, evidence_url, campaign_token]
+        );
+
+        if (updateResult.rows.length === 0) {
+            return res.status(400).json({ error: "Invalid campaign token." });
+        }
+
+        res.json({ message: "Submission successful" });
+    } catch (err) {
+        console.error("Error saving supplier submission:", err.message);
+        res.status(500).json({ error: "Failed to submit data" });
+    }
+});
+// 1.5 PROTECTED: Fetch all campaigns for the Manager's Dashboard
+app.get('/api/campaigns', authorize, async (req, res) => {
+    try {
+        // Fetch campaigns matching the user's company and alias the columns to match the React frontend
+        const result = await pool.query(
+            `SELECT token as id, supplier_name as supplier, activity_type as metric, 
+                    deadline, status 
+             FROM Supplier_Campaigns 
+             WHERE company_id = $1 
+             ORDER BY created_at DESC`,
+            [req.user.company_id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching campaigns:", err.message);
+        res.status(500).json({ error: "Failed to fetch campaigns" });
+    }
+});
 // ==========================================
 // START SERVER
 // ==========================================

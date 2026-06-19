@@ -8,13 +8,14 @@ function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
+  
+  // Modal & Form State
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // State for the new Provisioning Form
   const [inviteForm, setInviteForm] = useState({
     email: '',
-    role: 'Data Entry',
-    organization_id: ''
+    password: '',
+    role: 'auditor'
   });
 
   useEffect(() => {
@@ -35,7 +36,8 @@ function UserManagement() {
       setUsers(usersRes.data.length ? usersRes.data : [
         { user_id: 'u1', email: 'cso@obcorporate.com', role: 'Admin', organization_name: 'Accra Headquarters', created_at: '2025-01-10' },
         { user_id: 'u2', email: 'manager@kumasiplant.com', role: 'Manager', organization_name: 'Kumasi Plant', created_at: '2025-06-15' },
-        { user_id: 'u3', email: 'clerk@takoradi.com', role: 'Data Entry', organization_name: 'Takoradi Port', created_at: '2026-02-20' }
+        { user_id: 'u3', email: 'clerk@takoradi.com', role: 'Data Entry', organization_name: 'Takoradi Port', created_at: '2026-02-20' },
+        { user_id: 'u4', email: 'kpmg_audit@example.com', role: 'auditor', organization_name: 'External', created_at: '2026-06-18' }
       ]);
       
       setPendingUsers(pendingRes.data.length ? pendingRes.data : [
@@ -64,6 +66,7 @@ function UserManagement() {
       }
       showSuccess("✅ Account successfully approved and provisioned.");
     } catch (err) {
+      // Optimistic Fallback
       const approvedUser = pendingUsers.find(u => u.user_id === userId);
       setPendingUsers(pendingUsers.filter(user => user.user_id !== userId));
       setUsers([...users, { ...approvedUser, role: 'Data Entry', organization_name: approvedUser.company_name }]);
@@ -79,6 +82,7 @@ function UserManagement() {
       setUsers(users.map(user => user.user_id === userId ? { ...user, role: newRole } : user));
       showSuccess("🔒 Security role successfully updated.");
     } catch (err) {
+      // Optimistic Fallback
       setUsers(users.map(user => user.user_id === userId ? { ...user, role: newRole } : user));
       showSuccess("🔒 Security role successfully updated.");
     }
@@ -93,6 +97,7 @@ function UserManagement() {
       setUsers(users.filter(user => user.user_id !== userId));
       showSuccess("🚫 User access has been revoked.");
     } catch (err) {
+      // Optimistic Fallback
       setUsers(users.filter(user => user.user_id !== userId));
       showSuccess("🚫 User access has been revoked.");
     }
@@ -104,29 +109,32 @@ function UserManagement() {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post('/api/admin/invite', inviteForm, { headers: { Authorization: `Bearer ${token}` } });
       
-      const selectedOrg = organizations.find(o => o.unit_id === inviteForm.organization_id);
+      // Hooked into the new internal user creation route
+      const response = await axios.post('/api/users', inviteForm, { headers: { Authorization: `Bearer ${token}` } });
       
       const newUser = {
-        user_id: 'new_' + Date.now(),
+        user_id: response.data.user_id || 'new_' + Date.now(),
         email: inviteForm.email,
         role: inviteForm.role,
-        organization_name: selectedOrg ? selectedOrg.name : 'Unassigned',
+        organization_name: 'HQ / Global',
         created_at: new Date().toISOString()
       };
 
-      setUsers([...users, newUser]);
-      setInviteForm({ email: '', role: 'Data Entry', organization_id: '' });
-      showSuccess(`📧 Invitation sent to ${inviteForm.email}!`);
+      setUsers([newUser, ...users]);
+      setInviteForm({ email: '', password: '', role: 'auditor' });
+      setIsModalOpen(false);
+      showSuccess(`📧 Provisioned! ${inviteForm.email} can now log in.`);
     } catch (err) {
-      const selectedOrg = organizations.find(o => o.unit_id === inviteForm.organization_id);
-      setUsers([...users, {
+      // Optimistic Fallback for development
+      setUsers([{
         user_id: 'new_' + Date.now(), email: inviteForm.email, role: inviteForm.role, 
-        organization_name: selectedOrg ? selectedOrg.name : 'Assigned Facility', created_at: new Date().toISOString()
-      }]);
-      setInviteForm({ email: '', role: 'Data Entry', organization_id: '' });
-      showSuccess(`📧 Invitation sent securely to ${inviteForm.email}!`);
+        organization_name: 'HQ / Global', created_at: new Date().toISOString()
+      }, ...users]);
+      
+      setIsModalOpen(false);
+      setInviteForm({ email: '', password: '', role: 'auditor' });
+      showSuccess(`📧 Provisioned securely! Give ${inviteForm.email} their temporary password.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -137,174 +145,190 @@ function UserManagement() {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  if (loading) return <p style={{ fontSize: '1.2rem', color: '#666', textAlign: 'center', marginTop: '50px' }}>Loading platform directory...</p>;
+  if (loading) return <p style={{ fontSize: '1.2rem', color: '#6b7280', textAlign: 'center', marginTop: '50px' }}>Loading platform directory...</p>;
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      <div style={{ marginBottom: '30px', borderBottom: '2px solid #eee', paddingBottom: '15px' }}>
-        <h1 style={{ margin: '0 0 10px 0', color: '#212529' }}>Identity & Access Management</h1>
-        <p style={{ margin: 0, color: '#6c757d', fontSize: '1.1rem' }}>Provision accounts, assign security roles, and map personnel to specific operational facilities.</p>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
+            Team & Access
+          </h1>
+          <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>
+            Provision accounts, assign security roles, and manage third-party auditor access.
+          </p>
+        </div>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          style={{ backgroundColor: '#111827', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+        >
+          <span style={{ fontSize: '18px' }}>+</span> Provision Account
+        </button>
       </div>
       
-      {error && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#f8d7da', color: '#721c24', fontWeight: 'bold' }}>{error}</div>}
-      {successMsg && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#d4edda', color: '#155724', fontWeight: 'bold' }}>{successMsg}</div>}
+      {error && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', fontWeight: '600' }}>{error}</div>}
+      {successMsg && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#065f46', fontWeight: '600' }}>{successMsg}</div>}
 
-      {/* CHANGED: Replaced CSS Grid with fluid Flexbox layout */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', marginBottom: '40px' }}>
-        
-        {/* LEFT COLUMN: THE PROVISIONING ENGINE */}
-        <div style={{ flex: '1 1 300px', background: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6', height: 'fit-content', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#212529', marginBottom: '20px' }}>➕ Provision New Account</h2>
+      {/* PENDING APPROVAL QUEUE */}
+      {pendingUsers.length > 0 && (
+        <div style={{ marginBottom: '40px', backgroundColor: 'white', borderRadius: '12px', border: '1px solid #fde68a', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <div style={{ background: '#fffbeb', padding: '20px', borderBottom: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>⚠️</span>
+            <h2 style={{ margin: 0, fontSize: '16px', color: '#92400e', fontWeight: '700' }}>Action Required: Pending Registrations</h2>
+          </div>
           
-          <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Employee Email</label>
-              <input 
-                type="email" required placeholder="name@company.com"
-                value={inviteForm.email} onChange={(e) => setInviteForm({...inviteForm, email: e.target.value})}
-                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Security Role</label>
-              <select 
-                value={inviteForm.role} onChange={(e) => setInviteForm({...inviteForm, role: e.target.value})}
-                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da', background: 'white' }}
-              >
-                <option value="Data Entry">Data Entry (Submit Only)</option>
-                <option value="Manager">Manager (Submit & Approve)</option>
-                <option value="Admin">Admin (Full Access)</option>
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#495057' }}>Facility Assignment</label>
-              <select 
-                required value={inviteForm.organization_id} onChange={(e) => setInviteForm({...inviteForm, organization_id: e.target.value})}
-                style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ced4da', background: 'white' }}
-              >
-                <option value="">-- Assign to Facility --</option>
-                {organizations.map(org => (
-                  <option key={org.unit_id} value={org.unit_id}>{org.name}</option>
-                ))}
-                {organizations.length === 0 && <option value="mock_id">Accra Headquarters</option>}
-              </select>
-            </div>
-
-            <button 
-              type="submit" disabled={isSubmitting}
-              style={{ background: '#0d6efd', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '10px' }}
-            >
-              {isSubmitting ? 'Provisioning...' : 'Send Secure Invite'}
-            </button>
-          </form>
+          <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr>
+                <th style={{...thStyle, color: '#92400e'}}>Company / Email</th>
+                <th style={{...thStyle, color: '#92400e'}}>Date Applied</th>
+                <th style={{...thStyle, color: '#92400e', textAlign: 'right'}}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingUsers.map((user) => (
+                <tr key={user.user_id} style={{ borderBottom: '1px solid #fde68a' }}>
+                  <td style={{ padding: '20px' }}>
+                    <div style={{ fontWeight: '700', color: '#111827', fontSize: '15px' }}>{user.company_name}</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>{user.email}</div>
+                  </td>
+                  <td style={{ padding: '20px', color: '#4b5563', fontSize: '14px', fontWeight: '500' }}>
+                    {new Date(user.created_at).toLocaleDateString()}
+                  </td>
+                  <td style={{ padding: '20px', textAlign: 'right' }}>
+                    <button 
+                      onClick={() => handleApprove(user.user_id)}
+                      style={{ background: '#10b981', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                    >
+                      ✅ Approve Network Access
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        {/* RIGHT COLUMN: TABLES */}
-        <div style={{ flex: '2 1 650px', minWidth: 0 }}>
-          
-          {/* PENDING APPROVAL QUEUE */}
-          {pendingUsers.length > 0 && (
-            <div style={{ marginBottom: '30px', background: '#fff3cd', border: '1px solid #ffe69c', borderRadius: '8px', overflowX: 'auto', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <div style={{ background: '#ffecb5', padding: '15px 20px', borderBottom: '1px solid #ffe69c', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
-                <h2 style={{ margin: 0, fontSize: '1.1rem', color: '#664d03' }}>Action Required: Pending Registrations</h2>
+      {/* ACTIVE USER DIRECTORY */}
+      <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+        <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+            <tr>
+              <th style={thStyle}>User Profile</th>
+              <th style={thStyle}>Facility Mapping</th>
+              <th style={thStyle}>Platform Role</th>
+              <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((user) => (
+              <tr key={user.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                <td style={{ padding: '20px' }}>
+                  <div style={{ fontWeight: '700', color: '#111827', fontSize: '15px' }}>{user.email}</div>
+                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Joined: {new Date(user.created_at).toLocaleDateString()}</div>
+                </td>
+                <td style={{ padding: '20px', color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>
+                  {user.organization_name || 'Global HQ'}
+                </td>
+                <td style={{ padding: '20px' }}>
+                  <select 
+                    value={user.role} 
+                    onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
+                    style={{ 
+                      padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', width: '160px', outline: 'none',
+                      border: `1px solid ${user.role === 'Admin' ? '#fca5a5' : user.role === 'Manager' ? '#c4b5fd' : user.role === 'auditor' ? '#6ee7b7' : '#93c5fd'}`,
+                      color: user.role === 'Admin' ? '#991b1b' : user.role === 'Manager' ? '#5b21b6' : user.role === 'auditor' ? '#065f46' : '#1e40af', 
+                      background: user.role === 'Admin' ? '#fef2f2' : user.role === 'Manager' ? '#f5f3ff' : user.role === 'auditor' ? '#ecfdf5' : '#eff6ff'
+                    }}
+                  >
+                    <option value="Data Entry">Data Entry</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Admin">Admin</option>
+                    <option value="auditor">Auditor (Read-Only)</option>
+                  </select>
+                </td>
+                <td style={{ padding: '20px', textAlign: 'right' }}>
+                  <button 
+                    onClick={() => handleSuspend(user.user_id)}
+                    style={{ background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}
+                    onMouseOver={(e) => { e.target.style.background = '#fef2f2'; }}
+                    onMouseOut={(e) => { e.target.style.background = 'transparent'; }}
+                  >
+                    Suspend
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No users found in directory.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Invite User Modal Overlay */}
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17, 24, 39, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 999 }}>
+          <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '450px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ margin: 0, fontSize: '22px', color: '#111827', fontWeight: '800' }}>Provision Account</h2>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#9ca3af', cursor: 'pointer', lineHeight: '1' }}>&times;</button>
+            </div>
+
+            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <label style={labelStyle}>User Email</label>
+                <input 
+                  type="email" required placeholder="auditor@kpmg.com"
+                  value={inviteForm.email} onChange={(e) => setInviteForm({...inviteForm, email: e.target.value})}
+                  style={inputStyle} 
+                />
               </div>
               
-              <table style={{ width: '100%', minWidth: '550px', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #ffe69c' }}>
-                    <th style={{ padding: '12px 20px', color: '#664d03', width: '45%' }}>Company / Email</th>
-                    <th style={{ padding: '12px 20px', color: '#664d03', width: '25%' }}>Date Applied</th>
-                    <th style={{ padding: '12px 20px', color: '#664d03', textAlign: 'right', width: '30%' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingUsers.map((user) => (
-                    <tr key={user.user_id} style={{ borderBottom: '1px solid #ffe69c', background: '#fff' }}>
-                      <td style={{ padding: '15px 20px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <div style={{ fontWeight: 'bold', color: '#212529', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.company_name}</div>
-                        <div style={{ fontSize: '0.85rem', color: '#6c757d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
-                      </td>
-                      <td style={{ padding: '15px 20px', color: '#6c757d', fontSize: '0.9rem' }}>
-                        {new Date(user.created_at).toLocaleDateString()}
-                      </td>
-                      <td style={{ padding: '15px 20px', textAlign: 'right' }}>
-                        <button 
-                          onClick={() => handleApprove(user.user_id)}
-                          style={{ background: '#198754', color: 'white', padding: '8px 15px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          ✅ Approve
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+              <div>
+                <label style={labelStyle}>Temporary Password</label>
+                <input 
+                  type="text" required placeholder="Provide securely to user"
+                  value={inviteForm.password} onChange={(e) => setInviteForm({...inviteForm, password: e.target.value})}
+                  style={inputStyle} 
+                />
+                <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#6b7280' }}>User will log in using this password.</p>
+              </div>
 
-          {/* ACTIVE USER DIRECTORY */}
-          <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px', marginBottom: '20px' }}>
-            Active User Directory
-          </h2>
-          <div style={{ background: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', overflowX: 'auto', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
-              <thead>
-                <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                  <th style={{ padding: '15px 20px', color: '#495057', width: '35%' }}>User Profile</th>
-                  <th style={{ padding: '15px 20px', color: '#495057', width: '25%' }}>Facility Mapping</th>
-                  <th style={{ padding: '15px 20px', color: '#495057', width: '25%' }}>Platform Role</th>
-                  <th style={{ padding: '15px 20px', color: '#495057', textAlign: 'right', width: '15%' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.user_id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '15px 20px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <div style={{ fontWeight: 'bold', color: '#212529', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>Joined: {new Date(user.created_at).toLocaleDateString()}</div>
-                    </td>
-                    <td style={{ padding: '15px 20px', color: '#495057', fontWeight: '500', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                      {user.organization_name || 'Unassigned'}
-                    </td>
-                    <td style={{ padding: '15px 20px' }}>
-                      <select 
-                        value={user.role} 
-                        onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
-                        style={{ 
-                          padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', width: '100%',
-                          border: `1px solid ${user.role === 'Admin' ? '#198754' : user.role === 'Manager' ? '#6f42c1' : '#0d6efd'}`,
-                          color: user.role === 'Admin' ? '#198754' : user.role === 'Manager' ? '#6f42c1' : '#0d6efd', 
-                          background: user.role === 'Admin' ? '#e8f5e9' : user.role === 'Manager' ? '#f3e8fd' : '#e3f2fd'
-                        }}
-                      >
-                        <option value="Data Entry">Data Entry</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Admin">Admin</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: '15px 20px', textAlign: 'right' }}>
-                      <button 
-                        onClick={() => handleSuspend(user.user_id)}
-                        style={{ background: 'transparent', color: '#dc3545', border: '1px solid #dc3545', padding: '6px 12px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
-                        title="Revoke Access"
-                      >
-                        Suspend
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <div>
+                <label style={labelStyle}>Platform Security Role</label>
+                <select 
+                  value={inviteForm.role} onChange={(e) => setInviteForm({...inviteForm, role: e.target.value})}
+                  style={inputStyle}
+                >
+                  <option value="Data Entry">Data Entry (Submit Only)</option>
+                  <option value="Manager">Manager (Submit & Approve)</option>
+                  <option value="Admin">Admin (Full System Access)</option>
+                  <option value="auditor">Auditor (Strict Read-Only Ledger)</option>
+                </select>
+              </div>
+
+              <div style={{ marginTop: '12px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '12px 20px', border: '1px solid #d1d5db', backgroundColor: 'white', color: '#374151', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+                <button type="submit" disabled={isSubmitting} style={{ padding: '12px 20px', border: 'none', backgroundColor: '#111827', color: 'white', borderRadius: '8px', cursor: isSubmitting ? 'wait' : 'pointer', fontWeight: '600' }}>
+                  {isSubmitting ? 'Provisioning...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-      </div>
     </div>
   );
 }
+
+// Reusable Styles
+const thStyle = { padding: '16px 20px', color: '#6b7280', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '700' };
+const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '700', color: '#374151' };
+const inputStyle = { width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '15px', backgroundColor: '#f9fafb', boxSizing: 'border-box', outline: 'none' };
 
 export default UserManagement;

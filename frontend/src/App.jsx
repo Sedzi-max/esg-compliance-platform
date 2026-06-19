@@ -1,6 +1,7 @@
 import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage'; 
 import Dashboard from './pages/Dashboard';
+import AuditorDashboard from './pages/AuditorDashboard'; // 👈 Added Auditor Import
 import Organizations from './pages/Organizations';
 import Metrics from './pages/Metrics';
 import DataEntry from './pages/DataEntry';
@@ -21,6 +22,7 @@ function App() {
   // Define our RBAC Roles
   const isAdmin = user?.role === 'Admin'; 
   const isManager = user?.role === 'Manager';
+  const isAuditor = user?.role === 'auditor'; // 👈 Check for the new Auditor role
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -51,9 +53,20 @@ function App() {
                 </h2>
                 
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
-                  {/* Everyone gets to see the Dashboard and Data Entry */}
-                  <li><Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
-                  <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
+                  
+                  {/* 👈 DYNAMIC SIDEBAR LOGIC: Auditors see a restricted menu */}
+                  {isAuditor ? (
+                    <li>
+                      <Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
+                        🔍 Assurance Portal
+                      </Link>
+                    </li>
+                  ) : (
+                    <>
+                      <li><Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📊 Dashboard</Link></li>
+                      <li><Link to="/data-entry" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📝 Data Entry</Link></li>
+                    </>
+                  )}
                   
                   {/* Both ADMINS and MANAGERS see the Audit Queue & Campaigns */}
                   {(isAdmin || isManager) && (
@@ -85,7 +98,7 @@ function App() {
 
                 <div style={{ borderTop: '1px solid #495057', paddingTop: '15px', marginBottom: '15px' }}>
                    <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#adb5bd' }}>Logged in as:</p>
-                   <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>={user?.email || 'User'}</p>
+                   <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold' }}>{user?.email || 'User'}</p>
                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#198754' }}>Role: {user?.role}</p>
                 </div>
 
@@ -97,8 +110,14 @@ function App() {
               {/* --- PROTECTED MAIN CONTENT --- */}
               <main style={{ flex: 1, padding: '40px', background: '#ffffff', overflowY: 'auto' }}>
                 <Routes>
-                  {/* Open to all authenticated users */}
-                  <Route path="/dashboard" element={<Dashboard />} />
+                  
+                  {/* 👈 DYNAMIC ROUTING: Routes the user to the correct component based on role */}
+                  <Route 
+                    path="/dashboard" 
+                    element={isAuditor ? <AuditorDashboard /> : <Dashboard />} 
+                  />
+
+                  {/* Open to all internal authenticated users */}
                   <Route path="/data-entry" element={<DataEntry />} />
                   
                   {/* Locked to Admins OR Managers! */}
@@ -145,7 +164,7 @@ function App() {
                     } 
                   />
                   
-                  {/* Catch-all redirects safely to /dashboard now */}
+                  {/* Catch-all redirects safely to /dashboard */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </main>

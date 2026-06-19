@@ -68,67 +68,120 @@ function SupplierPortal() {
     }
   };
 
-  if (loading) return <p style={{ textAlign: 'center', marginTop: '100px', color: '#666' }}>Authenticating secure link...</p>;
-  if (error) return <div style={{ maxWidth: '500px', margin: '100px auto', padding: '30px', textAlign: 'center', background: '#fff', borderRadius: '8px', border: '1px solid #f5c6cb', color: '#721c24', fontWeight: 'bold' }}>❌ {error}</div>;
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', fontFamily: 'system-ui, sans-serif' }}>
+        <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '500' }}>Authenticating secure link...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', fontFamily: 'system-ui, sans-serif', padding: '20px' }}>
+        <div style={{ maxWidth: '500px', width: '100%', padding: '32px', textAlign: 'center', backgroundColor: '#fef2f2', borderRadius: '12px', border: '1px solid #fecaca', color: '#991b1b', fontWeight: '600', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            ⚠️ {error}
+        </div>
+    </div>
+  );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '550px', width: '100%', background: 'white', padding: '40px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      <div style={{ maxWidth: '550px', width: '100%', backgroundColor: 'white', padding: '48px', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb' }}>
         
         {/* Header Branding */}
-        <div style={{ textAlign: 'center', marginBottom: '30px', borderBottom: '2px solid #f1f3f5', paddingBottom: '20px' }}>
-          <span style={{ background: '#e3f2fd', color: '#0d6efd', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <div style={{ display: 'inline-block', backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '6px 16px', borderRadius: '50px', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '20px' }}>
             External Assurance Portal
-          </span>
-          <h1 style={{ fontSize: '1.6rem', color: '#212529', margin: '15px 0 5px 0' }}>Value Chain Disclosures</h1>
-          <p style={{ margin: 0, color: '#6c757d', fontSize: '0.95rem' }}>Secure request from <strong>{campaign.company_name}</strong></p>
+          </div>
+          <h1 style={{ fontSize: '28px', color: '#111827', margin: '0 0 8px 0', fontWeight: '800', letterSpacing: '-0.02em' }}>
+            Value Chain Disclosures
+          </h1>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: '15px' }}>
+            Secure data request originated by <strong style={{ color: '#374151' }}>{campaign.company_name}</strong>
+          </p>
         </div>
 
         {success ? (
-          <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '15px' }}>✅</div>
-            <h2 style={{ color: '#198754', margin: '0 0 10px 0' }}>Submission Received!</h2>
-            <p style={{ color: '#6c757d', lineHeight: '1.5', margin: 0 }}>Thank you. Your accounting data and accompanying assurance documents have been transmitted directly to the compliance audit queue.</p>
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ fontSize: '64px', marginBottom: '24px', lineHeight: '1' }}>✅</div>
+            <h2 style={{ color: '#065f46', margin: '0 0 12px 0', fontSize: '24px', fontWeight: '700' }}>Submission Received</h2>
+            <p style={{ color: '#4b5563', lineHeight: '1.6', margin: 0, fontSize: '15px' }}>
+              Thank you. Your accounting data and accompanying assurance documents have been cryptographically sealed and transmitted directly to the compliance audit queue.
+            </p>
           </div>
         ) : (
-          <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
-            <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '6px', border: '1px solid #e9ecef' }}>
-              <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#6c757d', fontWeight: 'bold' }}>ASSIGNED SUPPLIER</p>
-              <p style={{ margin: '0 0 15px 0', fontSize: '1.1rem', fontWeight: 'bold', color: '#212529' }}>{campaign.supplier_name}</p>
+            {/* Context Box */}
+            <div style={{ backgroundColor: '#f9fafb', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <div>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Supplier</p>
+                    <p style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{campaign.supplier_name}</p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deadline</p>
+                    <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#dc2626' }}>{new Date(campaign.deadline).toLocaleDateString()}</p>
+                </div>
+              </div>
               
-              <p style={{ margin: '0 0 5px 0', fontSize: '0.85rem', color: '#6c757d', fontWeight: 'bold' }}>REQUESTED LOG METRIC</p>
-              <p style={{ margin: 0, fontSize: '0.95rem', color: '#495057', fontWeight: '600' }}>
-                {campaign.activity_type.replace(/_/g, ' ').toUpperCase()}
-              </p>
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Requested Log Metric</p>
+                  <p style={{ margin: 0, fontSize: '15px', color: '#4b5563', fontWeight: '600', fontFamily: 'monospace' }}>
+                    {campaign.activity_type.replace(/_/g, ' ').toUpperCase()}
+                  </p>
+              </div>
             </div>
 
             {/* Ingestion Value */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#495057' }}>Total Measured Amount for Reporting Period</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={labelStyle}>Total Measured Amount for Period</label>
               <input 
-                type="number" min="0" step="any" required placeholder="Enter metric total..."
+                type="number" min="0" step="any" required placeholder="e.g., 4500.50"
                 value={amount} onChange={(e) => setAmount(e.target.value)}
-                style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ced4da', fontSize: '1rem' }}
+                style={inputStyle}
               />
             </div>
 
             {/* Document Verification Requirement */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#495057' }}>Upload Verification Statement / Invoice</label>
-              <input 
-                type="file" required accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => setEvidenceFile(e.target.files[0])}
-                style={{ padding: '10px', borderRadius: '6px', border: '1px solid #ced4da', background: '#f8f9fa', fontSize: '0.9rem' }}
-              />
-              <small style={{ color: '#6c757d' }}>* This campaign requires source evidence validation to comply with global ESG auditing framework regulations.</small>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={labelStyle}>Upload Verification Statement / Invoice</label>
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type="file" required accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => setEvidenceFile(e.target.files[0])}
+                  style={{...inputStyle, padding: '10px', fontSize: '14px', cursor: 'pointer'}}
+                />
+              </div>
+              <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '12px', lineHeight: '1.5' }}>
+                * Source evidence validation is required to comply with global ESG auditing frameworks. Acceptable formats: PDF, JPG, PNG.
+              </p>
             </div>
 
+            {/* Submit Button */}
             <button 
               type="submit" disabled={isSubmitting}
-              style={{ background: '#198754', color: 'white', padding: '14px', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '1rem', cursor: isSubmitting ? 'wait' : 'pointer', width: '100%', marginTop: '10px', boxShadow: '0 4px 6px rgba(25, 135, 84, 0.15)' }}
+              style={{ 
+                  backgroundColor: '#111827', 
+                  color: 'white', 
+                  padding: '16px', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontWeight: '700', 
+                  fontSize: '16px', 
+                  cursor: isSubmitting ? 'wait' : 'pointer', 
+                  width: '100%', 
+                  marginTop: '8px', 
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '10px',
+                  transition: 'background-color 0.2s'
+              }}
+              onMouseOver={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = '#1f2937')}
+              onMouseOut={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = '#111827')}
             >
-              {isSubmitting ? 'Transmitting Secure Data...' : '🔒 Verify & Submit Data'}
+              {isSubmitting ? '⏳ Transmitting Secure Data...' : '🔒 Verify & Submit Data'}
             </button>
           </form>
         )}
@@ -137,5 +190,9 @@ function SupplierPortal() {
     </div>
   );
 }
+
+// Reusable Styles
+const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '700', color: '#374151' };
+const inputStyle = { width: '100%', padding: '14px 16px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '15px', backgroundColor: '#f9fafb', boxSizing: 'border-box', outline: 'none', color: '#111827', fontWeight: '500' };
 
 export default SupplierPortal;

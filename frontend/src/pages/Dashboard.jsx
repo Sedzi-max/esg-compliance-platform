@@ -34,10 +34,10 @@ function Dashboard() {
   });
 
   const COLORS = { 
-    E: '#2e7d32', S: '#1565c0', G: '#e65100', 
-    Actual: '#1976d2', Target: '#d32f2f',
-    Scope1: '#0088FE', Scope2: '#00C49F', Scope3: '#FFBB28',
-    Chart1: '#0d6efd', Chart2: '#198754', Chart3: '#ffc107', Chart4: '#dc3545', Chart5: '#6f42c1'
+    E: '#10b981', S: '#3b82f6', G: '#f59e0b', // Updated to match premium palette
+    Actual: '#3b82f6', Target: '#ef4444',
+    Scope1: '#6366f1', Scope2: '#10b981', Scope3: '#f59e0b',
+    Chart1: '#3b82f6', Chart2: '#10b981', Chart3: '#f59e0b', Chart4: '#ef4444', Chart5: '#8b5cf6'
   };
 
   useEffect(() => {
@@ -69,12 +69,10 @@ function Dashboard() {
     }
   };
 
-  // --- UPDATED CSV EXPORT ENGINE ---
+  // --- CSV EXPORT ENGINE ---
   const exportToCSV = () => {
-    // 1. Define standard headers for the auditor
     const headers = ["Date", "Facility", "Category/Metric", "Raw Input", "Calculated CO2e (kg)", "Record Type/Status"];
     
-    // 2. Map the Carbon Emissions Data
     const emissionRows = emissions.map(e => {
       const dateObj = new Date(e.recorded_date || e.created_at);
       return [
@@ -87,7 +85,6 @@ function Dashboard() {
       ].join(','); 
     });
 
-    // 3. Map the General ESG Observations Data
     const obsRows = rawObservations.map(obs => {
       const dateObj = new Date(obs.timestamp);
       return [
@@ -95,12 +92,11 @@ function Dashboard() {
         `"${obs.organization_name || 'Unknown'}"`, 
         `"${obs.pillar} Pillar: ${obs.metric_name}"`,
         obs.numeric_value !== null ? obs.numeric_value : `"${obs.text_value}"`,
-        "N/A", // General logs don't have a CO2e calculation
+        "N/A", 
         "General Observation"
       ].join(','); 
     });
 
-    // 4. Combine, generate Blob, and trigger download
     const csvString = [headers.join(','), ...emissionRows, ...obsRows].join('\n');
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
@@ -119,7 +115,7 @@ function Dashboard() {
       const canvas = await html2canvas(element, { 
         scale: 2, 
         useCORS: true, 
-        backgroundColor: '#f8f9fa',
+        backgroundColor: '#f3f4f6', // Updated background
         windowHeight: element.scrollHeight 
       });
       
@@ -164,7 +160,7 @@ function Dashboard() {
     }
   };
 
-  if (loading) return <p style={{ fontSize: '1.2rem', color: '#666', textAlign: 'center', marginTop: '50px' }}>Loading forecasting engine...</p>;
+  if (loading) return <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280', fontSize: '18px', fontWeight: '500' }}>Loading forecasting engine...</div>;
 
   const now = new Date();
 
@@ -341,10 +337,10 @@ function Dashboard() {
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
-        <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ margin: 0, fontWeight: 'bold', color: '#333' }}>{payload[0].payload.year || payload[0].payload.date}</p>
+        <div style={{ background: 'white', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+          <p style={{ margin: '0 0 8px 0', fontWeight: 'bold', color: '#111827' }}>{payload[0].payload.year || payload[0].payload.date}</p>
           {payload.map((entry, index) => (
-            <p key={index} style={{ margin: 0, color: entry.color || entry.fill, fontWeight: 'bold' }}>
+            <p key={index} style={{ margin: 0, color: entry.color || entry.fill, fontWeight: '600', fontSize: '14px' }}>
               {entry.name}: {Number(entry.value).toLocaleString()} {entry.name === 'Actual Emissions' || entry.name === 'co2e' || entry.name === 'CO2e' ? 'kg' : ''}
             </p>
           ))}
@@ -355,114 +351,127 @@ function Dashboard() {
   };
 
   return (
-    <div ref={reportRef} style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', background: '#f8f9fa', padding: '20px' }}>
+    <div ref={reportRef} style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* --- RESPONSIVE HEADER SECTION WITH NEW CAMPAIGNS LINK --- */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto', borderRadius: '4px' }} />
-          <h1 style={{ margin: 0, color: '#212529', whiteSpace: 'nowrap', lineHeight: '1.2' }}>Platform Overview</h1>
+      {error && (
+        <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #f87171' }}>
+            {error}
         </div>
-        
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <select 
-            value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold', cursor: 'pointer', background: 'white' }}
-          >
-            <option value="ALL">All Time</option>
-            <option value="365">Last 12 Months</option>
-            <option value="90">Last 90 Days</option>
-            <option value="30">Last 30 Days</option>
-          </select>
+      )}
 
-          <button onClick={exportToCSV} style={{ background: '#198754', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
-            📊 Export CSV
-          </button>
+      {/* --- HEADER SECTION --- */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', gap: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              <div style={{ backgroundColor: 'white', padding: '8px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto' }} />
+              </div>
+              <h1 style={{ fontSize: '36px', margin: 0, fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
+                  Platform Overview
+              </h1>
+          </div>
 
-          <button 
-            onClick={generatePDF} disabled={isExporting}
-            style={{ background: isExporting ? '#6c757d' : '#dc3545', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isExporting ? 'wait' : 'pointer' }}
-          >
-            {isExporting ? '⏳ Generating PDF...' : '📄 Export PDF'}
-          </button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <select 
+                  value={timeFilter} 
+                  onChange={(e) => setTimeFilter(e.target.value)}
+                  style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: 'white', fontSize: '14px', fontWeight: '500', color: '#374151', cursor: 'pointer', outline: 'none' }}
+              >
+                  <option value="ALL">All Time</option>
+                  <option value="365">Last 12 Months</option>
+                  <option value="90">Last 90 Days</option>
+                  <option value="30">Last 30 Days</option>
+              </select>
 
-          {/* NEW BUTTON: Quick Shortcut to Value Chain Tracking */}
-          <Link to="/campaigns" style={{ background: '#764ba2', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(118, 75, 162, 0.2)' }}>
-            🚀 Scope 3 Campaigns
+              <button onClick={exportToCSV} style={secondaryButtonStyle}>📊 Export CSV</button>
+              
+              <button 
+                  onClick={generatePDF} 
+                  disabled={isExporting}
+                  style={isExporting ? {...secondaryButtonStyle, opacity: 0.6, cursor: 'wait'} : secondaryButtonStyle}
+              >
+                  {isExporting ? '⏳ Generating PDF...' : '📄 Export PDF'}
+              </button>
+
+              <Link to="/campaigns" style={{...secondaryButtonStyle, color: '#4f46e5', borderColor: '#c7d2fe', backgroundColor: '#eef2ff', textDecoration: 'none'}}>
+                  🚀 Scope 3 Campaigns
+              </Link>
+          </div>
+      </div>
+
+      {/* Primary Action Button */}
+      <div style={{ marginBottom: '32px' }}>
+          <Link to="/data-entry" style={{
+              backgroundColor: '#111827', color: 'white', textDecoration: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+              <span style={{ fontSize: '18px' }}>+</span> Log New Data
           </Link>
-
-          <Link to="/data-entry" style={{ background: '#0d6efd', color: 'white', padding: '10px 20px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-            + Log New Data
-          </Link>
-        </div>
-      </div>
-      
-      {error && <p style={{ color: '#dc3545', background: '#f8d7da', padding: '10px', borderRadius: '4px' }}>{error}</p>}
-
-      {/* --- STATS CARDS --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
-        
-        <div style={{ padding: '20px', borderLeft: `5px solid #d32f2f`, borderRadius: '8px', background: '#ffebee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#d32f2f', fontSize: '1rem' }}>Total Approved Carbon</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#b71c1c' }}>
-            {totalCO2e.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kg CO2e</span>
-          </p>
-        </div>
-
-        <div style={{ padding: '20px', borderLeft: `5px solid #ffc107`, borderRadius: '8px', background: '#fffbeb', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#b48600', fontSize: '1rem' }}>Pending Audit (CO2e)</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>
-            {pendingCO2e.toLocaleString()} <span style={{ fontSize: '1rem', color: '#6c757d' }}>kg</span>
-          </p>
-        </div>
-
-        <div style={{ padding: '20px', borderLeft: '5px solid #6c757d', borderRadius: '8px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#6c757d', fontSize: '1rem' }}>Active Reporting Nodes</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#212529' }}>
-            {activeFacilitiesCount} <span style={{ fontSize: '1rem', color: '#6c757d' }}>Facilities</span>
-          </p>
-        </div>
-
-        <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.S}`, borderRadius: '8px', background: '#e3f2fd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: COLORS.S, fontSize: '1rem' }}>Social Logs</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>{socCount}</p>
-        </div>
-
-        <div style={{ padding: '20px', borderLeft: `5px solid ${COLORS.G}`, borderRadius: '8px', background: '#fff3e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: COLORS.G, fontSize: '1rem' }}>Governance Logs</h3>
-          <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>{govCount}</p>
-        </div>
-
       </div>
 
-      <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'center' }}>
-        <ReportGenerator />
-      </div>
+      {/* --- STATS KPI GRID --- */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px', marginBottom: '40px' }}>
+          
+          <div style={{...cardStyle, borderTop: '4px solid #10b981'}}>
+              <p style={cardLabelStyle}>Total Approved Carbon</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                  <span style={{...cardValueStyle, color: '#047857'}}>{totalCO2e.toLocaleString()}</span>
+                  <span style={cardUnitStyle}>kg CO2e</span>
+              </div>
+          </div>
 
-      <SectorOnboarding />
-      <MaterialityMatrix />
+          <div style={{...cardStyle, borderTop: '4px solid #f59e0b'}}>
+              <p style={cardLabelStyle}>Pending Audit</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                  <span style={cardValueStyle}>{pendingCO2e.toLocaleString()}</span>
+                  <span style={cardUnitStyle}>kg CO2e</span>
+              </div>
+          </div>
+
+          <div style={{...cardStyle, borderTop: '4px solid #6b7280'}}>
+              <p style={cardLabelStyle}>Active Reporting Nodes</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                  <span style={cardValueStyle}>{activeFacilitiesCount}</span>
+                  <span style={cardUnitStyle}>Facilities</span>
+              </div>
+          </div>
+
+          <div style={{...cardStyle, borderTop: '4px solid #3b82f6'}}>
+              <p style={cardLabelStyle}>Social Logs</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                  <span style={{...cardValueStyle, color: '#1d4ed8'}}>{socCount}</span>
+                  <span style={cardUnitStyle}>Records</span>
+              </div>
+          </div>
+
+          <div style={{...cardStyle, borderTop: '4px solid #8b5cf6'}}>
+              <p style={cardLabelStyle}>Governance Logs</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                  <span style={{...cardValueStyle, color: '#6d28d9'}}>{govCount}</span>
+                  <span style={cardUnitStyle}>Records</span>
+              </div>
+          </div>
+      </div>
 
       {/* --- AI INSIGHTS ENGINE --- */}
       {dynamicInsights.length > 0 && (
         <div style={{ marginBottom: '40px' }}>
-          <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
             ⚡ Strategic Insights
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
             {dynamicInsights.map((insight, index) => {
               const theme = {
-                danger: { bg: '#fff5f5', border: '#ffc9c9', text: '#c92a2a' },
-                success: { bg: '#f4fce3', border: '#d8f5a2', text: '#5c940d' },
-                info: { bg: '#e7f5ff', border: '#a5d8ff', text: '#1864ab' },
-                warning: { bg: '#fff9db', border: '#ffec99', text: '#e67700' }
+                danger: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' },
+                success: { bg: '#ecfdf5', border: '#a7f3d0', text: '#065f46' },
+                info: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
+                warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e' }
               }[insight.type];
 
               return (
-                <div key={index} style={{ background: theme.bg, border: `1px solid ${theme.border}`, padding: '20px', borderRadius: '8px', display: 'flex', gap: '15px' }}>
-                  <div style={{ fontSize: '1.5rem' }}>{insight.icon}</div>
+                <div key={index} style={{ background: theme.bg, border: `1px solid ${theme.border}`, padding: '24px', borderRadius: '12px', display: 'flex', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                  <div style={{ fontSize: '24px' }}>{insight.icon}</div>
                   <div>
-                    <h4 style={{ margin: '0 0 5px 0', color: theme.text, fontSize: '1rem' }}>{insight.title}</h4>
-                    <p style={{ margin: 0, color: '#495057', fontSize: '0.9rem', lineHeight: '1.4' }}>{insight.text}</p>
+                    <h4 style={{ margin: '0 0 6px 0', color: theme.text, fontSize: '15px', fontWeight: '700' }}>{insight.title}</h4>
+                    <p style={{ margin: 0, color: '#374151', fontSize: '14px', lineHeight: '1.5' }}>{insight.text}</p>
                   </div>
                 </div>
               );
@@ -471,22 +480,22 @@ function Dashboard() {
         </div>
       )}
 
-      {/* --- FORECASTING CHART & TARGET SETTER --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '20px', marginBottom: '40px' }}>
+      {/* --- FORECASTING & TARGETS --- */}
+      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '24px', marginBottom: '40px' }}>
         
-        <div style={{ background: '#fff', padding: '25px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057' }}>Net-Zero Trajectory vs Actuals</h3>
-          {forecastData.length === 0 ? <p style={{ color: '#666' }}>No approved data available.</p> : (
-            <div style={{ width: '100%', height: '350px', minHeight: '350px', minWidth: 0 }}>
+        <div style={chartContainerStyle}>
+          <h3 style={chartTitleStyle}>Net-Zero Trajectory vs Actuals</h3>
+          {forecastData.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved data available.</p> : (
+            <div style={{ width: '100%', height: '350px', minHeight: '350px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={forecastData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="year" />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                  <XAxis dataKey="year" tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={{stroke: '#e5e7eb'}} />
+                  <YAxis tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Bar dataKey="Actual Emissions" fill={COLORS.Actual} radius={[4, 4, 0, 0]} maxBarSize={60} />
-                  <Line type="monotone" dataKey="Target Trajectory" stroke={COLORS.Target} strokeWidth={3} strokeDasharray="5 5" dot={true} />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  <Bar dataKey="Actual Emissions" fill={COLORS.Actual} radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  <Line type="monotone" dataKey="Target Trajectory" stroke={COLORS.Target} strokeWidth={3} strokeDasharray="5 5" dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -494,34 +503,34 @@ function Dashboard() {
         </div>
 
         {isAdmin && (
-          <div style={{ background: '#f8f9fa', padding: '25px', border: '1px solid #dee2e6', borderRadius: '8px' }}>
-            <h3 style={{ marginTop: 0, color: '#495057' }}>🎯 Set Reduction Goal</h3>
-            <form onSubmit={handleSetTarget} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            <h3 style={{ margin: '0 0 20px 0', color: '#111827', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>🎯 Set Reduction Goal</h3>
+            <form onSubmit={handleSetTarget} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Organization</label>
-                <select onChange={e => setTargetForm({...targetForm, organization_id: e.target.value})} required style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                <label style={formLabelStyle}>Organization</label>
+                <select onChange={e => setTargetForm({...targetForm, organization_id: e.target.value})} required style={formInputStyle}>
                   <option value="">Select Org</option>
                   {organizations.map(o => <option key={o.unit_id} value={o.unit_id}>{o.name}</option>)}
                 </select>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Base Year</label>
-                  <input type="number" value={targetForm.baseline_year} onChange={e => setTargetForm({...targetForm, baseline_year: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ccc' }} />
+                  <label style={formLabelStyle}>Base Year</label>
+                  <input type="number" value={targetForm.baseline_year} onChange={e => setTargetForm({...targetForm, baseline_year: e.target.value})} style={formInputStyle} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Target Year</label>
-                  <input type="number" value={targetForm.target_year} onChange={e => setTargetForm({...targetForm, target_year: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ccc' }} />
+                  <label style={formLabelStyle}>Target Year</label>
+                  <input type="number" value={targetForm.target_year} onChange={e => setTargetForm({...targetForm, target_year: e.target.value})} style={formInputStyle} />
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Reduction % Goal</label>
-                <input type="number" value={targetForm.reduction_percentage} onChange={e => setTargetForm({...targetForm, reduction_percentage: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid #ccc' }} />
+                <label style={formLabelStyle}>Reduction % Goal</label>
+                <input type="number" value={targetForm.reduction_percentage} onChange={e => setTargetForm({...targetForm, reduction_percentage: e.target.value})} style={formInputStyle} />
               </div>
 
-              <button type="submit" style={{ background: '#dc3545', color: 'white', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+              <button type="submit" style={{ background: '#111827', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', marginTop: '10px' }}>
                 Lock In Target
               </button>
             </form>
@@ -529,26 +538,23 @@ function Dashboard() {
         )}
       </div>
 
-      {/* --- SECONDARY DATA VISUALIZATION SECTION --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+      {/* --- VISUALIZATION GRID --- */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', marginBottom: '40px' }}>
         
-        <div style={{ gridColumn: '1 / -1' }}> 
-          <SDGTracker />
-        </div>
-
         {/* CHART 1: Emissions by Scope */}
-        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Emissions by Scope</h3>
-          {pieDataScope.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No scope data available.</p> : (
-            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
+        <div style={chartContainerStyle}>
+          <h3 style={chartTitleStyle}>Emissions by Scope</h3>
+          {pieDataScope.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No scope data available.</p> : (
+            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
+                  <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
                     {pieDataScope.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                      <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => `${value.toLocaleString()} kg`} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -556,17 +562,17 @@ function Dashboard() {
         </div>
 
         {/* CHART 2: Facility Leaderboard */}
-        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Facility Leaderboard</h3>
-          {facilityData.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No facility data available.</p> : (
-            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
+        <div style={chartContainerStyle}>
+          <h3 style={chartTitleStyle}>Facility Leaderboard</h3>
+          {facilityData.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No facility data available.</p> : (
+            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={facilityData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" tick={{fontSize: 12}} width={100} />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
+                  <XAxis type="number" tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="name" type="category" tick={{fill: '#4b5563', fontSize: 12, fontWeight: 500}} width={110} axisLine={false} tickLine={false} />
                   <Tooltip formatter={(value) => `${value.toLocaleString()} kg CO₂e`} content={<CustomTooltip />} />
-                  <Bar dataKey="CO2e" fill="#0d6efd" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="CO2e" radius={[0, 4, 4, 0]} maxBarSize={30}>
                     {facilityData.map((entry, index) => {
                       const dynamicColors = [COLORS.Chart1, COLORS.Chart2, COLORS.Chart3, COLORS.Chart4, COLORS.Chart5];
                       return <Cell key={`cell-${index}`} fill={dynamicColors[index % dynamicColors.length]} />
@@ -579,17 +585,17 @@ function Dashboard() {
         </div>
 
         {/* CHART 3: Ingestion Timeline */}
-        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>Recent Ingestion Timeline</h3>
-          {barDataTimeline.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No timeline data available.</p> : (
-            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
+        <div style={chartContainerStyle}>
+          <h3 style={chartTitleStyle}>Recent Ingestion Timeline</h3>
+          {barDataTimeline.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No timeline data available.</p> : (
+            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barDataTimeline} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tick={{fontSize: 12}} />
-                  <YAxis tick={{fontSize: 12}} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#e5e7eb'}} tickLine={false} />
+                  <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="co2e" fill="#198754" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="co2e" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -597,64 +603,165 @@ function Dashboard() {
         </div>
 
         {/* CHART 4: General ESG Distribution */}
-        <div style={{ background: '#fff', padding: '20px', border: '1px solid #e0e0e0', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, color: '#495057', textAlign: 'center' }}>ESG Log Distribution</h3>
-          {pieDataESG.length === 0 ? <p style={{ color: '#666', textAlign: 'center', marginTop: '40px' }}>No ESG data available.</p> : (
-            <div style={{ width: '100%', height: '250px', minHeight: '250px', minWidth: 0 }}>
+        <div style={chartContainerStyle}>
+          <h3 style={chartTitleStyle}>ESG Log Distribution</h3>
+          {pieDataESG.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No ESG data available.</p> : (
+            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>
+                  <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
                     {pieDataESG.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                      <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           )}
         </div>
+      </div>
 
+      {/* --- INTEGRATED COMPONENTS --- */}
+      <div style={{ marginBottom: '40px' }}>
+        <ReportGenerator />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginBottom: '40px' }}>
+        <SDGTracker />
+        <MaterialityMatrix />
+      </div>
+
+      <div style={{ marginBottom: '40px' }}>
+        <SectorOnboarding />
       </div>
 
       {/* --- RECENT ACTIVITY FEED --- */}
-      <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
-        Recent Activity Log
-      </h2>
-      {recentObs.length === 0 ? (
-        <p style={{ color: '#666' }}>No activity in this timeframe.</p>
-      ) : (
-        <div style={{ background: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          {recentObs.map((obs, index) => (
-            <div key={obs.observation_id} style={{ 
-              padding: '15px 20px', 
-              borderBottom: index !== recentObs.length - 1 ? '1px solid #dee2e6' : 'none',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <div>
-                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>
-                  {obs.organization_name} logged <span style={{ color: '#0d6efd' }}>{obs.metric_name}</span>
-                </p>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#6c757d' }}>
-                  {new Date(obs.timestamp).toLocaleString()}
-                </p>
+      <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #e5e7eb' }}>
+        <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 24px 0' }}>
+          Recent Activity Log
+        </h2>
+        {recentObs.length === 0 ? (
+          <p style={{ color: '#6b7280', fontSize: '14px' }}>No activity in this timeframe.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {recentObs.map((obs, index) => (
+              <div key={obs.observation_id} style={{ 
+                paddingBottom: index !== recentObs.length - 1 ? '16px' : '0', 
+                borderBottom: index !== recentObs.length - 1 ? '1px solid #f3f4f6' : 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#374151', fontSize: '15px' }}>
+                    {obs.organization_name} logged <span style={{ color: '#3b82f6' }}>{obs.metric_name}</span>
+                  </p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>
+                    {new Date(obs.timestamp).toLocaleString()}
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                    {obs.numeric_value !== null ? obs.numeric_value : obs.text_value} 
+                    <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500', marginLeft: '6px' }}>
+                      {obs.unit_of_measure}
+                    </span>
+                  </p>
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', color: '#212529' }}>
-                  {obs.numeric_value !== null ? obs.numeric_value : obs.text_value} 
-                  <span style={{ fontSize: '0.9rem', color: '#6c757d', fontWeight: 'normal', marginLeft: '5px' }}>
-                    {obs.unit_of_measure}
-                  </span>
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
+
+// --- Reusable Style Objects ---
+const secondaryButtonStyle = {
+  backgroundColor: 'white',
+  color: '#374151',
+  border: '1px solid #d1d5db',
+  padding: '10px 16px',
+  borderRadius: '8px',
+  fontSize: '14px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px'
+};
+
+const cardStyle = {
+  backgroundColor: 'white',
+  padding: '24px',
+  borderRadius: '16px',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+  border: '1px solid #e5e7eb',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center'
+};
+
+const cardLabelStyle = {
+  margin: 0,
+  fontSize: '12px',
+  fontWeight: '700',
+  color: '#6b7280',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em'
+};
+
+const cardValueStyle = {
+  fontSize: '36px',
+  fontWeight: '800',
+  color: '#111827',
+  lineHeight: '1'
+};
+
+const cardUnitStyle = {
+  fontSize: '14px',
+  fontWeight: '600',
+  color: '#9ca3af'
+};
+
+const chartContainerStyle = {
+  backgroundColor: 'white',
+  padding: '32px',
+  borderRadius: '16px',
+  border: '1px solid #e5e7eb',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+};
+
+const chartTitleStyle = {
+  margin: '0 0 24px 0',
+  color: '#111827',
+  fontSize: '16px',
+  fontWeight: '700',
+  textAlign: 'center'
+};
+
+const formLabelStyle = {
+  fontSize: '13px',
+  fontWeight: '600',
+  color: '#374151',
+  marginBottom: '6px',
+  display: 'block'
+};
+
+const formInputStyle = {
+  width: '100%',
+  padding: '10px',
+  borderRadius: '8px',
+  border: '1px solid #d1d5db',
+  backgroundColor: '#f9fafb',
+  boxSizing: 'border-box',
+  outline: 'none',
+  fontSize: '14px'
+};
 
 export default Dashboard;
