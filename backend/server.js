@@ -62,7 +62,6 @@ app.get('/api/health', async (req, res) => {
 app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
         const { name, unit_type, jurisdiction } = req.body;
-        // SECURITY UPDATE: Lock this org to the user's company_id
         const newOrg = await pool.query(
             "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, company_id) VALUES ($1, $2, $3, $4) RETURNING *",
             [name, unit_type, jurisdiction, req.user.company_id]
@@ -74,10 +73,39 @@ app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     }
 });
 
+// UPDATE an Organization Unit
+app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        const { id } = req.params;
+        const { name, parent_unit_id, equity_share_percentage, has_operational_control } = req.body;
+
+        const safeParentId = parent_unit_id === "" ? null : parent_unit_id;
+
+        const updatedOrg = await pool.query(
+            `UPDATE Organization_Unit 
+             SET name = $1, parent_unit_id = $2, equity_share_percentage = $3, has_operational_control = $4 
+             WHERE unit_id = $5 AND company_id = $6 RETURNING *`,
+            [name, safeParentId, equity_share_percentage, has_operational_control, id, req.user.company_id]
+        );
+
+        if (updatedOrg.rows.length === 0) {
+            return res.status(404).json({ error: "Organization not found." });
+        }
+
+        res.json(updatedOrg.rows[0]);
+    } catch (err) {
+        console.error("Error updating organization:", err.message);
+        res.status(500).json({ error: "Failed to update organization structure." });
+    }
+});
+
 // READ all Organization Units
 app.get('/api/organizations', authorize, async (req, res) => {
     try {
-        // SECURITY UPDATE: Only fetch orgs that belong to the user's company
         const allOrgs = await pool.query(
             "SELECT * FROM Organization_Unit WHERE company_id = $1 ORDER BY created_at DESC",
             [req.user.company_id]
@@ -98,7 +126,6 @@ app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) =
 
         const { id } = req.params;
 
-        // SECURITY UPDATE: Ensure the org belongs to the user's company before deleting
         const deletedOrg = await pool.query(
             "DELETE FROM Organization_Unit WHERE unit_id = $1 AND company_id = $2 RETURNING *",
             [id, req.user.company_id]
@@ -111,8 +138,6 @@ app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) =
         res.json({ message: "Organization deleted successfully." });
     } catch (err) {
         console.error(err.message);
-        
-        // Safety Catch: If the org has emissions attached, Postgres will throw error code '23503'
         if (err.code === '23503') {
             return res.status(400).json({ error: "Cannot delete: This organization already has emissions or observations logged against it." });
         }
@@ -124,7 +149,6 @@ app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) =
 // METRIC DEFINITION ROUTES (Global)
 // ==========================================
 
-// CREATE a new Metric
 app.post('/api/metrics', authorize, auditorGuard, async (req, res) => {
     try {
         const { pillar, name, data_type, unit_of_measure, aggregation_type } = req.body;
@@ -139,7 +163,6 @@ app.post('/api/metrics', authorize, auditorGuard, async (req, res) => {
     }
 });
 
-// READ all Metrics
 app.get('/api/metrics', authorize, async (req, res) => {
     try {
         const allMetrics = await pool.query("SELECT * FROM Metric_Definition ORDER BY pillar, name");
@@ -151,22 +174,35 @@ app.get('/api/metrics', authorize, async (req, res) => {
 });
 
 // ==========================================
-// ESG OBSERVATION (DATA ENTRY) ROUTES (Multi-Tenant Protected)
+// ESG OBSERVATION (DATA ENTRY) ROUTES 
 // ==========================================
 
-// CREATE a new ESG Observation (Updated for new Frontend Payload with File Upload)
 app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        // Because we are uploading a file, data comes in req.body (strings) and req.file (the physical file)
-        const { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
+        let { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
 
+        // --- THE FIX: Scrub the FormData Strings ---
+        // FormData turns empty variables into literal text strings. We must convert them back.
+        if (!organization_id || organization_id === 'undefined' || organization_id === 'null' || organization_id === '') {
+            return res.status(400).json({ error: "Please select an Organization from the dropdown." });
+        }
+
+        const safeNumeric = (!numeric_value || numeric_value === 'undefined' || numeric_value === 'null' || numeric_value === '') 
+            ? null 
+            : Number(numeric_value);
+            
+        const safeText = (!text_value || text_value === 'undefined' || text_value === 'null') 
+            ? null 
+            : text_value;
+
+        // Note: Using ESG_Observation (matching your GET route)
         const result = await pool.query(`
-            INSERT INTO Observations 
-            (organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_file_url)
+            INSERT INTO ESG_Observation 
+            (unit_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_file_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *;
-        `, [organization_id, metric_name, numeric_value || null, text_value, unit_of_measure, pillar, evidence_url]);
+        `, [organization_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
 
         res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
@@ -175,11 +211,8 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
     }
 });
 
-// READ all Observations
 app.get('/api/observations', authorize, async (req, res) => {
     try {
-        // SECURITY UPDATE: Join with orgs and filter by company_id
-        // UPGRADE: Use LEFT JOIN and COALESCE to support both strict metrics and flexible custom logs
         const query = `
             SELECT 
                 o.observation_id, 
@@ -205,10 +238,9 @@ app.get('/api/observations', authorize, async (req, res) => {
 });
 
 // ==========================================
-// NEW: BULK CSV UPLOAD PIPELINE
+// BULK CSV UPLOAD PIPELINE
 // ==========================================
 
-// POST Route: Universal Bulk CSV Upload (Handles Long/Wide Formats & Blank Cells)
 app.post('/api/upload-csv', authorize, memoryUpload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded." });
 
@@ -253,59 +285,67 @@ app.post('/api/upload-csv', authorize, memoryUpload.single('file'), async (req, 
                         continue; 
                     }
 
-                    // DETECT FORMAT: Are they using explicit "Metric" and "Value" columns?
                     const explicitMetricCol = row.activity_type || row.metric || row.metric_name || row.activity;
                     const explicitValueCol = row.raw_amount || row.value || row.amount || row.numeric_value;
+
+                    // --- INTEGRATED TIER LOGIC ---
+                    const explicitTier = row.quality_tier || row.tier || row.data_quality;
+                    const explicitMethodology = row.methodology || row.calculation_method;
+
+                    let calculatedTier = explicitTier ? explicitTier.toUpperCase() : 'C';
+                    let calculatedMethodology = explicitMethodology || 'Spend-Based Estimate';
+
+                    if (!explicitTier && calculatedMethodology.toLowerCase().includes('activity')) {
+                        calculatedTier = 'A';
+                    }
 
                     const recordsToProcess = [];
 
                     if (explicitMetricCol) {
-                        // --- LONG FORMAT ---
-                        // If the value cell is left out or blank, just gracefully skip it
                         if (explicitValueCol === '' || explicitValueCol === undefined) continue;
 
                         recordsToProcess.push({
                             metric: explicitMetricCol,
                             value: explicitValueCol,
                             pillar: row.pillar || row.category || 'E',
-                            unit: row.unit || row.unit_of_measure || 'units'
+                            unit: row.unit || row.unit_of_measure || 'units',
+                            tier: calculatedTier,
+                            methodology: calculatedMethodology
                         });
                     } else {
-                        // --- WIDE FORMAT ---
-                        // If there is no "Metric" column, assume the headers themselves are the metrics
-                        const ignoredColumns = ['organization', 'facility', 'company', 'organization_name', 'date', 'timestamp', 'row', 'pillar', 'category', 'unit'];
+                        const ignoredColumns = ['organization', 'facility', 'company', 'organization_name', 'date', 'timestamp', 'row', 'pillar', 'category', 'unit', 'quality_tier', 'tier', 'data_quality', 'methodology', 'calculation_method'];
                         
                         for (const colName of Object.keys(row)) {
                             if (ignoredColumns.includes(colName)) continue;
                             
                             const cellValue = row[colName];
                             
-                            // If a column was left out or the cell is empty/zero, gracefully skip it
                             if (cellValue === '' || cellValue === undefined || cellValue === '0') continue;
 
                             recordsToProcess.push({
                                 metric: colName,
                                 value: cellValue,
-                                pillar: 'E', // Wide formats usually default to environmental footprinting
-                                unit: 'units'
+                                pillar: 'E', 
+                                unit: 'units',
+                                tier: calculatedTier,
+                                methodology: calculatedMethodology
                             });
                         }
                     }
 
-                    // Insert whatever records we successfully extracted from this row
                     for (const record of recordsToProcess) {
-                        // Strip commas so Postgres doesn't crash on numbers like "1,500"
                         const rawAmountClean = Number(record.value.toString().replace(/,/g, ''));
-                        if (isNaN(rawAmountClean)) continue; // Skip bad math
+                        if (isNaN(rawAmountClean)) continue; 
 
                         if (record.pillar.toUpperCase() === 'E') {
                             const multiplier = CARBON_MULTIPLIERS['scope_1']?.[record.metric] || 2.3; 
                             const calculatedCo2e = rawAmountClean * multiplier;
 
+                            // --- INTEGRATED TIER INSERT ---
                             await client.query(
-                                `INSERT INTO ghg_emissions (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, status) 
-                                 VALUES ($1, $2, $3, $4, $5, 'Pending')`,
-                                [orgId, 'Scope 1', record.metric, rawAmountClean, calculatedCo2e]
+                                `INSERT INTO ghg_emissions (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, status, quality_tier, methodology) 
+                                 VALUES ($1, $2, $3, $4, $5, 'Pending', $6, $7)`,
+                                [orgId, 'Scope 1', record.metric, rawAmountClean, calculatedCo2e, record.tier, record.methodology]
                             );
                             successCount++;
                         } else {
@@ -339,13 +379,11 @@ app.post('/api/upload-csv', authorize, memoryUpload.single('file'), async (req, 
 });
 
 // ==========================================
-// GHG EMISSIONS ROUTES (Multi-Tenant Protected)
+// GHG EMISSIONS ROUTES 
 // ==========================================
 
-// 1. GET Route: Fetch emissions 
 app.get('/api/emissions', authorize, async (req, res) => {
     try {
-        // SECURITY UPDATE: Filter by company_id
         const result = await pool.query(
             `SELECT e.*, u.name as organization_name
              FROM ghg_emissions e
@@ -364,36 +402,34 @@ app.get('/api/emissions', authorize, async (req, res) => {
     }
 });
 
-// 2. POST Route: The Carbon Conversion Engine (Upgraded for External Assurance & Atomic Checkout)
+// POST Route: The Carbon Conversion Engine
 app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
         const { organization_id, scope_category, activity_type, raw_amount, unit_of_measure } = req.body;
         
-        // Handle physical evidence files via Multer
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-        // 1. Fetch the base multiplier from your existing utility
         const baseMultiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
 
         if (baseMultiplier === undefined) {
             return res.status(400).json({ error: `Unrecognized activity type: ${activity_type}. No emission factor found.` });
         }
 
-        // 2. Define Audit-Grade Metadata for the snapshot
         const factorMetadata = {
             multiplier: baseMultiplier,
             source: scope_category === 'scope_1' ? 'GHG Protocol Stationary' : 'EPA eGRID 2026',
             version: 'v3.2.1'
         };
 
-        // 3. Perform the exact calculation
         const calculated_co2e = Number(raw_amount) * factorMetadata.multiplier;
 
-        // 4. THE ATOMIC CHECKOUT: Write data, evidence, AND mathematical logic to the DB
+        // --- NEW: AUTO-GRADE QUALITY TIER BASED ON EVIDENCE ATTACHMENT ---
+        const autoTier = req.file ? 'A' : 'B';
+        const autoMethod = req.file ? 'Primary Data (Receipt)' : 'Activity-Based Estimate';
+
         const insertQuery = `
             INSERT INTO ghg_emissions 
-            (organization_id, scope_category, activity_type, raw_amount, unit_of_measure, calculated_co2e, status, evidence_file_url, emission_factor_used, factor_source, methodology_version) 
-            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, $9, $10) 
+            (organization_id, scope_category, activity_type, raw_amount, unit_of_measure, calculated_co2e, status, evidence_file_url, emission_factor_used, factor_source, methodology_version, quality_tier, methodology) 
+            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, $9, $10, $11, $12) 
             RETURNING *;
         `;
 
@@ -402,12 +438,14 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
             scope_category, 
             activity_type, 
             raw_amount, 
-            unit_of_measure || 'units', // fallback if unit is missing
+            unit_of_measure || 'units',
             calculated_co2e,
-            evidence_url,               // Snapshot: The uploaded evidence file
-            factorMetadata.multiplier,  // Snapshot: Exact number used
-            factorMetadata.source,      // Snapshot: Where the number came from
-            factorMetadata.version      // Snapshot: The methodology version
+            evidence_url,               
+            factorMetadata.multiplier,  
+            factorMetadata.source,      
+            factorMetadata.version,
+            autoTier,                   // <-- NEW Auto-Grade 
+            autoMethod                  // <-- NEW Auto-Method
         ];
 
         const newEmission = await pool.query(insertQuery, values);
@@ -419,10 +457,8 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
     }
 });
 
-// 3. PUT Route: Audit Approval Workflow (Upgraded for RBAC)
 app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) => {
     try {
-        // SECURITY UPDATE: Allow BOTH Admins and Compliance Managers to approve data
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
             return res.status(403).json({ error: "Access Denied: Only Admins and Compliance Managers can approve data." });
         }
@@ -430,7 +466,6 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         const { id } = req.params;
         const { status } = req.body; 
 
-        // SECURITY UPDATE: Ensure they only approve emissions for their own company
         const updatedEmission = await pool.query(
             `UPDATE ghg_emissions SET status = $1 
              WHERE id = $2 AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $3)
@@ -445,7 +480,6 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
     }
 });
 
-// 4. POST Route: Bulk Carbon Conversion Engine
 app.post('/api/emissions/bulk', authorize, auditorGuard, async (req, res) => {
     const client = await pool.connect();
     
@@ -490,15 +524,12 @@ app.post('/api/emissions/bulk', authorize, auditorGuard, async (req, res) => {
     }
 });
 
-// 5. PUT Route: Bulk Approve All Pending Emissions
 app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res) => {
     try {
-        // SECURITY: Only Admins and Managers can bulk approve
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
             return res.status(403).json({ error: "Access Denied: Only Admins and Compliance Managers can approve data." });
         }
 
-        // Mass update all pending records for this specific company
         const updatedEmissions = await pool.query(
             `UPDATE ghg_emissions SET status = 'Approved' 
              WHERE status = 'Pending' AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $1)
@@ -527,7 +558,6 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
             return res.status(400).json({ error: "Framework and year parameters are required." });
         }
 
-        // The Engine: Join Emissions with Mappings, Filter by Approved & Year, then SUM the totals.
         const query = `
             SELECT 
                 fm.framework_code,
@@ -540,7 +570,6 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
             WHERE u.company_id = $1 
               AND e.status = 'Approved'
               AND fm.framework_name = $2
-              -- Assuming your data has timestamps in created_at, we filter by the requested year
               AND EXTRACT(YEAR FROM e.created_at) = $3 
             GROUP BY fm.framework_code, fm.description
             ORDER BY fm.framework_code;
@@ -555,12 +584,10 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
     }
 });
 
-// GET Route: Calculate Framework Compliance Readiness
 app.get('/api/reports/readiness', authorize, async (req, res) => {
     try {
         const year = req.query.year || new Date().getFullYear().toString();
         
-        // This query cross-references required framework codes with the company's ACTUAL approved data
         const query = `
             WITH CompanyFulfilled AS (
                 SELECT DISTINCT fm.framework_code
@@ -591,7 +618,7 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
     }
 });
 
-// GET Route: Detailed Gap Analysis for a specific framework
+// --- UPGRADED: Detailed Gap Analysis (Now dynamically extracts Quality Tier from DB) ---
 app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
     try {
         const { framework, year } = req.query;
@@ -600,9 +627,13 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
             return res.status(400).json({ error: "Framework and year are required." });
         }
 
+        // UPGRADE: Uses MIN(e.quality_tier) to grab the highest grade of data available ('A' < 'B' < 'C')
         const query = `
             WITH CompanyFulfilled AS (
-                SELECT DISTINCT fm.framework_code, SUM(e.calculated_co2e) as total_co2e
+                SELECT 
+                    fm.framework_code, 
+                    SUM(e.calculated_co2e) as total_co2e,
+                    MIN(e.quality_tier) as quality_tier
                 FROM ghg_emissions e
                 JOIN Organization_Unit u ON e.organization_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
@@ -616,7 +647,8 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
                 f.description,
                 f.activity_type,
                 CASE WHEN c.framework_code IS NOT NULL THEN true ELSE false END as is_fulfilled,
-                c.total_co2e
+                c.total_co2e,
+                c.quality_tier
             FROM Framework_Mappings f
             LEFT JOIN CompanyFulfilled c ON f.framework_code = c.framework_code
             WHERE f.framework_name = $3
@@ -633,10 +665,9 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
 });
 
 // ==========================================
-// NET-ZERO TARGET ROUTES (Multi-Tenant Protected)
+// NET-ZERO TARGET ROUTES 
 // ==========================================
 
-// 1. POST Route: Set a new reduction target (Admins Only)
 app.post('/api/targets', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') return res.status(403).json({ error: "Admins only." });
@@ -656,10 +687,8 @@ app.post('/api/targets', authorize, auditorGuard, async (req, res) => {
     }
 });
 
-// 2. GET Route: Fetch active targets
 app.get('/api/targets', authorize, async (req, res) => {
     try {
-        // SECURITY UPDATE: Filter targets by company_id
         const result = await pool.query(`
             SELECT t.*, o.name as organization_name 
             FROM reduction_targets t
@@ -678,10 +707,8 @@ app.get('/api/targets', authorize, async (req, res) => {
 // SUPER ADMIN: APPROVAL WORKFLOW
 // ==========================================
 
-// 1. Fetch all pending corporate registrations
 app.get('/api/admin/pending', async (req, res) => {
   try {
-    // We join the Companies table so you can actually see the company name you are approving
     const result = await pool.query(`
       SELECT u.user_id, u.email, u.created_at, c.company_name
       FROM Users u
@@ -696,7 +723,6 @@ app.get('/api/admin/pending', async (req, res) => {
   }
 });
 
-// 2. Approve a specific corporate account
 app.put('/api/admin/approve/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -709,10 +735,9 @@ app.put('/api/admin/approve/:id', async (req, res) => {
 });
 
 // ==========================================
-// AUTHENTICATION ROUTES (Multi-Tenant Enabled)
+// AUTHENTICATION ROUTES
 // ==========================================
 
-// --- 1. REGISTRATION ENDPOINT (Manual Approval Workflow) ---
 app.post('/api/auth/register', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -722,18 +747,15 @@ app.post('/api/auth/register', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Create Company
     const newComp = await client.query(
         "INSERT INTO Companies (company_name) VALUES ($1) RETURNING company_id",
         [company_name]
     );
     const newCompanyId = newComp.rows[0].company_id;
 
-    // Hash & Create User
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
-    // HARDENED SECURITY: Explicitly force the status to 'pending'
     await client.query(
       "INSERT INTO Users (email, password_hash, company_id, role, status) VALUES ($1, $2, $3, 'Admin', 'pending')",
       [email, password_hash, newCompanyId]
@@ -752,7 +774,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// --- 2. LOGIN ENDPOINT (The Gatekeeper) ---
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -771,12 +792,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: "Invalid Credentials" });
     }
 
-    // HARDENED SECURITY: Default Deny. If they are not strictly 'approved', block them.
     if (user.rows[0].status !== 'approved') {
       return res.status(403).json({ error: "Access Denied: Your corporate account is still pending verification." });
     }
 
-    // Mint the token!
     const token = jwt.sign(
       { id: user.rows[0].user_id, role: user.rows[0].role, company_id: user.rows[0].company_id },
       process.env.JWT_SECRET,
@@ -795,14 +814,12 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// USER MANAGEMENT ROUTES (Multi-Tenant Protected)
+// USER MANAGEMENT ROUTES 
 // ==========================================
 
-// CREATE a new user within the Admin's company (Internal Invite)
 app.post('/api/users', authorize, async (req, res) => {
     const client = await pool.connect();
     try {
-        // SECURITY: Only Admins can invite new users
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
         }
@@ -815,17 +832,14 @@ app.post('/api/users', authorize, async (req, res) => {
 
         await client.query('BEGIN');
 
-        // Check if user already exists
         const userExists = await client.query("SELECT * FROM Users WHERE email = $1", [email]);
         if (userExists.rows.length > 0) {
             return res.status(400).json({ error: "A user with this email already exists." });
         }
 
-        // Hash the password
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
 
-        // Insert user explicitly bound to the Admin's company and auto-approved
         const newUser = await client.query(
             `INSERT INTO Users (email, password_hash, company_id, role, status) 
              VALUES ($1, $2, $3, $4, 'approved') 
@@ -845,14 +859,12 @@ app.post('/api/users', authorize, async (req, res) => {
     }
 });
 
-// GET all users
 app.get('/api/users', authorize, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
         }
 
-        // SECURITY UPDATE: Admins can ONLY see users in their own company
         const allUsers = await pool.query(
             "SELECT user_id, email, role, created_at FROM Users WHERE company_id = $1 ORDER BY created_at DESC",
             [req.user.company_id]
@@ -864,7 +876,6 @@ app.get('/api/users', authorize, async (req, res) => {
     }
 });
 
-// UPDATE a user's role
 app.put('/api/users/:id/role', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
@@ -874,7 +885,6 @@ app.put('/api/users/:id/role', authorize, auditorGuard, async (req, res) => {
         const { id } = req.params;
         const { role } = req.body;
 
-        // SECURITY UPDATE: Admins can ONLY update roles for users in their own company
         const updatedUser = await pool.query(
             "UPDATE Users SET role = $1 WHERE user_id = $2 AND company_id = $3 RETURNING user_id, email, role",
             [role, id, req.user.company_id]
@@ -902,7 +912,6 @@ app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
 
         await client.query('BEGIN');
 
-        // NEW: If deploying a starter kit, wipe the slate clean first!
         if (overwrite_all) {
             await client.query(`
                 DELETE FROM Materiality_Scores 
@@ -953,10 +962,9 @@ app.get('/api/materiality/:orgId', authorize, async (req, res) => {
 });
 
 // ==========================================
-// SCOPE 3 CAMPAIGNS (External Supplier Portal)
+// SCOPE 3 CAMPAIGNS 
 // ==========================================
 
-// 1. PROTECTED: Create a new Campaign (Called by Manager from Dashboard)
 app.post('/api/campaigns', authorize, async (req, res) => {
     try {
         const { token, supplier_name, activity_type, deadline } = req.body;
@@ -972,11 +980,9 @@ app.post('/api/campaigns', authorize, async (req, res) => {
     }
 });
 
-// 2. PUBLIC: Fetch campaign details for the Supplier Portal
 app.get('/api/public/campaigns/:token', async (req, res) => {
     try {
         const { token } = req.params;
-        // Join with Companies table so the portal can display the host's real name!
         const result = await pool.query(
             `SELECT sc.*, c.company_name
              FROM Supplier_Campaigns sc
@@ -995,13 +1001,11 @@ app.get('/api/public/campaigns/:token', async (req, res) => {
     }
 });
 
-// 3. PUBLIC: Supplier submits their data anonymously
 app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (req, res) => {
     try {
         const { campaign_token, raw_amount } = req.body;
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-        // Mark the campaign as completed and save the vendor's submitted data
         const updateResult = await pool.query(
             `UPDATE Supplier_Campaigns 
              SET status = 'Completed', submitted_amount = $1, evidence_url = $2 
@@ -1020,10 +1024,8 @@ app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (r
     }
 });
 
-// 1.5 PROTECTED: Fetch all campaigns for the Manager's Dashboard
 app.get('/api/campaigns', authorize, async (req, res) => {
     try {
-        // Fetch campaigns matching the user's company and alias the columns to match the React frontend
         const result = await pool.query(
             `SELECT token as id, supplier_name as supplier, activity_type as metric, 
                     deadline, status 

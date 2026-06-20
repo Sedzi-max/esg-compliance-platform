@@ -9,9 +9,17 @@ function AuditQueue() {
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // Tab State
+  const [activeTab, setActiveTab] = useState('Pending');
+
   // Drawer State
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
+
+  // Get current user role to determine if they can approve
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  const canApprove = user?.role === 'Admin' || user?.role === 'Manager';
 
   const openDrawer = (record) => {
     setSelectedRecord(record);
@@ -52,7 +60,8 @@ function AuditQueue() {
       setSuccessMsg(`✅ Record successfully ${newStatus.toLowerCase()}!`);
       setTimeout(() => setSuccessMsg(''), 3000);
 
-      fetchEmissions();
+      // Update local state instantly for snappy UX
+      setEmissions(emissions.map(e => e.id === id ? { ...e, status: newStatus } : e));
     } catch (err) {
       console.error("Error updating status:", err);
       setError("Failed to update status. You may not have Admin privileges.");
@@ -88,6 +97,8 @@ function AuditQueue() {
 
   if (loading) return <p style={{ textAlign: 'center', marginTop: '50px', color: '#666' }}>Loading Audit Queue...</p>;
 
+  // Filter data based on the active tab
+  const filteredData = emissions.filter(e => e.status === activeTab);
   const pendingCount = emissions.filter(e => e.status === 'Pending').length;
 
   return (
@@ -104,7 +115,7 @@ function AuditQueue() {
           )}
         </div>
 
-        {pendingCount > 0 && (
+        {canApprove && pendingCount > 0 && activeTab === 'Pending' && (
           <button 
             onClick={handleApproveAll}
             disabled={isSubmitting}
@@ -122,56 +133,104 @@ function AuditQueue() {
       {error && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#f8d7da', color: '#721c24', fontWeight: 'bold' }}>{error}</div>}
       {successMsg && <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '4px', background: '#d4edda', color: '#155724', fontWeight: 'bold' }}>{successMsg}</div>}
 
-      {emissions.length === 0 ? (
-        <p style={{ color: '#6c757d' }}>No emissions data found.</p>
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #dee2e6', marginBottom: '24px' }}>
+        {['Pending', 'Approved', 'Rejected'].map((tab) => (
+            <button 
+                key={tab} 
+                onClick={() => setActiveTab(tab)} 
+                style={{
+                    padding: '12px 24px', cursor: 'pointer', fontSize: '15px', fontWeight: '700', border: 'none', outline: 'none', backgroundColor: 'transparent', transition: 'all 0.2s',
+                    color: activeTab === tab ? '#212529' : '#6c757d',
+                    borderBottom: activeTab === tab ? '3px solid #0d6efd' : '3px solid transparent'
+                }}
+            >
+                {tab}
+            </button>
+        ))}
+      </div>
+
+      {filteredData.length === 0 ? (
+        <div style={{ background: '#fff', padding: '40px', borderRadius: '8px', textAlign: 'center', border: '1px solid #dee2e6', color: '#6c757d' }}>
+            No {activeTab.toLowerCase()} records found.
+        </div>
       ) : (
         /* --- RESPONSIVE TABLE CONTAINER --- */
         <div style={{ background: '#fff', borderRadius: '8px', overflowX: 'auto', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
           
-          <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Date</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Activity</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Raw Input</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Total CO2e</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057', textAlign: 'center' }}>Evidence</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Status</th>
-                <th style={{ padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057', textAlign: 'center' }}>Admin Action</th>
+                <th style={thStyle}>Date</th>
+                <th style={thStyle}>Facility & Activity</th>
+                <th style={thStyle}>Carbon (CO2e)</th>
+                <th style={thStyle}>Quality Tier</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>Evidence</th>
+                {canApprove && activeTab === 'Pending' && <th style={{ ...thStyle, textAlign: 'right' }}>Admin Action</th>}
               </tr>
             </thead>
             <tbody>
-              {emissions.map((data) => (
+              {filteredData.map((data) => (
                 <tr 
                   key={data.id} 
-                  onClick={() => openDrawer(data)} // Drawer trigger
+                  onClick={() => openDrawer(data)} 
                   style={{ 
                     borderBottom: '1px solid #eee', 
-                    background: data.status === 'Pending' ? '#fffdf5' : 'white',
-                    cursor: 'pointer' // Visual indicator
+                    background: 'white',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.1s'
                   }}
+                  onMouseOver={e => e.currentTarget.style.backgroundColor = '#f8f9fa'} 
+                  onMouseOut={e => e.currentTarget.style.backgroundColor = 'white'}
                 >
-                  <td style={{ padding: '15px', color: '#6c757d', fontSize: '0.9rem' }}>
-                    {new Date(data.recorded_date || data.created_at).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '15px' }}>
-                    <div style={{ fontWeight: 'bold', color: '#212529' }}>{formatScope(data.scope_category)}</div>
-                    <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>{data.activity_type.replace(/_/g, ' ')}</div>
-                  </td>
-                  <td style={{ padding: '15px', fontWeight: '500' }}>{data.raw_amount}</td>
-                  <td style={{ padding: '15px', fontWeight: 'bold', color: '#d9534f' }}>
-                    {Number(data.calculated_co2e).toLocaleString()} kg
+                  {/* Date */}
+                  <td style={tdStyle}>
+                    <div style={{ color: '#495057', fontSize: '0.9rem', fontWeight: '500' }}>
+                        {new Date(data.recorded_date || data.created_at).toLocaleDateString()}
+                    </div>
                   </td>
                   
-                  {/* --- EVIDENCE LINK --- */}
-                  <td style={{ padding: '15px', textAlign: 'center' }}>
+                  {/* Facility & Activity */}
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 'bold', color: '#212529', marginBottom: '2px' }}>{data.organization_name}</div>
+                    <div style={{ fontSize: '0.85rem', color: '#6c757d', fontWeight: '500' }}>
+                        {formatScope(data.scope_category)}: {data.activity_type.replace(/_/g, ' ')}
+                    </div>
+                  </td>
+                  
+                  {/* Carbon Output */}
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 'bold', color: '#dc3545', fontSize: '1.05rem' }}>
+                        {Number(data.calculated_co2e).toLocaleString()} kg
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#adb5bd', marginTop: '2px' }}>
+                        Raw: {Number(data.raw_amount).toLocaleString()} {data.unit_of_measure}
+                    </div>
+                  </td>
+                  
+                  {/* Quality Tier (NEW) */}
+                  <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ 
+                              padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
+                              backgroundColor: data.quality_tier === 'A' ? '#d1e7dd' : data.quality_tier === 'B' ? '#fff3cd' : '#f8d7da',
+                              color: data.quality_tier === 'A' ? '#0f5132' : data.quality_tier === 'B' ? '#856404' : '#842029'
+                          }}>
+                              Tier {data.quality_tier || 'C'}
+                          </span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>{data.methodology || 'Spend-Based'}</div>
+                  </td>
+
+                  {/* Evidence Link */}
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
                     {data.evidence_file_url ? (
                       <a 
                         href={`http://localhost:5000${data.evidence_file_url}`} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()} // Prevent drawer from opening when clicking the link
-                        style={{ color: '#0d6efd', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                        onClick={(e) => e.stopPropagation()} 
+                        style={{ color: '#0d6efd', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                       >
                         📄 View
                       </a>
@@ -180,38 +239,25 @@ function AuditQueue() {
                     )}
                   </td>
 
-                  <td style={{ padding: '15px' }}>
-                    <span style={{ 
-                      padding: '5px 10px', 
-                      borderRadius: '4px', 
-                      fontSize: '0.85rem', 
-                      fontWeight: 'bold',
-                      background: data.status === 'Approved' ? '#d1e7dd' : data.status === 'Rejected' ? '#f8d7da' : '#fff3cd',
-                      color: data.status === 'Approved' ? '#0f5132' : data.status === 'Rejected' ? '#842029' : '#856404'
-                    }}>
-                      {data.status || 'Pending'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '15px', textAlign: 'center' }}>
-                    {data.status === 'Pending' ? (
-                      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                        <button 
-                          onClick={(e) => handleStatusUpdate(e, data.id, 'Approved')} // Added 'e'
-                          style={{ background: '#198754', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-                        >
-                          Approve
-                        </button>
-                        <button 
-                          onClick={(e) => handleStatusUpdate(e, data.id, 'Rejected')} // Added 'e'
-                          style={{ background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <span style={{ color: '#adb5bd', fontSize: '0.85rem' }}>Locked</span>
-                    )}
-                  </td>
+                  {/* Actions */}
+                  {canApprove && activeTab === 'Pending' && (
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={(e) => handleStatusUpdate(e, data.id, 'Approved')} 
+                            style={{ background: '#198754', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            onClick={(e) => handleStatusUpdate(e, data.id, 'Rejected')} 
+                            style={{ background: '#fff', color: '#dc3545', border: '1px solid #dc3545', padding: '6px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -229,5 +275,9 @@ function AuditQueue() {
     </div>
   );
 }
+
+// Reusable Styles
+const thStyle = { padding: '15px', borderBottom: '2px solid #dee2e6', color: '#495057', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.02em' };
+const tdStyle = { padding: '15px', borderBottom: '1px solid #eee', verticalAlign: 'middle' };
 
 export default AuditQueue;

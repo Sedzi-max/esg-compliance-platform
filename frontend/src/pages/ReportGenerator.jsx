@@ -4,6 +4,35 @@ import Papa from 'papaparse';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
+// --- NEW: THE COMPLIANCE MAPPING ENGINE ---
+// This dictionary tells the system what metrics are required for each framework
+const FRAMEWORK_REQUIREMENTS = {
+  GSE_MANDATORY: [
+    { code: 'GSE-E1', name: 'Total GHG Emissions (Scope 1 & 2)', check: data => (data.scopeData.scope_1 + data.scopeData.scope_2) > 0 },
+    { code: 'GSE-S1', name: 'Employee Diversity & Inclusion', check: data => data.esgMetrics.Social.length > 0 },
+    { code: 'GSE-G1', name: 'Board Independence Metrics', check: data => data.esgMetrics.Governance.length > 0 }
+  ],
+  GRI: [
+    { code: 'GRI 305-1', name: 'Direct (Scope 1) GHG emissions', check: data => data.scopeData.scope_1 > 0 },
+    { code: 'GRI 305-2', name: 'Energy indirect (Scope 2) GHG emissions', check: data => data.scopeData.scope_2 > 0 },
+    { code: 'GRI 305-3', name: 'Other indirect (Scope 3) GHG emissions', check: data => data.scopeData.scope_3 > 0 },
+    { code: 'GRI 306-3', name: 'Waste generated', check: data => data.esgMetrics.Environmental.some(m => m.name.toLowerCase().includes('waste')) }
+  ],
+  CSRD: [
+    { code: 'ESRS E1-6', name: 'Gross Scopes 1, 2, 3 and Total GHG emissions', check: data => data.totalCarbon > 0 },
+    { code: 'ESRS S1', name: 'Own Workforce Disclosures', check: data => data.esgMetrics.Social.length > 0 },
+    { code: 'ESRS G1', name: 'Business Conduct', check: data => data.esgMetrics.Governance.length > 0 }
+  ],
+  TCFD: [
+    { code: 'TCFD Metrics-B', name: 'Disclose Scope 1, Scope 2, and, if appropriate, Scope 3', check: data => data.totalCarbon > 0 },
+    { code: 'TCFD Strategy-A', name: 'Climate-related risks and opportunities', check: data => data.esgMetrics.Governance.some(m => m.name.toLowerCase().includes('risk')) }
+  ],
+  SDG: [
+    { code: 'SDG 13', name: 'Climate Action (GHG Tracking)', check: data => data.totalCarbon > 0 },
+    { code: 'SDG 5', name: 'Gender Equality', check: data => data.esgMetrics.Social.some(m => m.name.toLowerCase().includes('gender') || m.name.toLowerCase().includes('diversity')) }
+  ]
+};
+
 function ReportGenerator() {
   const [framework, setFramework] = useState('GSE_MANDATORY');
   const [year, setYear] = useState('2026');
@@ -17,7 +46,6 @@ function ReportGenerator() {
   
   const printRef = useRef();
 
-  // 1. YOUR EXISTING RAW CSV DOWNLOADER
   const handleDownloadCSV = async () => {
     setIsGeneratingCSV(true);
     setError(null);
@@ -50,7 +78,6 @@ function ReportGenerator() {
     }
   };
 
-  // 2. THE VISUAL PREVIEW GENERATOR
   const generatePreview = async (e) => {
     e.preventDefault();
     setIsGeneratingPreview(true);
@@ -66,7 +93,6 @@ function ReportGenerator() {
         axios.get('/api/observations', config).catch(() => ({ data: [] }))
       ]);
 
-      // Filter for strictly APPROVED data matching the selected year
       const targetEmissions = emissionsRes.data.filter(e => {
         const d = new Date(e.recorded_date || e.created_at);
         return e.status === 'Approved' && d.getFullYear().toString() === year;
@@ -77,7 +103,6 @@ function ReportGenerator() {
         return d.getFullYear().toString() === year;
       });
 
-      // Aggregate Carbon Data
       const scopeData = { scope_1: 0, scope_2: 0, scope_3: 0 };
       let totalCarbon = 0;
       targetEmissions.forEach(e => {
@@ -88,7 +113,6 @@ function ReportGenerator() {
         }
       });
 
-      // Group General ESG Metrics
       const esgMetrics = { Environmental: [], Social: [], Governance: [] };
       targetObs.forEach(o => {
         const metricObj = {
@@ -100,9 +124,23 @@ function ReportGenerator() {
         if (o.pillar === 'G') esgMetrics.Governance.push(metricObj);
       });
 
+      // --- NEW: Execute Gap Analysis ---
+      const unformattedData = { scopeData, totalCarbon, esgMetrics };
+      const requirements = FRAMEWORK_REQUIREMENTS[framework] || [];
+      
+      const complianceResults = requirements.map(req => ({
+        ...req,
+        fulfilled: req.check(unformattedData)
+      }));
+
+      const complianceScore = complianceResults.length > 0 
+        ? Math.round((complianceResults.filter(r => r.fulfilled).length / complianceResults.length) * 100)
+        : 100;
+
       setReportData({
         year, framework, generatedAt: new Date().toLocaleDateString(),
-        facilityCount: orgRes.data.length, totalCarbon, scopeData, esgMetrics
+        facilityCount: orgRes.data.length, totalCarbon, scopeData, esgMetrics,
+        complianceResults, complianceScore // Inject the analysis into state
       });
 
     } catch (err) {
@@ -113,13 +151,11 @@ function ReportGenerator() {
     }
   };
 
-  // 3. THE PDF EXPORT ENGINE
   const exportOfficialPDF = async () => {
     setIsExportingPDF(true);
     try {
       const element = printRef.current;
       
-      // Temporarily remove shadow for clean PDF generation
       const originalBoxShadow = element.style.boxShadow;
       element.style.boxShadow = 'none';
       element.style.border = 'none';
@@ -133,7 +169,6 @@ function ReportGenerator() {
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`ESG_Radar_${framework}_Disclosure_${year}.pdf`);
       
-      // Restore shadow
       element.style.boxShadow = originalBoxShadow;
       element.style.border = '1px solid #e5e7eb';
     } catch (err) {
@@ -147,7 +182,6 @@ function ReportGenerator() {
   return (
     <div style={{ width: '100%', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* --- CONFIGURATION PANEL --- */}
       <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)', border: '1px solid #e5e7eb', marginBottom: '40px' }}>
         <div style={{ marginBottom: '24px' }}>
             <h2 style={{ fontSize: '20px', color: '#111827', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700' }}>
@@ -159,10 +193,7 @@ function ReportGenerator() {
         <form onSubmit={generatePreview} style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '2 1 300px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={labelStyle}>Regulatory Framework Matrix</label>
-            <select 
-              value={framework} onChange={(e) => setFramework(e.target.value)}
-              style={inputStyle}
-            >
+            <select value={framework} onChange={(e) => setFramework(e.target.value)} style={inputStyle}>
               <option value="GSE_MANDATORY">GSE Mandatory Disclosures</option>
               <option value="GRI">GRI (Global Reporting Initiative)</option>
               <option value="CSRD">CSRD (European Standard)</option>
@@ -173,10 +204,7 @@ function ReportGenerator() {
 
           <div style={{ flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={labelStyle}>Reporting Year</label>
-            <select 
-              value={year} onChange={(e) => setYear(e.target.value)}
-              style={inputStyle}
-            >
+            <select value={year} onChange={(e) => setYear(e.target.value)} style={inputStyle}>
               <option value="2023">2023</option>
               <option value="2024">2024</option>
               <option value="2025">2025</option>
@@ -185,17 +213,11 @@ function ReportGenerator() {
           </div>
 
           <div style={{ display: 'flex', gap: '12px', flex: '1 1 300px' }}>
-            <button 
-              type="button" onClick={handleDownloadCSV} disabled={isGeneratingCSV}
-              style={secondaryButtonStyle}
-            >
+            <button type="button" onClick={handleDownloadCSV} disabled={isGeneratingCSV} style={secondaryButtonStyle}>
               {isGeneratingCSV ? 'Compiling...' : '📥 Raw CSV'}
             </button>
 
-            <button 
-              type="submit" disabled={isGeneratingPreview}
-              style={primaryButtonStyle}
-            >
+            <button type="submit" disabled={isGeneratingPreview} style={primaryButtonStyle}>
               {isGeneratingPreview ? 'Rendering...' : '📄 Build Visual Report'}
             </button>
           </div>
@@ -203,33 +225,21 @@ function ReportGenerator() {
         {error && <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px', borderRadius: '8px', marginTop: '20px', fontSize: '14px', border: '1px solid #fecaca' }}>⚠️ {error}</div>}
       </div>
 
-      {/* --- VISUAL DOCUMENT PREVIEW --- */}
       {reportData && (
         <div style={{ position: 'relative', padding: '20px 0' }}>
-          
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
-            <button 
-              onClick={exportOfficialPDF} disabled={isExportingPDF}
-              style={{...primaryButtonStyle, backgroundColor: '#dc2626', padding: '10px 24px'}}
-            >
+            <button onClick={exportOfficialPDF} disabled={isExportingPDF} style={{...primaryButtonStyle, backgroundColor: '#dc2626', padding: '10px 24px'}}>
               {isExportingPDF ? '⏳ Rendering PDF...' : '⬇️ Download Official PDF'}
             </button>
           </div>
 
-          {/* The Printable Page Area */}
           <div 
             ref={printRef} 
             style={{ 
-                background: 'white', 
-                padding: '80px', 
-                borderRadius: '8px', 
-                border: '1px solid #e5e7eb', 
+                background: 'white', padding: '80px', borderRadius: '8px', border: '1px solid #e5e7eb', 
                 boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', 
-                color: '#111827', 
-                fontFamily: '"Georgia", Times, serif', 
-                maxWidth: '850px', 
-                margin: '0 auto', 
-                minHeight: '1100px' 
+                color: '#111827', fontFamily: '"Georgia", Times, serif', maxWidth: '850px', 
+                margin: '0 auto', minHeight: '1100px' 
             }}
           >
             {/* Document Header */}
@@ -249,17 +259,37 @@ function ReportGenerator() {
               </div>
             </div>
 
-            {/* Executive Summary */}
-            <div style={{ marginBottom: '48px' }}>
-              <h3 style={sectionHeaderStyle}>1. Executive Environmental Summary</h3>
-              <p style={{ lineHeight: '1.8', fontSize: '15px', color: '#374151', textAlign: 'justify' }}>
-                This document serves as the official compilation of verified environmental, social, and governance (ESG) metrics for the fiscal year {reportData.year}. All data enclosed has been cryptographically secured and approved by internal compliance administrators in accordance with the selected framework standards.
-              </p>
+            {/* --- NEW: COMPLIANCE GAP ANALYSIS SECTION --- */}
+            <div style={{ marginBottom: '48px', padding: '24px', backgroundColor: reportData.complianceScore === 100 ? '#ecfdf5' : '#fef2f2', border: `1px solid ${reportData.complianceScore === 100 ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', fontFamily: 'system-ui, sans-serif' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#111827', textTransform: 'uppercase', fontWeight: '700' }}>Automated Gap Analysis</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '800', color: reportData.complianceScore === 100 ? '#059669' : '#dc2626' }}>
+                        {reportData.complianceScore}% Compliant
+                    </div>
+                </div>
+                
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                    <tbody>
+                        {reportData.complianceResults.map((req, idx) => (
+                            <tr key={idx} style={{ borderTop: '1px solid #e5e7eb' }}>
+                                <td style={{ padding: '12px 0', width: '30px' }}>
+                                    {req.fulfilled ? '✅' : '❌'}
+                                </td>
+                                <td style={{ padding: '12px 0', fontWeight: '600', color: '#374151', width: '150px' }}>
+                                    {req.code}
+                                </td>
+                                <td style={{ padding: '12px 0', color: '#6b7280' }}>
+                                    {req.name}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
 
             {/* Carbon Footprint Section */}
             <div style={{ marginBottom: '48px' }}>
-              <h3 style={sectionHeaderStyle}>2. Greenhouse Gas (GHG) Inventory</h3>
+              <h3 style={sectionHeaderStyle}>1. Greenhouse Gas (GHG) Inventory</h3>
               
               <div style={{ display: 'flex', gap: '20px', marginBottom: '24px' }}>
                 <div style={{ background: '#f9fafb', padding: '24px', flex: 1, borderLeft: '4px solid #10b981', borderRadius: '4px' }}>
@@ -296,7 +326,7 @@ function ReportGenerator() {
 
             {/* Social & Governance Metrics Section */}
             <div style={{ marginBottom: '48px' }}>
-              <h3 style={sectionHeaderStyle}>3. Social & Governance Disclosures</h3>
+              <h3 style={sectionHeaderStyle}>2. Social & Governance Disclosures</h3>
               
               {['Social', 'Governance'].map(pillar => (
                 <div key={pillar} style={{ marginBottom: '24px' }}>

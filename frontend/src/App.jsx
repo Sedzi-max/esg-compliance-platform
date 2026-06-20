@@ -11,7 +11,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AuditQueue from './pages/AuditQueue'; 
 import SurveyCampaigns from './pages/SurveyCampaigns';
 import SupplierPortal from './pages/SupplierPortal';
-import FrameworkAlignment from './pages/FrameworkAlignment'; // 👈 Successfully Imported
+import FrameworkAlignment from './pages/FrameworkAlignment'; 
+import EntityManagement from './pages/EntityManagement';
+import SOPPage from './pages/SOPPage'; // 👈 SOP Imported here
 
 function App() {
   const navigate = useNavigate();
@@ -83,7 +85,6 @@ function App() {
                           🚀 Scope 3 Campaigns
                         </Link>
                       </li>
-                      {/* 👈 NEW SIDEBAR LINK ADDED HERE */}
                       <li>
                         <Link to="/alignment" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
                           🎯 Compliance Alignment
@@ -96,9 +97,13 @@ function App() {
                   {isAdmin && (
                     <>
                       <li style={{ marginTop: '20px', fontSize: '0.8rem', color: '#6c757d', textTransform: 'uppercase', fontWeight: 'bold' }}>Admin Settings</li>
-                      <li><Link to="/organizations" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link></li>
-                      <li><Link to="/metrics" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link></li>
-                      <li><Link to="/users" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>👥 Manage Users</Link></li>
+                      <li><Link to="/organizations" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🏢 Organizations</Link></li>
+                      <li><Link to="/entity-management" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>🌐 Entity Boundaries</Link></li>
+                      <li><Link to="/metrics" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>⚙️ Metrics Config</Link></li>
+                      <li><Link to="/users" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>👥 Manage Users</Link></li>
+                      
+                      {/* 👈 SOP SIDEBAR LINK ADDED HERE */}
+                      <li><Link to="/sop" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>📄 Platform SOP</Link></li>
                     </>
                   )}
                 </ul>
@@ -142,7 +147,6 @@ function App() {
                     } 
                   />
 
-                  {/* 👈 NEW ROUTE ADDED HERE */}
                   <Route 
                     path="/alignment" 
                     element={
@@ -161,6 +165,16 @@ function App() {
                       </ProtectedRoute>
                     } 
                   />
+                  
+                  <Route 
+                    path="/entity-management" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <EntityManagement />
+                      </ProtectedRoute>
+                    } 
+                  />
+
                   <Route 
                     path="/metrics" 
                     element={
@@ -174,6 +188,16 @@ function App() {
                     element={
                       <ProtectedRoute allowedRoles={['Admin']}>
                         <UserManagement />
+                      </ProtectedRoute>
+                    } 
+                  />
+
+                  {/* 👈 SOP ROUTE ADDED HERE */}
+                  <Route 
+                    path="/sop" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin']}>
+                        <SOPPage />
                       </ProtectedRoute>
                     } 
                   />

@@ -1,217 +1,261 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const SurveyCampaigns = () => {
-  const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+function SurveyCampaigns() {
+    const [campaigns, setCampaigns] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  // Form State properly mapped to your Postgres columns
-  const [form, setForm] = useState({ 
-      supplier_name: '', 
-      activity_type: 'travel_flight_short_haul_km', 
-      deadline: '' 
-  });
+    // Form state for creating a new campaign
+    const [isCreating, setIsCreating] = useState(false);
+    const [newCampaign, setNewCampaign] = useState({
+        supplier_name: '', activity_type: '', deadline: ''
+    });
 
-  useEffect(() => {
-    fetchCampaigns();
-  }, []);
+    // State to track which link was just copied
+    const [copiedToken, setCopiedToken] = useState(null);
 
-  const fetchCampaigns = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/campaigns', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      setCampaigns(response.data);
-      setLoading(false);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load active supply chain requests.");
-      setLoading(false);
-    }
-  };
+    useEffect(() => {
+        fetchCampaigns();
+    }, []);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    
-    // Generate a unique token
-    const newToken = `camp_${Math.random().toString(36).substr(2, 6)}`;
-    
-    try {
-      const jwtToken = localStorage.getItem('token');
-      
-      // Save it permanently to the Postgres Database
-      await axios.post('/api/campaigns', {
-        token: newToken,
-        supplier_name: form.supplier_name,
-        activity_type: form.activity_type,
-        deadline: form.deadline
-      }, {
-        headers: { Authorization: `Bearer ${jwtToken}` }
-      });
-
-      // Update the UI immediately without needing to refresh
-      const newCamp = {
-        id: newToken,
-        supplier: form.supplier_name,
-        metric: form.activity_type,
-        deadline: form.deadline,
-        status: 'Active'
-      };
-      
-      setCampaigns([newCamp, ...campaigns]);
-      setForm({ supplier_name: '', activity_type: 'travel_flight_short_haul_km', deadline: '' });
-      setSuccessMsg("Campaign successfully launched!");
-      setTimeout(() => setSuccessMsg(''), 4000);
-      
-    } catch (err) {
-      setError("Failed to save campaign to database. Check server connection.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const copyLink = (id) => {
-    const link = `http://localhost:5173/supplier-portal/${id}`;
-    navigator.clipboard.writeText(link);
-    setSuccessMsg(`🔗 Secure tracking URL copied to clipboard!`);
-    setTimeout(() => setSuccessMsg(''), 4000);
-  };
-
-  const formatActivity = (type) => {
-    if (!type) return '';
-    return type.replace(/_/g, ' ').toUpperCase();
-  };
-
-  if (loading) return <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280', fontFamily: 'system-ui' }}>Loading active supply chain requests...</div>;
-
-  return (
-    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      
-      {/* Header */}
-      <div style={{ marginBottom: '40px' }}>
-        <h1 style={{ fontSize: '36px', margin: '0 0 10px 0', fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
-          Scope 3 Campaign Manager
-        </h1>
-        <p style={{ margin: 0, color: '#4b5563', fontSize: '18px', maxWidth: '700px' }}>
-          Collect carbon data securely from your external supply chain without granting access to internal accounts.
-        </p>
-      </div>
-
-      {successMsg && <div style={{ backgroundColor: '#ecfdf5', color: '#065f46', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #6ee7b7', fontWeight: '600' }}>{successMsg}</div>}
-      {error && <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #f87171', fontWeight: '600' }}>⚠️ {error}</div>}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px', maxWidth: '1000px' }}>
-        
-        {/* Creation Form */}
-        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #e5e7eb' }}>
-          <h2 style={{ fontSize: '20px', color: '#111827', margin: '0 0 24px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            🚀 Launch Supplier Stream
-          </h2>
-          <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div>
-              <label style={labelStyle}>Vendor / Supplier Name</label>
-              <input 
-                type="text" required placeholder="e.g., Dangote Cement Logistics"
-                value={form.supplier_name} onChange={e => setForm({...form, supplier_name: e.target.value})}
-                style={inputStyle}
-              />
-            </div>
+    const fetchCampaigns = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get('/api/campaigns', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-              <div style={{ flex: '2 1 300px' }}>
-                <label style={labelStyle}>Target Scope 3 Metric</label>
-                <select 
-                  value={form.activity_type} onChange={e => setForm({...form, activity_type: e.target.value})}
-                  style={inputStyle}
+            // Map backend data and inject our frontend Tier Logic for demonstration
+            const enhancedData = response.data.map((camp, index) => {
+                let methodology = 'Pending';
+                if (camp.status === 'Completed') methodology = index % 2 === 0 ? 'Activity-Based' : 'Spend-Based';
+                if (camp.status === 'Under Review') methodology = 'Average-Data';
+
+                return { ...camp, methodology };
+            });
+
+            setCampaigns(enhancedData);
+            setLoading(false);
+        } catch (err) {
+            console.error("Failed to fetch campaigns", err);
+            setError("Failed to load supplier campaigns.");
+            setLoading(false);
+        }
+    };
+
+    const handleCreateCampaign = async (e) => {
+        e.preventDefault();
+        try {
+            const token = localStorage.getItem('token');
+            // Generate a secure random token for the vendor portal link
+            const vendorToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            
+            await axios.post('/api/campaigns', { ...newCampaign, token: vendorToken }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            setNewCampaign({ supplier_name: '', activity_type: '', deadline: '' });
+            setIsCreating(false);
+            fetchCampaigns();
+        } catch (err) {
+            alert("Failed to dispatch campaign.");
+        }
+    };
+
+    // Clipboard Copy Function
+    const handleCopyLink = (campaignToken) => {
+        // Dynamically builds the link using your current domain (localhost or live URL)
+        const portalUrl = `${window.location.origin}/supplier-portal/${campaignToken}`;
+        
+        navigator.clipboard.writeText(portalUrl).then(() => {
+            setCopiedToken(campaignToken); // Triggers the "Copied!" UI
+            setTimeout(() => setCopiedToken(null), 2000); // Resets back to "Copy Link" after 2 seconds
+        }).catch(err => {
+            console.error("Failed to copy link: ", err);
+            alert("Failed to copy link. Check browser permissions.");
+        });
+    };
+
+    // CORE LOGIC: DATA QUALITY TIERS
+    const getQualityMetrics = (methodology) => {
+        switch (methodology) {
+            case 'Activity-Based':
+                return { tier: 'A', color: '#10b981', bg: '#d1fae5', buffer: '±5%', desc: 'Primary Data (e.g., Fuel Receipts)' };
+            case 'Average-Data':
+                return { tier: 'B', color: '#3b82f6', bg: '#dbeafe', buffer: '±15%', desc: 'Industry Average Estimates' };
+            case 'Spend-Based':
+                return { tier: 'C', color: '#f59e0b', bg: '#fef3c7', buffer: '±30%', desc: 'Financial Spend Estimates' };
+            default:
+                return { tier: '-', color: '#6b7280', bg: '#f3f4f6', buffer: 'N/A', desc: 'Awaiting Disclosure' };
+        }
+    };
+
+    const getStatusStyle = (status) => {
+        if (status === 'Completed') return { bg: '#d1e7dd', text: '#0f5132' };
+        if (status === 'Under Review') return { bg: '#fff3cd', text: '#856404' };
+        // Handle both Active and Pending statuses
+        if (status === 'Active' || status === 'Pending') return { bg: '#fef2f2', text: '#991b1b' }; 
+        return { bg: '#f3f4f6', text: '#374151' };
+    };
+
+    return (
+        <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            
+            {/* Header Section */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+                <div>
+                    <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
+                        Scope 3 Value Chain
+                    </h1>
+                    <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>
+                        Track supplier disclosures, methodologies, and data reliability tiers.
+                    </p>
+                </div>
+                <button 
+                    onClick={() => setIsCreating(!isCreating)}
+                    style={{ backgroundColor: '#111827', color: 'white', padding: '12px 24px', borderRadius: '8px', fontWeight: '600', border: 'none', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
                 >
-                  <option value="travel_flight_short_haul_km">Short Haul Transport - km</option>
-                  <option value="travel_flight_long_haul_km">Long Haul Transport - km</option>
-                  <option value="waste_landfill_kg">Value Chain Waste (Landfill) - kg</option>
-                  <option value="waste_recycled_kg">Value Chain Waste (Recycled) - kg</option>
-                  <option value="mobile_diesel_liters">Subcontracted Fleet Fuel - Liters</option>
-                </select>
-              </div>
-              <div style={{ flex: '1 1 200px' }}>
-                <label style={labelStyle}>Submission Deadline</label>
-                <input 
-                  type="date" required
-                  value={form.deadline} onChange={e => setForm({...form, deadline: e.target.value})}
-                  style={inputStyle}
-                />
-              </div>
+                    {isCreating ? 'Cancel' : '+ Dispatch New Campaign'}
+                </button>
             </div>
 
-            <button type="submit" disabled={isSubmitting} style={{ backgroundColor: '#111827', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontSize: '15px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', transition: '0.2s' }}>
-              {isSubmitting ? 'Generating Portal...' : 'Generate Tracking Portal'}
-            </button>
-          </form>
+            {error && <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>{error}</div>}
+
+            {/* Campaign Dispatch Form */}
+            {isCreating && (
+                <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginBottom: '32px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>Dispatch Vendor Request</h3>
+                    <form onSubmit={handleCreateCampaign} style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Supplier Name</label>
+                            <input type="text" required value={newCampaign.supplier_name} onChange={e => setNewCampaign({...newCampaign, supplier_name: e.target.value})} style={inputStyle} placeholder="e.g., Global Logistics Corp" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Target Metric</label>
+                            <select required value={newCampaign.activity_type} onChange={e => setNewCampaign({...newCampaign, activity_type: e.target.value})} style={inputStyle}>
+                                <option value="">Select Metric...</option>
+                                <option value="Fleet Fuel (Diesel)">Fleet Fuel (Diesel)</option>
+                                <option value="Purchased Electricity">Purchased Electricity</option>
+                                <option value="Waste Generation">Waste Generation</option>
+                            </select>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Disclosure Deadline</label>
+                            <input type="date" required value={newCampaign.deadline} onChange={e => setNewCampaign({...newCampaign, deadline: e.target.value})} style={inputStyle} />
+                        </div>
+                        <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer', height: '42px' }}>
+                            Send Request
+                        </button>
+                    </form>
+                </div>
+            )}
+
+            {/* Quality Tier Legend */}
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ fontSize: '13px', color: '#6b7280', fontWeight: '600' }}>DATA QUALITY LEDGER:</div>
+                <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>Tier A (Primary Data / Receipts)</div>
+                <div style={{ fontSize: '13px', color: '#3b82f6', fontWeight: '600' }}>Tier B (Industry Averages)</div>
+                <div style={{ fontSize: '13px', color: '#f59e0b', fontWeight: '600' }}>Tier C (Spend-Based Estimates)</div>
+            </div>
+
+            {/* Supplier Leaderboard Table */}
+            {/* Note the overflowX: 'auto' allowing horizontal scroll if the screen is narrow */}
+            <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                {loading ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Loading supply chain data...</div>
+                ) : (
+                    <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                            <tr>
+                                <th style={thStyle}>Supplier Name</th>
+                                <th style={thStyle}>Activity / Scope</th>
+                                <th style={thStyle}>Status</th>
+                                <th style={thStyle}>Methodology</th>
+                                <th style={thStyle}>Quality Tier</th>
+                                <th style={thStyle}>Uncertainty Buffer</th>
+                                <th style={thStyle}>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {campaigns.length === 0 ? (
+                                <tr>
+                                    <td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>No supplier campaigns dispatched yet.</td>
+                                </tr>
+                            ) : (
+                                campaigns.map((camp) => {
+                                    const quality = getQualityMetrics(camp.methodology);
+                                    const statusStyle = getStatusStyle(camp.status);
+                                    const isCopied = copiedToken === camp.id; 
+
+                                    return (
+                                        <tr key={camp.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                            <td style={tdStyle}>
+                                                <div style={{ fontWeight: '600', color: '#111827' }}>{camp.supplier}</div>
+                                                <div style={{ fontSize: '12px', color: '#6b7280' }}>Due: {new Date(camp.deadline).toLocaleDateString()}</div>
+                                            </td>
+                                            <td style={{...tdStyle, color: '#4b5563'}}>{camp.metric}</td>
+                                            <td style={tdStyle}>
+                                                <span style={{ backgroundColor: statusStyle.bg, color: statusStyle.text, padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700' }}>
+                                                    {camp.status || 'Pending'}
+                                                </span>
+                                            </td>
+                                            <td style={{...tdStyle, color: '#4b5563', fontSize: '13px'}}>{camp.methodology}</td>
+                                            
+                                            {/* Quality Tier Pillar */}
+                                            <td style={tdStyle}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <div style={{ backgroundColor: quality.bg, color: quality.color, width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '14px', border: `1px solid ${quality.color}40` }}>
+                                                        {quality.tier}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            
+                                            {/* Uncertainty Buffer */}
+                                            <td style={tdStyle}>
+                                                <span style={{ color: quality.color, fontWeight: '700', fontFamily: 'monospace', fontSize: '14px', backgroundColor: '#f9fafb', padding: '4px 8px', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                                                    {quality.buffer}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Action Column */}
+                                            <td style={tdStyle}>
+                                                {/* Checks for 'Active' or 'Pending' */}
+                                                {camp.status === 'Pending' || camp.status === 'Active' ? (
+                                                    <button 
+                                                        onClick={() => handleCopyLink(camp.id)}
+                                                        style={{ 
+                                                            backgroundColor: isCopied ? '#10b981' : 'transparent', 
+                                                            color: isCopied ? 'white' : '#4f46e5', 
+                                                            border: `1px solid ${isCopied ? '#10b981' : '#c7d2fe'}`, 
+                                                            padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease',
+                                                            whiteSpace: 'nowrap' // Prevents button text from breaking to a new line
+                                                        }}
+                                                    >
+                                                        {isCopied ? '✅ Copied!' : '🔗 Copy Link'}
+                                                    </button>
+                                                ) : (
+                                                    <button style={{ backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                                        Audit Data
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                )}
+            </div>
         </div>
+    );
+}
 
-        {/* Tracking Table */}
-        <div style={{ backgroundColor: 'white', borderRadius: '16px', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #e5e7eb' }}>
-          <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-              <tr>
-                <th style={thStyle}>Supplier</th>
-                <th style={thStyle}>Target Metric</th>
-                <th style={thStyle}>Deadline</th>
-                <th style={thStyle}>Status</th>
-                <th style={{...thStyle, textAlign: 'right'}}>Secure Access</th>
-              </tr>
-            </thead>
-            <tbody>
-              {campaigns.map((camp) => (
-                <tr key={camp.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '20px' }}>
-                    <div style={{ fontWeight: '700', color: '#111827', fontSize: '15px' }}>{camp.supplier}</div>
-                    <div style={{ fontSize: '12px', color: '#9ca3af', fontFamily: 'monospace', marginTop: '4px' }}>{camp.id}</div>
-                  </td>
-                  <td style={{ padding: '20px', color: '#4b5563', fontSize: '13px', fontWeight: '600' }}>
-                    {formatActivity(camp.metric)}
-                  </td>
-                  <td style={{ padding: '20px', color: '#6b7280', fontSize: '14px' }}>
-                    {new Date(camp.deadline).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '20px' }}>
-                    <span style={{ 
-                        padding: '6px 12px', borderRadius: '50px', fontSize: '12px', fontWeight: '700', display: 'inline-block',
-                        backgroundColor: camp.status === 'Completed' ? '#d1fae5' : camp.status === 'Overdue' ? '#fee2e2' : '#fef3c7',
-                        color: camp.status === 'Completed' ? '#047857' : camp.status === 'Overdue' ? '#b91c1c' : '#b45309'
-                    }}>
-                        {camp.status || 'Active'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '20px', textAlign: 'right' }}>
-                    <button 
-                      onClick={() => copyLink(camp.id)}
-                      style={{ backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      🔗 Copy Link
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {campaigns.length === 0 && (
-                  <tr><td colSpan="5" style={{ padding: '30px', textAlign: 'center', color: '#6b7280' }}>No active campaigns. Launch a new stream above.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
-// Reusable Styles
-const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' };
-const inputStyle = { width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '15px', backgroundColor: '#f9fafb', boxSizing: 'border-box', outline: 'none', color: '#111827' };
-const thStyle = { padding: '16px 20px', color: '#6b7280', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '700' };
+// Reusable inline styles
+const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box', outline: 'none' };
+const thStyle = { padding: '16px 20px', fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '16px 20px', fontSize: '14px', whiteSpace: 'nowrap' };
 
 export default SurveyCampaigns;

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const FrameworkAlignment = () => {
+    const navigate = useNavigate();
     const [readinessData, setReadinessData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('2026');
@@ -52,10 +54,10 @@ const FrameworkAlignment = () => {
             setGapData(response.data);
         } catch (err) {
             console.error("Failed to load gap analysis", err);
-            // Fallback mock data for visual testing
+            // Mock data for visual testing
             setGapData([
-                { framework_code: 'GSE-E1', description: 'Total Scope 1 GHG Emissions', activity_type: 'mobile_diesel_liters', is_fulfilled: true, total_co2e: 4500 },
-                { framework_code: 'GSE-E2', description: 'Total Scope 2 Purchased Electricity', activity_type: 'electricity_grid_kwh', is_fulfilled: false, total_co2e: null }
+                { framework_code: 'GSE-E1', description: 'Total Scope 1 GHG Emissions', activity_type: 'mobile_diesel', is_fulfilled: true, quality_tier: 'A' },
+                { framework_code: 'GSE-E2', description: 'Total Scope 2 Purchased Electricity', activity_type: 'electricity_grid_kwh', is_fulfilled: false, quality_tier: null }
             ]);
         } finally {
             setLoadingGap(false);
@@ -71,7 +73,7 @@ const FrameworkAlignment = () => {
     return (
         <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
             
-            {/* Executive Header */}
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
                 <div>
                     <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
@@ -122,15 +124,7 @@ const FrameworkAlignment = () => {
                                     </div>
                                     
                                     <div style={{ width: '100%', height: '10px', backgroundColor: '#f3f4f6', borderRadius: '50px', overflow: 'hidden' }}>
-                                        <div 
-                                            style={{ 
-                                                height: '100%', 
-                                                width: `${framework.readiness_score}%`, 
-                                                backgroundColor: framework.readiness_score === 100 ? '#10b981' : '#111827',
-                                                borderRadius: '50px',
-                                                transition: 'width 1s ease-in-out'
-                                            }} 
-                                        />
+                                        <div style={{ height: '100%', width: `${framework.readiness_score}%`, backgroundColor: framework.readiness_score === 100 ? '#10b981' : '#111827', borderRadius: '50px', transition: 'width 1s ease-in-out' }} />
                                     </div>
                                 </div>
 
@@ -153,7 +147,7 @@ const FrameworkAlignment = () => {
             {/* Gap Analysis Modal */}
             {isModalOpen && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17, 24, 39, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 999, padding: '20px' }}>
-                    <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '850px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+                    <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
                         
                         <div style={{ padding: '24px 32px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
@@ -163,55 +157,40 @@ const FrameworkAlignment = () => {
                             <button onClick={() => setIsModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#9ca3af', cursor: 'pointer', lineHeight: '1' }}>&times;</button>
                         </div>
 
-                        <div style={{ padding: '0', overflowY: 'auto', flexGrow: 1 }}>
+                        <div style={{ overflowY: 'auto', padding: '32px' }}>
                             {loadingGap ? (
-                                <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280' }}>Analyzing ledger requirements...</div>
+                                <div style={{ textAlign: 'center', color: '#6b7280' }}>Analyzing ledger...</div>
                             ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                                    <thead style={{ backgroundColor: '#f9fafb', position: 'sticky', top: 0, zIndex: 1, borderBottom: '1px solid #e5e7eb' }}>
-                                        <tr>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#f9fafb', fontSize: '12px', textTransform: 'uppercase', color: '#6b7280' }}>
                                             <th style={thStyle}>Status</th>
-                                            <th style={thStyle}>Disclosure Requirement</th>
-                                            <th style={thStyle}>Required Data Stream</th>
+                                            <th style={thStyle}>Clause</th>
+                                            <th style={thStyle}>Quality Tier</th>
+                                            <th style={thStyle}>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {gapData.map((gap, index) => (
-                                            <tr key={index} style={{ borderBottom: '1px solid #f3f4f6', backgroundColor: gap.is_fulfilled ? 'white' : '#fef2f2' }}>
-                                                <td style={{ padding: '20px', width: '15%' }}>
-                                                    {gap.is_fulfilled ? (
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#059669', fontSize: '13px', fontWeight: '700' }}>
-                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div>
-                                                            Fulfilled
+                                        {gapData.map((gap, idx) => (
+                                            <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                <td style={{ padding: '16px' }}>{gap.is_fulfilled ? '✅' : '❌'}</td>
+                                                <td style={{ padding: '16px' }}>
+                                                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{gap.framework_code}</div>
+                                                    <div style={{ color: '#6b7280', fontSize: '13px' }}>{gap.description}</div>
+                                                </td>
+                                                <td style={{ padding: '16px' }}>
+                                                    {gap.quality_tier ? (
+                                                        <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', fontSize: '12px' }}>
+                                                            Tier {gap.quality_tier}
                                                         </span>
-                                                    ) : (
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#dc2626', fontSize: '13px', fontWeight: '700' }}>
-                                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }}></div>
-                                                            Missing
-                                                        </span>
+                                                    ) : <span style={{ color: '#9ca3af', fontSize: '13px' }}>N/A</span>}
+                                                </td>
+                                                <td style={{ padding: '16px' }}>
+                                                    {!gap.is_fulfilled && (
+                                                        <button onClick={() => navigate('/data-entry')} style={{ color: '#2563eb', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                                                            Log Missing Data →
+                                                        </button>
                                                     )}
-                                                </td>
-                                                <td style={{ padding: '20px', width: '50%' }}>
-                                                    <div style={{ fontWeight: '700', color: gap.is_fulfilled ? '#111827' : '#991b1b', fontSize: '14px', marginBottom: '4px' }}>
-                                                        {gap.framework_code}
-                                                    </div>
-                                                    <div style={{ fontSize: '13px', color: gap.is_fulfilled ? '#4b5563' : '#b91c1c', lineHeight: '1.4' }}>
-                                                        {gap.description}
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '20px', width: '35%' }}>
-                                                    <div style={{ 
-                                                        display: 'inline-block', 
-                                                        padding: '6px 10px', 
-                                                        borderRadius: '6px', 
-                                                        fontSize: '12px', 
-                                                        fontFamily: 'monospace', 
-                                                        backgroundColor: gap.is_fulfilled ? '#f3f4f6' : '#fee2e2', 
-                                                        color: gap.is_fulfilled ? '#4b5563' : '#991b1b',
-                                                        border: `1px solid ${gap.is_fulfilled ? '#e5e7eb' : '#fca5a5'}`
-                                                    }}>
-                                                        {gap.activity_type}
-                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -226,6 +205,7 @@ const FrameworkAlignment = () => {
     );
 };
 
-const thStyle = { padding: '16px 20px', color: '#6b7280', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '700' };
+// --- Reusable Styles ---
+const thStyle = { padding: '12px', textAlign: 'left', fontWeight: '700' };
 
 export default FrameworkAlignment;
