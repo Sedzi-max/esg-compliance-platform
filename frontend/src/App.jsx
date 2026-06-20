@@ -1,7 +1,7 @@
 import { Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage'; 
 import Dashboard from './pages/Dashboard';
-import AuditorDashboard from './pages/AuditorDashboard'; // 👈 Added Auditor Import
+import AuditorDashboard from './pages/AuditorDashboard'; 
 import Organizations from './pages/Organizations';
 import Metrics from './pages/Metrics';
 import DataEntry from './pages/DataEntry';
@@ -11,6 +11,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AuditQueue from './pages/AuditQueue'; 
 import SurveyCampaigns from './pages/SurveyCampaigns';
 import SupplierPortal from './pages/SupplierPortal';
+import FrameworkAlignment from './pages/FrameworkAlignment'; // 👈 Successfully Imported
 
 function App() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ function App() {
   // Define our RBAC Roles
   const isAdmin = user?.role === 'Admin'; 
   const isManager = user?.role === 'Manager';
-  const isAuditor = user?.role === 'auditor'; // 👈 Check for the new Auditor role
+  const isAuditor = user?.role === 'auditor'; 
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -54,7 +55,7 @@ function App() {
                 
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
                   
-                  {/* 👈 DYNAMIC SIDEBAR LOGIC: Auditors see a restricted menu */}
+                  {/* DYNAMIC SIDEBAR LOGIC: Auditors see a restricted menu */}
                   {isAuditor ? (
                     <li>
                       <Link to="/dashboard" style={{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
@@ -80,6 +81,12 @@ function App() {
                       <li>
                         <Link to="/campaigns" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
                           🚀 Scope 3 Campaigns
+                        </Link>
+                      </li>
+                      {/* 👈 NEW SIDEBAR LINK ADDED HERE */}
+                      <li>
+                        <Link to="/alignment" style={{ display: 'block', padding: '5px 0', color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}>
+                          🎯 Compliance Alignment
                         </Link>
                       </li>
                     </>
@@ -111,16 +118,13 @@ function App() {
               <main style={{ flex: 1, padding: '40px', background: '#ffffff', overflowY: 'auto' }}>
                 <Routes>
                   
-                  {/* 👈 DYNAMIC ROUTING: Routes the user to the correct component based on role */}
                   <Route 
                     path="/dashboard" 
                     element={isAuditor ? <AuditorDashboard /> : <Dashboard />} 
                   />
 
-                  {/* Open to all internal authenticated users */}
                   <Route path="/data-entry" element={<DataEntry />} />
                   
-                  {/* Locked to Admins OR Managers! */}
                   <Route 
                     path="/audit-queue" 
                     element={
@@ -134,6 +138,16 @@ function App() {
                     element={
                       <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
                         <SurveyCampaigns />
+                      </ProtectedRoute>
+                    } 
+                  />
+
+                  {/* 👈 NEW ROUTE ADDED HERE */}
+                  <Route 
+                    path="/alignment" 
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                        <FrameworkAlignment />
                       </ProtectedRoute>
                     } 
                   />

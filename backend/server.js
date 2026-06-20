@@ -10,6 +10,10 @@ const multer = require('multer');
 const path = require('path');
 const auditorGuard = require('./middleware/auditorGuard');
 
+// --- NEW IMPORTS FOR CSV PARSING ---
+const csv = require('csv-parser');
+const { Readable } = require('stream');
+
 const app = express();
 
 // Middleware
@@ -18,16 +22,24 @@ app.use(express.json());
 // Expose the uploads folder so the React frontend can fetch the files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Setup local storage for files (MVP approach)
+// ==========================================
+// MULTER CONFIGURATIONS
+// ==========================================
+
+// Setup local storage for physical files (Evidence PDFs, Receipts)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/') // Make sure to create an 'uploads' folder in your backend directory!
+    cb(null, 'uploads/') 
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname))
   }
 });
 const upload = multer({ storage: storage });
+
+// Setup memory storage specifically for reading CSV text directly into the pipeline
+const memoryUpload = multer({ storage: multer.memoryStorage() });
+
 
 // ==========================================
 // HEALTH CHECK ROUTE (Unprotected)
@@ -190,6 +202,140 @@ app.get('/api/observations', authorize, async (req, res) => {
         console.error(err.message);
         res.status(500).json({ error: "Failed to fetch observations" });
     }
+});
+
+// ==========================================
+// NEW: BULK CSV UPLOAD PIPELINE
+// ==========================================
+
+// POST Route: Universal Bulk CSV Upload (Handles Long/Wide Formats & Blank Cells)
+app.post('/api/upload-csv', authorize, memoryUpload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+
+    const results = [];
+    const errors = [];
+    let rowCount = 0;
+
+    const stream = Readable.from(req.file.buffer.toString('utf-8'));
+
+    stream
+        .pipe(csv({
+            mapHeaders: ({ header }) => header.trim().toLowerCase().replace(/ /g, '_')
+        }))
+        .on('data', (data) => {
+            rowCount++;
+            results.push({ row: rowCount, ...data });
+        })
+        .on('end', async () => {
+            if (results.length === 0) {
+                return res.status(400).json({ error: "No valid data found to unpack." });
+            }
+
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                const orgQuery = await client.query('SELECT unit_id, name FROM Organization_Unit WHERE company_id = $1', [req.user.company_id]);
+                const validOrgs = orgQuery.rows.reduce((acc, org) => {
+                    acc[org.name.toLowerCase()] = org.unit_id;
+                    return acc;
+                }, {});
+
+                let successCount = 0;
+
+                for (const row of results) {
+                    const rawOrg = row.organization || row.facility || row.company || row.organization_name;
+                    const orgName = rawOrg ? rawOrg.trim().toLowerCase() : null;
+                    const orgId = validOrgs[orgName];
+
+                    if (!orgId) {
+                        errors.push(`Row ${row.row}: Facility/Organization '${rawOrg || 'Unknown'}' not found.`);
+                        continue; 
+                    }
+
+                    // DETECT FORMAT: Are they using explicit "Metric" and "Value" columns?
+                    const explicitMetricCol = row.activity_type || row.metric || row.metric_name || row.activity;
+                    const explicitValueCol = row.raw_amount || row.value || row.amount || row.numeric_value;
+
+                    const recordsToProcess = [];
+
+                    if (explicitMetricCol) {
+                        // --- LONG FORMAT ---
+                        // If the value cell is left out or blank, just gracefully skip it
+                        if (explicitValueCol === '' || explicitValueCol === undefined) continue;
+
+                        recordsToProcess.push({
+                            metric: explicitMetricCol,
+                            value: explicitValueCol,
+                            pillar: row.pillar || row.category || 'E',
+                            unit: row.unit || row.unit_of_measure || 'units'
+                        });
+                    } else {
+                        // --- WIDE FORMAT ---
+                        // If there is no "Metric" column, assume the headers themselves are the metrics
+                        const ignoredColumns = ['organization', 'facility', 'company', 'organization_name', 'date', 'timestamp', 'row', 'pillar', 'category', 'unit'];
+                        
+                        for (const colName of Object.keys(row)) {
+                            if (ignoredColumns.includes(colName)) continue;
+                            
+                            const cellValue = row[colName];
+                            
+                            // If a column was left out or the cell is empty/zero, gracefully skip it
+                            if (cellValue === '' || cellValue === undefined || cellValue === '0') continue;
+
+                            recordsToProcess.push({
+                                metric: colName,
+                                value: cellValue,
+                                pillar: 'E', // Wide formats usually default to environmental footprinting
+                                unit: 'units'
+                            });
+                        }
+                    }
+
+                    // Insert whatever records we successfully extracted from this row
+                    for (const record of recordsToProcess) {
+                        // Strip commas so Postgres doesn't crash on numbers like "1,500"
+                        const rawAmountClean = Number(record.value.toString().replace(/,/g, ''));
+                        if (isNaN(rawAmountClean)) continue; // Skip bad math
+
+                        if (record.pillar.toUpperCase() === 'E') {
+                            const multiplier = CARBON_MULTIPLIERS['scope_1']?.[record.metric] || 2.3; 
+                            const calculatedCo2e = rawAmountClean * multiplier;
+
+                            await client.query(
+                                `INSERT INTO ghg_emissions (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, status) 
+                                 VALUES ($1, $2, $3, $4, $5, 'Pending')`,
+                                [orgId, 'Scope 1', record.metric, rawAmountClean, calculatedCo2e]
+                            );
+                            successCount++;
+                        } else {
+                            await client.query(
+                                `INSERT INTO Observations (organization_id, pillar, metric_name, numeric_value, unit_of_measure) 
+                                 VALUES ($1, $2, $3, $4, $5)`,
+                                [orgId, record.pillar.toUpperCase(), record.metric, rawAmountClean, record.unit]
+                            );
+                            successCount++;
+                        }
+                    }
+                }
+
+                await client.query('COMMIT');
+                
+                res.json({ 
+                    message: "Upload processing complete.", 
+                    rows_processed: rowCount,
+                    successful_inserts: successCount,
+                    errors: errors 
+                });
+
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error("CSV Transaction Error:", err);
+                res.status(500).json({ error: `Database error: ${err.message}` });
+            } finally {
+                client.release();
+            }
+        });
 });
 
 // ==========================================
@@ -406,6 +552,83 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
     } catch (err) {
         console.error("Report Engine Error:", err.message);
         res.status(500).json({ error: "Failed to compile framework report." });
+    }
+});
+
+// GET Route: Calculate Framework Compliance Readiness
+app.get('/api/reports/readiness', authorize, async (req, res) => {
+    try {
+        const year = req.query.year || new Date().getFullYear().toString();
+        
+        // This query cross-references required framework codes with the company's ACTUAL approved data
+        const query = `
+            WITH CompanyFulfilled AS (
+                SELECT DISTINCT fm.framework_code
+                FROM ghg_emissions e
+                JOIN Organization_Unit u ON e.organization_id = u.unit_id
+                JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
+                WHERE u.company_id = $1 
+                  AND e.status = 'Approved' 
+                  AND EXTRACT(YEAR FROM e.created_at) = $2
+            )
+            SELECT 
+                f.framework_name,
+                COUNT(f.framework_code) AS total_requirements,
+                COUNT(c.framework_code) AS fulfilled_requirements,
+                ROUND((COUNT(c.framework_code)::numeric / COUNT(f.framework_code)::numeric) * 100, 0) AS readiness_score
+            FROM Framework_Mappings f
+            LEFT JOIN CompanyFulfilled c ON f.framework_code = c.framework_code
+            GROUP BY f.framework_name
+            ORDER BY readiness_score DESC;
+        `;
+
+        const readinessData = await pool.query(query, [req.user.company_id, year]);
+        res.json(readinessData.rows);
+
+    } catch (err) {
+        console.error("Readiness Engine Error:", err.message);
+        res.status(500).json({ error: "Failed to calculate framework readiness." });
+    }
+});
+
+// GET Route: Detailed Gap Analysis for a specific framework
+app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
+    try {
+        const { framework, year } = req.query;
+
+        if (!framework || !year) {
+            return res.status(400).json({ error: "Framework and year are required." });
+        }
+
+        const query = `
+            WITH CompanyFulfilled AS (
+                SELECT DISTINCT fm.framework_code, SUM(e.calculated_co2e) as total_co2e
+                FROM ghg_emissions e
+                JOIN Organization_Unit u ON e.organization_id = u.unit_id
+                JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
+                WHERE u.company_id = $1 
+                  AND e.status = 'Approved' 
+                  AND EXTRACT(YEAR FROM e.created_at) = $2
+                GROUP BY fm.framework_code
+            )
+            SELECT 
+                f.framework_code,
+                f.description,
+                f.activity_type,
+                CASE WHEN c.framework_code IS NOT NULL THEN true ELSE false END as is_fulfilled,
+                c.total_co2e
+            FROM Framework_Mappings f
+            LEFT JOIN CompanyFulfilled c ON f.framework_code = c.framework_code
+            WHERE f.framework_name = $3
+            ORDER BY is_fulfilled ASC, f.framework_code ASC;
+        `;
+
+        const gapData = await pool.query(query, [req.user.company_id, year, framework]);
+        res.json(gapData.rows);
+
+    } catch (err) {
+        console.error("Gap Analysis Engine Error:", err.message);
+        res.status(500).json({ error: "Failed to compile gap analysis." });
     }
 });
 
@@ -796,6 +1019,7 @@ app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (r
         res.status(500).json({ error: "Failed to submit data" });
     }
 });
+
 // 1.5 PROTECTED: Fetch all campaigns for the Manager's Dashboard
 app.get('/api/campaigns', authorize, async (req, res) => {
     try {
@@ -814,6 +1038,7 @@ app.get('/api/campaigns', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to fetch campaigns" });
     }
 });
+
 // ==========================================
 // START SERVER
 // ==========================================

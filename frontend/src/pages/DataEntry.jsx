@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import Papa from 'papaparse'; 
 
 const ACTIVITY_OPTIONS = {
   scope_1: [
@@ -83,6 +82,10 @@ function DataEntry() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const fileInputRef = useRef(null);
+
+  // New CSV Bulk Upload State
+  const [uploadSuccess, setUploadSuccess] = useState('');
+  const [uploadErrors, setUploadErrors] = useState([]);
 
   const [entryMode, setEntryMode] = useState('E'); 
   const [envType, setEnvType] = useState('GHG'); 
@@ -230,91 +233,48 @@ function DataEntry() {
     submitObservationWithEvidence(govFormData, "Governance metric securely logged with evidence!", setGovFormData);
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // --- NEW BULK CSV UPLOAD HANDLER ---
+  const handleFileUpload = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
 
-    setIsSubmitting(true);
-    setError(null);
+      // Reset UI state before starting
+      setIsSubmitting(true);
+      setUploadSuccess('');
+      setUploadErrors([]);
 
-    Papa.parse(file, {
-      header: true, 
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rawRows = results.data;
-          const fallbackOrgId = envFormData.organization_id || socFormData.organization_id || govFormData.organization_id;
-          
-          let payload = [];
+      // Package the file into a FormData object
+      const formData = new FormData();
+      formData.append('file', file);
 
-          rawRows.forEach((row, index) => {
-            const rawOrgName = row.Company || row.organization_name || row.Organization || row.Facility || row.company || '';
-            let finalOrgId = fallbackOrgId;
-            
-            if (rawOrgName) {
-              const org = organizations.find(o => o.name.toLowerCase().trim() === rawOrgName.toLowerCase().trim());
-              if (org) finalOrgId = org.unit_id;
-            }
-            if (!finalOrgId) return; 
-
-            Object.keys(row).forEach(columnHeader => {
-              if (['Year', 'Industry', 'Company', 'Organization', 'Facility'].includes(columnHeader)) return;
-
-              const rawAmount = row[columnHeader];
-              if (!rawAmount || rawAmount === '0' || rawAmount === '') return; 
-
-              const normalizedColumn = columnHeader.toLowerCase().replace(/_/g, ' ').trim();
-              
-              let translatedActivity = SMART_MAPPER.activities[normalizedColumn] || normalizedColumn;
-              let translatedScope = SMART_MAPPER.scopes[normalizedColumn] || null;
-
-              if (normalizedColumn.includes('scope1') || normalizedColumn.includes('scope 1')) {
-                translatedScope = 'scope_1';
-                translatedActivity = 'mobile_diesel_liters'; 
-              } else if (normalizedColumn.includes('scope2') || normalizedColumn.includes('scope 2') || normalizedColumn.includes('energy')) {
-                translatedScope = 'scope_2';
-                translatedActivity = 'electricity_grid_kwh';
-              } else if (normalizedColumn.includes('scope3') || normalizedColumn.includes('scope 3') || normalizedColumn.includes('waste')) {
-                translatedScope = 'scope_3';
-                translatedActivity = 'waste_landfill_kg';
+      try {
+          const token = localStorage.getItem('token');
+          const response = await axios.post('/api/upload-csv', formData, {
+              headers: { 
+                  'Content-Type': 'multipart/form-data',
+                  'Authorization': `Bearer ${token}` 
               }
-
-              if (!translatedScope && ACTIVITY_TO_SCOPE_MAP[translatedActivity]) {
-                translatedScope = ACTIVITY_TO_SCOPE_MAP[translatedActivity];
-              }
-
-              if (translatedScope && translatedActivity) {
-                payload.push({
-                  organization_id: finalOrgId,
-                  scope_category: translatedScope,
-                  activity_type: translatedActivity,
-                  raw_amount: Number(rawAmount.toString().replace(/,/g, ''))
-                });
-              }
-            });
           });
 
-          if (payload.length === 0) {
-            throw new Error("No valid environmental data found to unpack. Check organization names and column headers.");
+          // Set the primary success message
+          setUploadSuccess(`✅ Successfully processed ${response.data.rows_processed} rows and inserted ${response.data.successful_inserts} records.`);
+          
+          // If the backend caught typos but still inserted the good rows, show the warnings
+          if (response.data.errors && response.data.errors.length > 0) {
+              setUploadErrors(response.data.errors);
           }
-
-          const token = localStorage.getItem('token');
-          await axios.post('/api/emissions/bulk', payload, { headers: { Authorization: `Bearer ${token}` } });
-
-          fileInputRef.current.value = ""; 
-          fetchAllData();
-          showSuccess(`Unpacked Wide CSV: Processed ${payload.length} individual metric records successfully!`);
-        } catch (err) {
-          setError(err.message || "Failed to process CSV. Check formatting.");
-        } finally {
+          
+          fetchAllData(); // Refresh the ledger table below
+      } catch (err) {
+          console.error("Upload failed:", err);
+          setUploadErrors([
+              err.response?.data?.error || "A critical error occurred while parsing the CSV. Please check your file formatting."
+          ]);
+      } finally {
           setIsSubmitting(false);
-        }
-      },
-      error: () => {
-        setError("Error parsing the CSV file.");
-        setIsSubmitting(false);
+          // Clear the file input so the user can upload the same file again if they fixed it
+          if (fileInputRef.current) fileInputRef.current.value = '';
       }
-    });
   };
 
   const showSuccess = (msg) => {
@@ -756,20 +716,47 @@ function DataEntry() {
           )}
         </div>
 
-        {/* BULK UPLOAD DROPZONE */}
-        <div style={{ background: '#e3f2fd', padding: '25px', borderRadius: '8px', border: '2px dashed #90caf9', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#1565c0' }}>Bulk CSV Upload</h2>
-          <p style={{ color: '#1976d2', fontSize: '0.9rem', marginBottom: '20px' }}>Upload hundreds of records instantly. Ensure your headers match the required format exactly.</p>
-          
-          <div style={{ background: '#fff', padding: '15px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.8rem', color: '#666', textAlign: 'left', width: '100%', border: '1px solid #bbdefb' }}>
-            <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>Fuzzy Matching Enabled:</p>
-            <p style={{ margin: '0', fontSize: '0.75rem' }}>Upload files with headers like: <code>Facility</code>, <code>Metric</code>, <code>Value</code></p>
-          </div>
+        {/* --- BULK UPLOAD CARD --- */}
+        <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', marginBottom: '32px' }}>
+            
+            <h2 style={{ fontSize: '20px', color: '#111827', margin: '0 0 8px 0' }}>Bulk CSV Upload</h2>
+            <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '24px' }}>
+                Upload your raw facility data. The engine will automatically compile it and route it to the auditor queue.
+            </p>
 
-          <label style={{ cursor: 'pointer', background: '#0d6efd', color: 'white', padding: '12px 20px', borderRadius: '4px', fontWeight: 'bold', width: '100%', display: 'inline-block' }}>
-            {isSubmitting ? 'Parsing CSV...' : '📁 Select CSV File'}
-            <input type="file" accept=".csv" onChange={handleFileUpload} ref={fileInputRef} style={{ display: 'none' }} disabled={isSubmitting} />
-          </label>
+            {/* Your Custom Upload Button */}
+            <div style={{ maxWidth: '300px', marginBottom: '24px' }}>
+                <label style={{ cursor: isSubmitting ? 'wait' : 'pointer', background: isSubmitting ? '#9ca3af' : '#0d6efd', color: 'white', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', width: '100%', display: 'inline-block', textAlign: 'center', transition: '0.2s' }}>
+                    {isSubmitting ? '⏳ Parsing CSV...' : '📁 Select CSV File'}
+                    <input 
+                        type="file" 
+                        accept=".csv" 
+                        onChange={handleFileUpload} 
+                        ref={fileInputRef} 
+                        style={{ display: 'none' }} 
+                        disabled={isSubmitting} 
+                    />
+                </label>
+            </div>
+
+            {/* Success Message */}
+            {uploadSuccess && (
+                <div style={{ backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '16px', borderRadius: '8px', marginBottom: '16px', fontWeight: '600' }}>
+                    {uploadSuccess}
+                </div>
+            )}
+
+            {/* Partial Error / Typo Readout */}
+            {uploadErrors.length > 0 && (
+                <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '16px', borderRadius: '8px' }}>
+                    <h4 style={{ margin: '0 0 12px 0', color: '#991b1b', fontSize: '14px' }}>⚠️ Row Errors Detected:</h4>
+                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#b91c1c', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {uploadErrors.map((err, index) => (
+                            <li key={index}>{err}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
         </div>
 
       </div>

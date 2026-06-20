@@ -14,6 +14,10 @@ import SDGTracker from '../components/SDGTracker';
 import SectorOnboarding from '../components/SectorOnboarding';
 
 function Dashboard() {
+  // --- TAB STATE ---
+  const [activeTab, setActiveTab] = useState('Executive Overview');
+
+  // --- EXISTING STATE ---
   const [rawObservations, setRawObservations] = useState([]);
   const [emissions, setEmissions] = useState([]); 
   const [targets, setTargets] = useState([]); 
@@ -34,7 +38,7 @@ function Dashboard() {
   });
 
   const COLORS = { 
-    E: '#10b981', S: '#3b82f6', G: '#f59e0b', // Updated to match premium palette
+    E: '#10b981', S: '#3b82f6', G: '#f59e0b',
     Actual: '#3b82f6', Target: '#ef4444',
     Scope1: '#6366f1', Scope2: '#10b981', Scope3: '#f59e0b',
     Chart1: '#3b82f6', Chart2: '#10b981', Chart3: '#f59e0b', Chart4: '#ef4444', Chart5: '#8b5cf6'
@@ -69,7 +73,7 @@ function Dashboard() {
     }
   };
 
-  // --- CSV EXPORT ENGINE ---
+  // --- CSV & PDF EXPORT ENGINE ---
   const exportToCSV = () => {
     const headers = ["Date", "Facility", "Category/Metric", "Raw Input", "Calculated CO2e (kg)", "Record Type/Status"];
     
@@ -115,7 +119,7 @@ function Dashboard() {
       const canvas = await html2canvas(element, { 
         scale: 2, 
         useCORS: true, 
-        backgroundColor: '#f3f4f6', // Updated background
+        backgroundColor: '#f3f4f6',
         windowHeight: element.scrollHeight 
       });
       
@@ -162,6 +166,7 @@ function Dashboard() {
 
   if (loading) return <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280', fontSize: '18px', fontWeight: '500' }}>Loading forecasting engine...</div>;
 
+  // --- DATA CALCULATIONS ---
   const now = new Date();
 
   const filteredObs = rawObservations.filter(obs => {
@@ -350,6 +355,20 @@ function Dashboard() {
     return null;
   };
 
+  // --- TAB STYLING ---
+  const getTabStyle = (tabName) => ({
+    padding: '12px 24px',
+    cursor: 'pointer',
+    fontSize: '15px',
+    fontWeight: '700',
+    color: activeTab === tabName ? '#111827' : '#6b7280',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderBottom: activeTab === tabName ? '3px solid #10b981' : '3px solid transparent',
+    transition: 'all 0.2s ease-in-out',
+    outline: 'none'
+  });
+
   return (
     <div ref={reportRef} style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
@@ -359,8 +378,8 @@ function Dashboard() {
         </div>
       )}
 
-      {/* --- HEADER SECTION --- */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', gap: '20px' }}>
+      {/* --- STATIC HEADER SECTION (Visible on all tabs) --- */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', gap: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
               <div style={{ backgroundColor: 'white', padding: '8px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                   <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto' }} />
@@ -398,7 +417,6 @@ function Dashboard() {
           </div>
       </div>
 
-      {/* Primary Action Button */}
       <div style={{ marginBottom: '32px' }}>
           <Link to="/data-entry" style={{
               backgroundColor: '#111827', color: 'white', textDecoration: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -407,274 +425,293 @@ function Dashboard() {
           </Link>
       </div>
 
-      {/* --- STATS KPI GRID --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px', marginBottom: '40px' }}>
-          
-          <div style={{...cardStyle, borderTop: '4px solid #10b981'}}>
-              <p style={cardLabelStyle}>Total Approved Carbon</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
-                  <span style={{...cardValueStyle, color: '#047857'}}>{totalCO2e.toLocaleString()}</span>
-                  <span style={cardUnitStyle}>kg CO2e</span>
-              </div>
-          </div>
-
-          <div style={{...cardStyle, borderTop: '4px solid #f59e0b'}}>
-              <p style={cardLabelStyle}>Pending Audit</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
-                  <span style={cardValueStyle}>{pendingCO2e.toLocaleString()}</span>
-                  <span style={cardUnitStyle}>kg CO2e</span>
-              </div>
-          </div>
-
-          <div style={{...cardStyle, borderTop: '4px solid #6b7280'}}>
-              <p style={cardLabelStyle}>Active Reporting Nodes</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
-                  <span style={cardValueStyle}>{activeFacilitiesCount}</span>
-                  <span style={cardUnitStyle}>Facilities</span>
-              </div>
-          </div>
-
-          <div style={{...cardStyle, borderTop: '4px solid #3b82f6'}}>
-              <p style={cardLabelStyle}>Social Logs</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
-                  <span style={{...cardValueStyle, color: '#1d4ed8'}}>{socCount}</span>
-                  <span style={cardUnitStyle}>Records</span>
-              </div>
-          </div>
-
-          <div style={{...cardStyle, borderTop: '4px solid #8b5cf6'}}>
-              <p style={cardLabelStyle}>Governance Logs</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
-                  <span style={{...cardValueStyle, color: '#6d28d9'}}>{govCount}</span>
-                  <span style={cardUnitStyle}>Records</span>
-              </div>
-          </div>
+      {/* --- TAB NAVIGATION BAR --- */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #d1d5db', marginBottom: '32px' }}>
+        {['Executive Overview', 'Carbon & Facilities', 'Strategy & Compliance'].map((tab) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={getTabStyle(tab)}>
+            {tab}
+          </button>
+        ))}
       </div>
 
-      {/* --- AI INSIGHTS ENGINE --- */}
-      {dynamicInsights.length > 0 && (
-        <div style={{ marginBottom: '40px' }}>
-          <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            ⚡ Strategic Insights
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-            {dynamicInsights.map((insight, index) => {
-              const theme = {
-                danger: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' },
-                success: { bg: '#ecfdf5', border: '#a7f3d0', text: '#065f46' },
-                info: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
-                warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e' }
-              }[insight.type];
-
-              return (
-                <div key={index} style={{ background: theme.bg, border: `1px solid ${theme.border}`, padding: '24px', borderRadius: '12px', display: 'flex', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                  <div style={{ fontSize: '24px' }}>{insight.icon}</div>
-                  <div>
-                    <h4 style={{ margin: '0 0 6px 0', color: theme.text, fontSize: '15px', fontWeight: '700' }}>{insight.title}</h4>
-                    <p style={{ margin: 0, color: '#374151', fontSize: '14px', lineHeight: '1.5' }}>{insight.text}</p>
+      {/* =========================================
+          TAB 1: EXECUTIVE OVERVIEW
+      ========================================= */}
+      {activeTab === 'Executive Overview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          {/* STATS KPI GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px' }}>
+              <div style={{...cardStyle, borderTop: '4px solid #10b981'}}>
+                  <p style={cardLabelStyle}>Total Approved Carbon</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                      <span style={{...cardValueStyle, color: '#047857'}}>{totalCO2e.toLocaleString()}</span>
+                      <span style={cardUnitStyle}>kg CO2e</span>
                   </div>
-                </div>
-              );
-            })}
+              </div>
+
+              <div style={{...cardStyle, borderTop: '4px solid #f59e0b'}}>
+                  <p style={cardLabelStyle}>Pending Audit</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                      <span style={cardValueStyle}>{pendingCO2e.toLocaleString()}</span>
+                      <span style={cardUnitStyle}>kg CO2e</span>
+                  </div>
+              </div>
+
+              <div style={{...cardStyle, borderTop: '4px solid #6b7280'}}>
+                  <p style={cardLabelStyle}>Active Reporting Nodes</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                      <span style={cardValueStyle}>{activeFacilitiesCount}</span>
+                      <span style={cardUnitStyle}>Facilities</span>
+                  </div>
+              </div>
+
+              <div style={{...cardStyle, borderTop: '4px solid #3b82f6'}}>
+                  <p style={cardLabelStyle}>Social Logs</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                      <span style={{...cardValueStyle, color: '#1d4ed8'}}>{socCount}</span>
+                      <span style={cardUnitStyle}>Records</span>
+                  </div>
+              </div>
+
+              <div style={{...cardStyle, borderTop: '4px solid #8b5cf6'}}>
+                  <p style={cardLabelStyle}>Governance Logs</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '12px' }}>
+                      <span style={{...cardValueStyle, color: '#6d28d9'}}>{govCount}</span>
+                      <span style={cardUnitStyle}>Records</span>
+                  </div>
+              </div>
+          </div>
+
+          {/* AI INSIGHTS ENGINE */}
+          {dynamicInsights.length > 0 && (
+            <div>
+              <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                ⚡ Strategic Insights
+              </h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+                {dynamicInsights.map((insight, index) => {
+                  const theme = {
+                    danger: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' },
+                    success: { bg: '#ecfdf5', border: '#a7f3d0', text: '#065f46' },
+                    info: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
+                    warning: { bg: '#fffbeb', border: '#fde68a', text: '#92400e' }
+                  }[insight.type];
+
+                  return (
+                    <div key={index} style={{ background: theme.bg, border: `1px solid ${theme.border}`, padding: '24px', borderRadius: '12px', display: 'flex', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                      <div style={{ fontSize: '24px' }}>{insight.icon}</div>
+                      <div>
+                        <h4 style={{ margin: '0 0 6px 0', color: theme.text, fontSize: '15px', fontWeight: '700' }}>{insight.title}</h4>
+                        <p style={{ margin: 0, color: '#374151', fontSize: '14px', lineHeight: '1.5' }}>{insight.text}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* RECENT ACTIVITY FEED */}
+          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #e5e7eb' }}>
+            <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 24px 0' }}>
+              Recent Activity Log
+            </h2>
+            {recentObs.length === 0 ? (
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>No activity in this timeframe.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {recentObs.map((obs, index) => (
+                  <div key={obs.observation_id} style={{ 
+                    paddingBottom: index !== recentObs.length - 1 ? '16px' : '0', 
+                    borderBottom: index !== recentObs.length - 1 ? '1px solid #f3f4f6' : 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#374151', fontSize: '15px' }}>
+                        {obs.organization_name} logged <span style={{ color: '#3b82f6' }}>{obs.metric_name}</span>
+                      </p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>
+                        {new Date(obs.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>
+                        {obs.numeric_value !== null ? obs.numeric_value : obs.text_value} 
+                        <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500', marginLeft: '6px' }}>
+                          {obs.unit_of_measure}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* --- FORECASTING & TARGETS --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '24px', marginBottom: '40px' }}>
-        
-        <div style={chartContainerStyle}>
-          <h3 style={chartTitleStyle}>Net-Zero Trajectory vs Actuals</h3>
-          {forecastData.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved data available.</p> : (
-            <div style={{ width: '100%', height: '350px', minHeight: '350px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={forecastData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="year" tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={{stroke: '#e5e7eb'}} />
-                  <YAxis tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                  <Bar dataKey="Actual Emissions" fill={COLORS.Actual} radius={[4, 4, 0, 0]} maxBarSize={50} />
-                  <Line type="monotone" dataKey="Target Trajectory" stroke={COLORS.Target} strokeWidth={3} strokeDasharray="5 5" dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
-                </ComposedChart>
-              </ResponsiveContainer>
+      {/* =========================================
+          TAB 2: CARBON & FACILITIES
+      ========================================= */}
+      {activeTab === 'Carbon & Facilities' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          {/* FORECASTING & TARGETS */}
+          <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '24px' }}>
+            <div style={chartContainerStyle}>
+              <h3 style={chartTitleStyle}>Net-Zero Trajectory vs Actuals</h3>
+              {forecastData.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved data available.</p> : (
+                <div style={{ width: '100%', height: '350px', minHeight: '350px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={forecastData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                      <XAxis dataKey="year" tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={{stroke: '#e5e7eb'}} />
+                      <YAxis tick={{fill: '#6b7280', fontSize: 12}} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                      <Bar dataKey="Actual Emissions" fill={COLORS.Actual} radius={[4, 4, 0, 0]} maxBarSize={50} />
+                      <Line type="monotone" dataKey="Target Trajectory" stroke={COLORS.Target} strokeWidth={3} strokeDasharray="5 5" dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {isAdmin && (
-          <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-            <h3 style={{ margin: '0 0 20px 0', color: '#111827', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>🎯 Set Reduction Goal</h3>
-            <form onSubmit={handleSetTarget} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={formLabelStyle}>Organization</label>
-                <select onChange={e => setTargetForm({...targetForm, organization_id: e.target.value})} required style={formInputStyle}>
-                  <option value="">Select Org</option>
-                  {organizations.map(o => <option key={o.unit_id} value={o.unit_id}>{o.name}</option>)}
-                </select>
+            {isAdmin && (
+              <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                <h3 style={{ margin: '0 0 20px 0', color: '#111827', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>🎯 Set Reduction Goal</h3>
+                <form onSubmit={handleSetTarget} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div>
+                    <label style={formLabelStyle}>Organization</label>
+                    <select onChange={e => setTargetForm({...targetForm, organization_id: e.target.value})} required style={formInputStyle}>
+                      <option value="">Select Org</option>
+                      {organizations.map(o => <option key={o.unit_id} value={o.unit_id}>{o.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={formLabelStyle}>Base Year</label>
+                      <input type="number" value={targetForm.baseline_year} onChange={e => setTargetForm({...targetForm, baseline_year: e.target.value})} style={formInputStyle} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={formLabelStyle}>Target Year</label>
+                      <input type="number" value={targetForm.target_year} onChange={e => setTargetForm({...targetForm, target_year: e.target.value})} style={formInputStyle} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>Reduction % Goal</label>
+                    <input type="number" value={targetForm.reduction_percentage} onChange={e => setTargetForm({...targetForm, reduction_percentage: e.target.value})} style={formInputStyle} />
+                  </div>
+                  <button type="submit" style={{ background: '#111827', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', marginTop: '10px' }}>
+                    Lock In Target
+                  </button>
+                </form>
               </div>
-
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={formLabelStyle}>Base Year</label>
-                  <input type="number" value={targetForm.baseline_year} onChange={e => setTargetForm({...targetForm, baseline_year: e.target.value})} style={formInputStyle} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={formLabelStyle}>Target Year</label>
-                  <input type="number" value={targetForm.target_year} onChange={e => setTargetForm({...targetForm, target_year: e.target.value})} style={formInputStyle} />
-                </div>
-              </div>
-
-              <div>
-                <label style={formLabelStyle}>Reduction % Goal</label>
-                <input type="number" value={targetForm.reduction_percentage} onChange={e => setTargetForm({...targetForm, reduction_percentage: e.target.value})} style={formInputStyle} />
-              </div>
-
-              <button type="submit" style={{ background: '#111827', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', marginTop: '10px' }}>
-                Lock In Target
-              </button>
-            </form>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* --- VISUALIZATION GRID --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', marginBottom: '40px' }}>
-        
-        {/* CHART 1: Emissions by Scope */}
-        <div style={chartContainerStyle}>
-          <h3 style={chartTitleStyle}>Emissions by Scope</h3>
-          {pieDataScope.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No scope data available.</p> : (
-            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
-                    {pieDataScope.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* CHART 2: Facility Leaderboard */}
-        <div style={chartContainerStyle}>
-          <h3 style={chartTitleStyle}>Facility Leaderboard</h3>
-          {facilityData.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No facility data available.</p> : (
-            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={facilityData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
-                  <XAxis type="number" tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="name" type="category" tick={{fill: '#4b5563', fontSize: 12, fontWeight: 500}} width={110} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(value) => `${value.toLocaleString()} kg CO₂e`} content={<CustomTooltip />} />
-                  <Bar dataKey="CO2e" radius={[0, 4, 4, 0]} maxBarSize={30}>
-                    {facilityData.map((entry, index) => {
-                      const dynamicColors = [COLORS.Chart1, COLORS.Chart2, COLORS.Chart3, COLORS.Chart4, COLORS.Chart5];
-                      return <Cell key={`cell-${index}`} fill={dynamicColors[index % dynamicColors.length]} />
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* CHART 3: Ingestion Timeline */}
-        <div style={chartContainerStyle}>
-          <h3 style={chartTitleStyle}>Recent Ingestion Timeline</h3>
-          {barDataTimeline.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No timeline data available.</p> : (
-            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barDataTimeline} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#e5e7eb'}} tickLine={false} />
-                  <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="co2e" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* CHART 4: General ESG Distribution */}
-        <div style={chartContainerStyle}>
-          <h3 style={chartTitleStyle}>ESG Log Distribution</h3>
-          {pieDataESG.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No ESG data available.</p> : (
-            <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
-                    {pieDataESG.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* --- INTEGRATED COMPONENTS --- */}
-      <div style={{ marginBottom: '40px' }}>
-        <ReportGenerator />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginBottom: '40px' }}>
-        <SDGTracker />
-        <MaterialityMatrix />
-      </div>
-
-      <div style={{ marginBottom: '40px' }}>
-        <SectorOnboarding />
-      </div>
-
-      {/* --- RECENT ACTIVITY FEED --- */}
-      <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #e5e7eb' }}>
-        <h2 style={{ fontSize: '18px', color: '#111827', margin: '0 0 24px 0' }}>
-          Recent Activity Log
-        </h2>
-        {recentObs.length === 0 ? (
-          <p style={{ color: '#6b7280', fontSize: '14px' }}>No activity in this timeframe.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {recentObs.map((obs, index) => (
-              <div key={obs.observation_id} style={{ 
-                paddingBottom: index !== recentObs.length - 1 ? '16px' : '0', 
-                borderBottom: index !== recentObs.length - 1 ? '1px solid #f3f4f6' : 'none',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#374151', fontSize: '15px' }}>
-                    {obs.organization_name} logged <span style={{ color: '#3b82f6' }}>{obs.metric_name}</span>
-                  </p>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>
-                    {new Date(obs.timestamp).toLocaleString()}
-                  </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
+            
+            <div style={chartContainerStyle}>
+              <h3 style={chartTitleStyle}>Emissions by Scope</h3>
+              {pieDataScope.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No scope data available.</p> : (
+                <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieDataScope} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
+                        {pieDataScope.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>
-                    {obs.numeric_value !== null ? obs.numeric_value : obs.text_value} 
-                    <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500', marginLeft: '6px' }}>
-                      {obs.unit_of_measure}
-                    </span>
-                  </p>
+              )}
+            </div>
+
+            <div style={chartContainerStyle}>
+              <h3 style={chartTitleStyle}>Facility Leaderboard</h3>
+              {facilityData.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No facility data available.</p> : (
+                <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={facilityData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e5e7eb" />
+                      <XAxis type="number" tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
+                      <YAxis dataKey="name" type="category" tick={{fill: '#4b5563', fontSize: 12, fontWeight: 500}} width={110} axisLine={false} tickLine={false} />
+                      <Tooltip formatter={(value) => `${value.toLocaleString()} kg CO₂e`} content={<CustomTooltip />} />
+                      <Bar dataKey="CO2e" radius={[0, 4, 4, 0]} maxBarSize={30}>
+                        {facilityData.map((entry, index) => {
+                          const dynamicColors = [COLORS.Chart1, COLORS.Chart2, COLORS.Chart3, COLORS.Chart4, COLORS.Chart5];
+                          return <Cell key={`cell-${index}`} fill={dynamicColors[index % dynamicColors.length]} />
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              </div>
-            ))}
+              )}
+            </div>
+
+            <div style={chartContainerStyle}>
+              <h3 style={chartTitleStyle}>Recent Ingestion Timeline</h3>
+              {barDataTimeline.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No timeline data available.</p> : (
+                <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barDataTimeline} margin={{ top: 20, right: 10, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                      <XAxis dataKey="date" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#e5e7eb'}} tickLine={false} />
+                      <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="co2e" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div style={chartContainerStyle}>
+              <h3 style={chartTitleStyle}>ESG Log Distribution</h3>
+              {pieDataESG.length === 0 ? <p style={{ color: '#6b7280', textAlign: 'center', marginTop: '40px', fontSize: '14px' }}>No ESG data available.</p> : (
+                <div style={{ width: '100%', height: '280px', minHeight: '280px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieDataESG} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value">
+                        {pieDataESG.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} stroke="none" />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: '13px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* =========================================
+          TAB 3: STRATEGY & COMPLIANCE
+      ========================================= */}
+      {activeTab === 'Strategy & Compliance' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          <ReportGenerator />
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+            <SDGTracker />
+            <MaterialityMatrix />
+          </div>
+
+          <SectorOnboarding />
+
+        </div>
+      )}
 
     </div>
   );
