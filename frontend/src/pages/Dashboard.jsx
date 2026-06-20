@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, Line, ComposedChart, 
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine 
 } from 'recharts';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -613,6 +613,9 @@ function Dashboard() {
             )}
           </div>
 
+          {/* NEW: ANOMALY & VARIANCE ENGINE */}
+          <VarianceAnalytics />
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
             
             <div style={chartContainerStyle}>
@@ -715,6 +718,185 @@ function Dashboard() {
 
     </div>
   );
+}
+
+// --- VARIANCE ENGINE HELPER & COMPONENT ---
+export const calculateVarianceAndAnomalies = (monthlyData) => {
+    // 0. IMPORTANT FIX: Postgres SUM() returns strings. We MUST cast them to JS Numbers first!
+    const parsedData = monthlyData.map(d => ({
+        ...d,
+        current_co2e: Number(d.current_co2e),
+        previous_co2e: Number(d.previous_co2e)
+    }));
+
+    // 1. Extract valid numbers from the cleaned data
+    const values = parsedData.map(d => d.current_co2e);
+    if (values.length === 0) return parsedData;
+
+    // 2. Calculate Mean
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+
+    // 3. Calculate Standard Deviation
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+    // Prevent division by zero if all data is exactly the same
+    const stdDev = Math.sqrt(variance) || 1; 
+
+    // 4. Set Threshold 
+    const upperThreshold = Math.max(mean + (1.5 * stdDev), 100);
+
+    // 5. Map over data and attach intelligence
+    return parsedData.map((dataPoint, index) => {
+        const isAnomaly = dataPoint.current_co2e > upperThreshold && dataPoint.current_co2e > 0;
+        
+        // Calculate Month-over-Month (MoM) Variance Percentage
+        let momVariance = null; 
+        if (index > 0) {
+            const prevValue = parsedData[index - 1].current_co2e;
+            if (prevValue > 0) {
+                momVariance = ((dataPoint.current_co2e - prevValue) / prevValue) * 100;
+            } else if (dataPoint.current_co2e > 0) {
+                // If previous month was 0 but this month is huge, manually flag a high variance for the UI
+                momVariance = 999; 
+            }
+        }
+
+        return {
+            ...dataPoint,
+            isAnomaly,
+            momVariance: momVariance !== null ? Number(momVariance.toFixed(1)) : null,
+            threshold: upperThreshold // For plotting the "danger line" on the chart
+        };
+    });
+};
+
+function VarianceAnalytics() {
+    const [trendData, setTrendData] = useState([]);
+    const [anomalies, setAnomalies] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchVarianceData();
+    }, []);
+
+    const fetchVarianceData = async () => {
+        setLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get('/api/analytics/variance', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            const processedData = calculateVarianceAndAnomalies(response.data);
+            
+            // FIXED: We now trust the isAnomaly flag entirely, even if MoM variance is null (due to previous month being 0)
+            const filteredAnomalies = processedData.filter(d => d.isAnomaly);
+
+            setTrendData(processedData);
+            setAnomalies(filteredAnomalies);
+        } catch (err) {
+            console.error("Failed to fetch variance analytics", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Custom Tooltip to show MoM Variance natively inside the chart
+    const CustomVarianceTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            const data = payload[0].payload;
+            return (
+                <div style={{ background: 'white', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                    <p style={{ margin: '0 0 12px 0', fontWeight: '800', color: '#111827' }}>{label} Emissions</p>
+                    <p style={{ margin: '0 0 8px 0', color: '#3b82f6', fontWeight: '600' }}>
+                        Current: {Number(data.current_co2e).toLocaleString()} kg
+                    </p>
+                    <p style={{ margin: '0 0 12px 0', color: '#6b7280', fontSize: '14px' }}>
+                        Baseline: {Number(data.previous_co2e).toLocaleString()} kg
+                    </p>
+                    
+                    {data.momVariance !== null && data.momVariance !== 0 && (
+                        <div style={{ 
+                            padding: '6px 10px', borderRadius: '4px', display: 'inline-block', fontSize: '13px', fontWeight: '700',
+                            backgroundColor: data.momVariance > 0 ? '#fee2e2' : '#d1fae5',
+                            color: data.momVariance > 0 ? '#991b1b' : '#065f46'
+                        }}>
+                            {data.momVariance > 0 ? '↑' : '↓'} {Math.abs(data.momVariance)}% MoM Variance
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        return null;
+    };
+
+    if (loading) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Calibrating variance engine...</div>;
+    }
+
+    return (
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                <div>
+                    <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#111827', margin: '0 0 8px 0' }}>
+                        Anomaly & Variance Engine
+                    </h2>
+                    <p style={{ margin: 0, color: '#6b7280', fontSize: '15px' }}>
+                        Tracking current trajectory against previous year baselines and standard deviation limits.
+                    </p>
+                </div>
+
+                {/* Dynamic Anomaly Warning Badge */}
+                {anomalies.length > 0 && (
+                    <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '12px 20px', borderRadius: '8px', display: 'flex', alignItems: 'flex-start', gap: '12px', maxWidth: '400px' }}>
+                        <span style={{ fontSize: '24px' }}>⚠️</span>
+                        <div>
+                            <h4 style={{ margin: '0 0 4px 0', color: '#991b1b', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                High Variance Detected
+                            </h4>
+                            {anomalies.map((anom, idx) => (
+                                <p key={idx} style={{ margin: 0, color: '#7f1d1d', fontSize: '13px', lineHeight: '1.5' }}>
+                                    <strong>{anom.month}</strong> shows a massive spike {anom.momVariance !== null ? `(+${anom.momVariance}%) ` : ''}compared to baseline expectations. Double-check raw inputs for typos.
+                                </p>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* The Comparative Chart */}
+            <div style={{ width: '100%', height: '400px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={trendData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                        <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={{ stroke: '#d1d5db' }} tickLine={false} />
+                        <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+                        
+                        <Tooltip content={<CustomVarianceTooltip />} />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
+                        {/* Standard Deviation Danger Line */}
+                        <ReferenceLine y={trendData[0]?.threshold} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'Std Dev Threshold', fill: '#ef4444', fontSize: 12 }} />
+
+                        {/* Baseline Data (Line) */}
+                        <Line type="monotone" name="Previous Year Baseline" dataKey="previous_co2e" stroke="#9ca3af" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+
+                        {/* Current Data (Bar) with Dynamic Coloring for Anomalies */}
+                        <Bar name="Current Year Actuals" dataKey="current_co2e" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                            {trendData.map((entry, index) => (
+                                <Cell 
+                                    key={`cell-${index}`} 
+                                    fill={entry.isAnomaly ? '#ef4444' : '#3b82f6'} // Red if anomaly, Blue if normal
+                                />
+                            ))}
+                        </Bar>
+                    </ComposedChart>
+                </ResponsiveContainer>
+            </div>
+
+        </div>
+    );
 }
 
 // --- Reusable Style Objects ---

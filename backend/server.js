@@ -1042,6 +1042,48 @@ app.get('/api/campaigns', authorize, async (req, res) => {
 });
 
 // ==========================================
+// ADVANCED ANALYTICS ENGINE
+// ==========================================
+app.get('/api/analytics/variance', authorize, async (req, res) => {
+    try {
+        const currentYear = new Date().getFullYear();
+        const previousYear = currentYear - 1;
+
+        const query = `
+            WITH MonthlyData AS (
+                SELECT 
+                    EXTRACT(MONTH FROM COALESCE(e.recorded_date, e.created_at)) as month_num,
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
+                FROM ghg_emissions e
+                JOIN Organization_Unit u ON e.organization_id = u.unit_id
+                WHERE u.company_id = $1 
+                  AND e.status = 'Approved'
+                GROUP BY month_num
+            )
+            -- Generate a static 12-month table to ensure missing data doesn't break the chart X-Axis
+            SELECT 
+                m.month_abbr as month,
+                COALESCE(d.current_co2e, 0) as current_co2e,
+                COALESCE(d.previous_co2e, 0) as previous_co2e
+            FROM (
+                VALUES (1, 'Jan'), (2, 'Feb'), (3, 'Mar'), (4, 'Apr'), (5, 'May'), (6, 'Jun'),
+                       (7, 'Jul'), (8, 'Aug'), (9, 'Sep'), (10, 'Oct'), (11, 'Nov'), (12, 'Dec')
+            ) AS m(month_num, month_abbr)
+            LEFT JOIN MonthlyData d ON m.month_num = d.month_num
+            ORDER BY m.month_num;
+        `;
+
+        const analyticsData = await pool.query(query, [req.user.company_id, currentYear, previousYear]);
+        res.json(analyticsData.rows);
+
+    } catch (err) {
+        console.error("Variance Engine Error:", err.message);
+        res.status(500).json({ error: "Failed to compile variance analytics." });
+    }
+});
+
+// ==========================================
 // START SERVER
 // ==========================================
 const PORT = process.env.PORT || 5000;
