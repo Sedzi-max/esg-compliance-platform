@@ -665,6 +665,56 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
 });
 
 // ==========================================
+// ADMIN FRAMEWORK MAPPING ROUTES
+// ==========================================
+
+// 1. Get all mappings for the admin table
+app.get('/api/mappings', authorize, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM Framework_Mappings ORDER BY framework_name, framework_code');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to fetch framework mappings" });
+    }
+});
+
+// 2. Create a new mapping rule
+app.post('/api/mappings', authorize, async (req, res) => {
+    try {
+        // Security check: Only Admins can alter compliance rules
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Only Administrators can modify framework mappings." });
+        }
+
+        const { framework_name, framework_code, description, activity_type } = req.body;
+        const result = await pool.query(
+            `INSERT INTO Framework_Mappings (framework_name, framework_code, description, activity_type) 
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [framework_name, framework_code, description, activity_type]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to add new mapping" });
+    }
+});
+
+// 3. Delete a mapping rule
+app.delete('/api/mappings/:id', authorize, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin') {
+            return res.status(403).json({ error: "Access Denied." });
+        }
+        await pool.query('DELETE FROM Framework_Mappings WHERE id = $1', [req.params.id]);
+        res.json({ message: "Mapping deleted successfully" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to delete mapping" });
+    }
+});
+
+// ==========================================
 // NET-ZERO TARGET ROUTES 
 // ==========================================
 
@@ -1028,7 +1078,7 @@ app.get('/api/campaigns', authorize, async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT token as id, supplier_name as supplier, activity_type as metric, 
-                    deadline, status 
+                    deadline, status, evidence_url, created_at 
              FROM Supplier_Campaigns 
              WHERE company_id = $1 
              ORDER BY created_at DESC`,
@@ -1038,6 +1088,25 @@ app.get('/api/campaigns', authorize, async (req, res) => {
     } catch (err) {
         console.error("Error fetching campaigns:", err.message);
         res.status(500).json({ error: "Failed to fetch campaigns" });
+    }
+});
+
+// NEW: Allows Admins to Approve/Reject Supplier Evidence from the Locker
+app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+            return res.status(403).json({ error: "Access Denied." });
+        }
+        const { token } = req.params;
+        const { status } = req.body;
+        
+        const updated = await pool.query(
+            `UPDATE Supplier_Campaigns SET status = $1 WHERE token = $2 AND company_id = $3 RETURNING *`,
+            [status, token, req.user.company_id]
+        );
+        res.json(updated.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update campaign status." });
     }
 });
 
@@ -1080,6 +1149,34 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
     } catch (err) {
         console.error("Variance Engine Error:", err.message);
         res.status(500).json({ error: "Failed to compile variance analytics." });
+    }
+});
+
+// ==========================================
+// DECARBONIZATION INITIATIVES ENGINE
+// ==========================================
+app.get('/api/initiatives', authorize, async (req, res) => {
+    try {
+        const { sector } = req.query;
+        
+        // If no sector is provided, default to a generic set or reject
+        if (!sector) {
+            return res.status(400).json({ error: "Sector query parameter is required." });
+        }
+
+        const query = `
+            SELECT id, title, description, impact_percentage, phase_in_years 
+            FROM esg_initiatives 
+            WHERE sector = $1
+            ORDER BY impact_percentage DESC;
+        `;
+
+        const result = await pool.query(query, [sector]);
+        res.json(result.rows);
+
+    } catch (err) {
+        console.error("Failed to fetch initiatives:", err.message);
+        res.status(500).json({ error: "Failed to load sector initiatives." });
     }
 });
 
