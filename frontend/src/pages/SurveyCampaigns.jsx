@@ -126,25 +126,27 @@ function SurveyCampaigns() {
             {isCreating && (
                 <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginBottom: '32px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>Dispatch Vendor Request</h3>
-                    <form onSubmit={handleCreateCampaign} style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
+                    <form onSubmit={handleCreateCampaign} style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 200px' }}>
                             <label style={labelStyle}>Supplier Name</label>
                             <input type="text" required value={newCampaign.supplier_name} onChange={e => setNewCampaign({...newCampaign, supplier_name: e.target.value})} style={inputStyle} placeholder="e.g., Global Logistics Corp" />
                         </div>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: '1 1 200px' }}>
                             <label style={labelStyle}>Target Metric</label>
                             <select required value={newCampaign.activity_type} onChange={e => setNewCampaign({...newCampaign, activity_type: e.target.value})} style={inputStyle}>
                                 <option value="">Select Metric...</option>
-                                <option value="Fleet Fuel (Diesel)">Fleet Fuel (Diesel)</option>
-                                <option value="Purchased Electricity">Purchased Electricity</option>
-                                <option value="Waste Generation">Waste Generation</option>
+                                {/* CRITICAL FIX: The values must match the backend CARBON_MULTIPLIERS keys */}
+                                <option value="mobile_diesel">Logistics: Diesel Fuel (Liters)</option>
+                                <option value="business_travel_flights">Business Travel: Flights (Miles)</option>
+                                <option value="purchased_electricity">Facilities: Electricity (kWh)</option>
+                                <option value="waste_landfill">Operations: Landfill Waste (Tons)</option>
                             </select>
                         </div>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: '1 1 200px' }}>
                             <label style={labelStyle}>Disclosure Deadline</label>
                             <input type="date" required value={newCampaign.deadline} onChange={e => setNewCampaign({...newCampaign, deadline: e.target.value})} style={inputStyle} />
                         </div>
-                        <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer', height: '42px' }}>
+                        <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer', height: '42px', flex: '0 0 auto' }}>
                             Send Request
                         </button>
                     </form>
@@ -152,7 +154,7 @@ function SurveyCampaigns() {
             )}
 
             {/* Quality Tier Legend */}
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
                 <div style={{ fontSize: '13px', color: '#6b7280', fontWeight: '600' }}>DATA QUALITY LEDGER:</div>
                 <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>Tier A (Primary Data / Receipts)</div>
                 <div style={{ fontSize: '13px', color: '#3b82f6', fontWeight: '600' }}>Tier B (Industry Averages)</div>
@@ -160,7 +162,6 @@ function SurveyCampaigns() {
             </div>
 
             {/* Supplier Leaderboard Table */}
-            {/* Note the overflowX: 'auto' allowing horizontal scroll if the screen is narrow */}
             <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 {loading ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Loading supply chain data...</div>
@@ -194,7 +195,7 @@ function SurveyCampaigns() {
                                                 <div style={{ fontWeight: '600', color: '#111827' }}>{camp.supplier}</div>
                                                 <div style={{ fontSize: '12px', color: '#6b7280' }}>Due: {new Date(camp.deadline).toLocaleDateString()}</div>
                                             </td>
-                                            <td style={{...tdStyle, color: '#4b5563'}}>{camp.metric}</td>
+                                            <td style={{...tdStyle, color: '#4b5563'}}>{camp.metric.replace(/_/g, ' ')}</td>
                                             <td style={tdStyle}>
                                                 <span style={{ backgroundColor: statusStyle.bg, color: statusStyle.text, padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700' }}>
                                                     {camp.status || 'Pending'}
@@ -229,7 +230,7 @@ function SurveyCampaigns() {
                                                             color: isCopied ? 'white' : '#4f46e5', 
                                                             border: `1px solid ${isCopied ? '#10b981' : '#c7d2fe'}`, 
                                                             padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap' // Prevents button text from breaking to a new line
+                                                            whiteSpace: 'nowrap'
                                                         }}
                                                     >
                                                         {isCopied ? '✅ Copied!' : '🔗 Copy Link'}

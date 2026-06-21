@@ -4,37 +4,9 @@ import Papa from 'papaparse';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// --- NEW: THE COMPLIANCE MAPPING ENGINE ---
-// This dictionary tells the system what metrics are required for each framework
-const FRAMEWORK_REQUIREMENTS = {
-  GSE_MANDATORY: [
-    { code: 'GSE-E1', name: 'Total GHG Emissions (Scope 1 & 2)', check: data => (data.scopeData.scope_1 + data.scopeData.scope_2) > 0 },
-    { code: 'GSE-S1', name: 'Employee Diversity & Inclusion', check: data => data.esgMetrics.Social.length > 0 },
-    { code: 'GSE-G1', name: 'Board Independence Metrics', check: data => data.esgMetrics.Governance.length > 0 }
-  ],
-  GRI: [
-    { code: 'GRI 305-1', name: 'Direct (Scope 1) GHG emissions', check: data => data.scopeData.scope_1 > 0 },
-    { code: 'GRI 305-2', name: 'Energy indirect (Scope 2) GHG emissions', check: data => data.scopeData.scope_2 > 0 },
-    { code: 'GRI 305-3', name: 'Other indirect (Scope 3) GHG emissions', check: data => data.scopeData.scope_3 > 0 },
-    { code: 'GRI 306-3', name: 'Waste generated', check: data => data.esgMetrics.Environmental.some(m => m.name.toLowerCase().includes('waste')) }
-  ],
-  CSRD: [
-    { code: 'ESRS E1-6', name: 'Gross Scopes 1, 2, 3 and Total GHG emissions', check: data => data.totalCarbon > 0 },
-    { code: 'ESRS S1', name: 'Own Workforce Disclosures', check: data => data.esgMetrics.Social.length > 0 },
-    { code: 'ESRS G1', name: 'Business Conduct', check: data => data.esgMetrics.Governance.length > 0 }
-  ],
-  TCFD: [
-    { code: 'TCFD Metrics-B', name: 'Disclose Scope 1, Scope 2, and, if appropriate, Scope 3', check: data => data.totalCarbon > 0 },
-    { code: 'TCFD Strategy-A', name: 'Climate-related risks and opportunities', check: data => data.esgMetrics.Governance.some(m => m.name.toLowerCase().includes('risk')) }
-  ],
-  SDG: [
-    { code: 'SDG 13', name: 'Climate Action (GHG Tracking)', check: data => data.totalCarbon > 0 },
-    { code: 'SDG 5', name: 'Gender Equality', check: data => data.esgMetrics.Social.some(m => m.name.toLowerCase().includes('gender') || m.name.toLowerCase().includes('diversity')) }
-  ]
-};
-
 function ReportGenerator() {
-  const [framework, setFramework] = useState('GSE_MANDATORY');
+  // Matched to the seeded database framework names
+  const [framework, setFramework] = useState('CSRD / ESRS');
   const [year, setYear] = useState('2026');
   
   const [isGeneratingCSV, setIsGeneratingCSV] = useState(false);
@@ -51,13 +23,14 @@ function ReportGenerator() {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/reports/framework?framework=${framework}&year=${year}`, {
+      // Exporting the mapped gap-analysis data as CSV
+      const response = await axios.get(`/api/reports/gap-analysis?framework=${framework}&year=${year}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       const data = response.data;
       if (data.length === 0) {
-        setError(`No approved data found for ${framework} in ${year}.`);
+        setError(`No mapping data found for ${framework} in ${year}.`);
         return;
       }
 
@@ -65,7 +38,7 @@ function ReportGenerator() {
       const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `${framework}_Compliance_Report_${year}.csv`;
+      link.download = `${framework.replace(/[/ ]/g, '_')}_Compliance_Report_${year}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -87,10 +60,12 @@ function ReportGenerator() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const [orgRes, emissionsRes, obsRes] = await Promise.all([
+      // 1. Fetch raw data for the document body AND mapped data for the gap analysis simultaneously
+      const [orgRes, emissionsRes, obsRes, gapRes] = await Promise.all([
         axios.get('/api/organizations', config).catch(() => ({ data: [] })),
         axios.get('/api/emissions', config).catch(() => ({ data: [] })),
-        axios.get('/api/observations', config).catch(() => ({ data: [] }))
+        axios.get('/api/observations', config).catch(() => ({ data: [] })),
+        axios.get(`/api/reports/gap-analysis?framework=${framework}&year=${year}`, config).catch(() => ({ data: [] }))
       ]);
 
       const targetEmissions = emissionsRes.data.filter(e => {
@@ -124,23 +99,16 @@ function ReportGenerator() {
         if (o.pillar === 'G') esgMetrics.Governance.push(metricObj);
       });
 
-      // --- NEW: Execute Gap Analysis ---
-      const unformattedData = { scopeData, totalCarbon, esgMetrics };
-      const requirements = FRAMEWORK_REQUIREMENTS[framework] || [];
-      
-      const complianceResults = requirements.map(req => ({
-        ...req,
-        fulfilled: req.check(unformattedData)
-      }));
-
-      const complianceScore = complianceResults.length > 0 
-        ? Math.round((complianceResults.filter(r => r.fulfilled).length / complianceResults.length) * 100)
-        : 100;
+      // 2. Process Backend Dynamic Mapping (Gap Analysis)
+      const mappedResults = gapRes.data;
+      const totalReqs = mappedResults.length;
+      const fulfilledReqs = mappedResults.filter(r => r.is_fulfilled).length;
+      const complianceScore = totalReqs === 0 ? 0 : Math.round((fulfilledReqs / totalReqs) * 100);
 
       setReportData({
         year, framework, generatedAt: new Date().toLocaleDateString(),
         facilityCount: orgRes.data.length, totalCarbon, scopeData, esgMetrics,
-        complianceResults, complianceScore // Inject the analysis into state
+        mappedResults, complianceScore // Inject the dynamic mapping into state
       });
 
     } catch (err) {
@@ -167,7 +135,7 @@ function ReportGenerator() {
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`ESG_Radar_${framework}_Disclosure_${year}.pdf`);
+      pdf.save(`ESG_Radar_${framework.replace(/[/ ]/g, '_')}_Disclosure_${year}.pdf`);
       
       element.style.boxShadow = originalBoxShadow;
       element.style.border = '1px solid #e5e7eb';
@@ -194,18 +162,16 @@ function ReportGenerator() {
           <div style={{ flex: '2 1 300px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={labelStyle}>Regulatory Framework Matrix</label>
             <select value={framework} onChange={(e) => setFramework(e.target.value)} style={inputStyle}>
-              <option value="GSE_MANDATORY">GSE Mandatory Disclosures</option>
-              <option value="GRI">GRI (Global Reporting Initiative)</option>
-              <option value="CSRD">CSRD (European Standard)</option>
-              <option value="TCFD">TCFD (Financial Disclosures)</option>
-              <option value="SDG">UN Sustainable Development Goals (SDG)</option>
+              {/* Connected to Database Mappings */}
+              <option value="CSRD / ESRS">CSRD (European Standard)</option>
+              <option value="ISSB / IFRS S2">ISSB (Global)</option>
+              <option value="GRI">GRI Standard</option>
             </select>
           </div>
 
           <div style={{ flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={labelStyle}>Reporting Year</label>
             <select value={year} onChange={(e) => setYear(e.target.value)} style={inputStyle}>
-              <option value="2023">2023</option>
               <option value="2024">2024</option>
               <option value="2025">2025</option>
               <option value="2026">2026</option>
@@ -259,27 +225,32 @@ function ReportGenerator() {
               </div>
             </div>
 
-            {/* --- NEW: COMPLIANCE GAP ANALYSIS SECTION --- */}
+            {/* --- UPGRADED: DYNAMIC COMPLIANCE GAP ANALYSIS SECTION --- */}
             <div style={{ marginBottom: '48px', padding: '24px', backgroundColor: reportData.complianceScore === 100 ? '#ecfdf5' : '#fef2f2', border: `1px solid ${reportData.complianceScore === 100 ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', fontFamily: 'system-ui, sans-serif' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h3 style={{ margin: 0, fontSize: '16px', color: '#111827', textTransform: 'uppercase', fontWeight: '700' }}>Automated Gap Analysis</h3>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#111827', textTransform: 'uppercase', fontWeight: '700' }}>Automated Framework Mapping</h3>
                     <div style={{ fontSize: '24px', fontWeight: '800', color: reportData.complianceScore === 100 ? '#059669' : '#dc2626' }}>
                         {reportData.complianceScore}% Compliant
                     </div>
                 </div>
                 
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <tbody>
-                        {reportData.complianceResults.map((req, idx) => (
+                        {reportData.mappedResults.length === 0 ? (
+                            <tr><td style={{ padding: '12px 0', color: '#6b7280' }}>No mapped requirements found for this framework.</td></tr>
+                        ) : reportData.mappedResults.map((req, idx) => (
                             <tr key={idx} style={{ borderTop: '1px solid #e5e7eb' }}>
                                 <td style={{ padding: '12px 0', width: '30px' }}>
-                                    {req.fulfilled ? '✅' : '❌'}
+                                    {req.is_fulfilled ? '✅' : '❌'}
                                 </td>
-                                <td style={{ padding: '12px 0', fontWeight: '600', color: '#374151', width: '150px' }}>
-                                    {req.code}
+                                <td style={{ padding: '12px 0', fontWeight: '700', color: '#374151', width: '120px' }}>
+                                    {req.framework_code}
                                 </td>
-                                <td style={{ padding: '12px 0', color: '#6b7280' }}>
-                                    {req.name}
+                                <td style={{ padding: '12px 0', color: '#4b5563' }}>
+                                    {req.description}
+                                </td>
+                                <td style={{ padding: '12px 0', textAlign: 'right', fontWeight: '600', color: req.is_fulfilled ? '#059669' : '#dc2626' }}>
+                                    {req.is_fulfilled ? `${Number(req.total_co2e).toLocaleString()} tCO2e` : 'Missing'}
                                 </td>
                             </tr>
                         ))}

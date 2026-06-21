@@ -12,6 +12,9 @@ import ReportGenerator from './ReportGenerator';
 import MaterialityMatrix from '../components/MaterialityMatrix';
 import SDGTracker from '../components/SDGTracker';
 import SectorOnboarding from '../components/SectorOnboarding';
+import IndustryBenchmarking from '../components/IndustryBenchmarking';
+import DecarbonizationForecaster from '../components/DecarbonizationForecaster';
+import ComplianceReadiness from '../components/ComplianceReadiness';
 
 function Dashboard() {
   // --- TAB STATE ---
@@ -440,7 +443,7 @@ function Dashboard() {
       {activeTab === 'Executive Overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           
-          {/* STATS KPI GRID */}
+          {/* STATS KPI GRID - (Preserved your dynamic live data!) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px' }}>
               <div style={{...cardStyle, borderTop: '4px solid #10b981'}}>
                   <p style={cardLabelStyle}>Total Approved Carbon</p>
@@ -482,6 +485,9 @@ function Dashboard() {
                   </div>
               </div>
           </div>
+
+          {/* 👈 NEW COMPLIANCE READINESS COMPONENT ADDED HERE */}
+          <ComplianceReadiness />
 
           {/* AI INSIGHTS ENGINE */}
           {dynamicInsights.length > 0 && (
@@ -562,7 +568,7 @@ function Dashboard() {
           {/* FORECASTING & TARGETS */}
           <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2fr 1fr' : '1fr', gap: '24px' }}>
             <div style={chartContainerStyle}>
-              <h3 style={chartTitleStyle}>Net-Zero Trajectory vs Actuals</h3>
+              <h3 style={chartTitleStyle}>Corporate Target Accountability (Actuals vs Goal)</h3>
               {forecastData.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved data available.</p> : (
                 <div style={{ width: '100%', height: '350px', minHeight: '350px' }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -710,6 +716,8 @@ function Dashboard() {
             <SDGTracker />
             <MaterialityMatrix />
           </div>
+          <DecarbonizationForecaster />
+          <IndustryBenchmarking />
 
           <SectorOnboarding />
 

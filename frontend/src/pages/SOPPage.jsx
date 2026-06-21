@@ -1,110 +1,192 @@
-import React, { useRef } from 'react';
-import { useReactToPrint } from 'react-to-print';
+import React, { useState } from 'react';
 
 function SOPPage() {
-    const documentRef = useRef();
+    const [activeSection, setActiveSection] = useState('overview');
 
-    const handleDownloadPdf = useReactToPrint({
-        content: () => documentRef.current,
-        documentTitle: 'ESG_Platform_SOP',
-        pageStyle: `
-            @media print {
-                body { margin: 0; padding: 20mm; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-                h1 { color: #111827; }
-                h3 { color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
-            }
-        `
-    });
+    const sections = [
+        { id: 'overview', title: '1. Platform Overview', icon: '🌍' },
+        { id: 'quality-tiers', title: '2. Data Quality & Tiers', icon: '🥇' },
+        { id: 'evidence-locker', title: '3. The Evidence Locker', icon: '🗄️' },
+        { id: 'audit-queue', title: '4. Audit & Approval Workflow', icon: '✅' },
+        { id: 'anomalies', title: '5. Variance & Anomaly Flags', icon: '⚠️' }
+    ];
 
     return (
-        <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
             
-            {/* Page Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
-                <div>
-                    <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827' }}>
-                        System Documentation
-                    </h1>
-                    <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>
-                        Download the Standard Operating Procedure (SOP) for team onboarding.
-                    </p>
-                </div>
-                <button 
-                    onClick={handleDownloadPdf}
-                    style={{ backgroundColor: '#4f46e5', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer', display: 'flex', gap: '8px', alignItems: 'center', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                >
-                    📄 Download PDF
-                </button>
+            {/* Header Section */}
+            <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '2px solid #e5e7eb' }}>
+                <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
+                    📄 Standard Operating Procedures
+                </h1>
+                <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>
+                    Official guidelines for data ingestion, evidence verification, and compliance auditing.
+                </p>
             </div>
 
-            {/* The Document Container (This is what gets turned into the PDF) */}
-            <div 
-                style={{ backgroundColor: 'white', padding: '40px 60px', borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
-            >
-                <div ref={documentRef} style={{ color: '#374151', lineHeight: '1.6' }}>
-                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                        <h1 style={{ margin: '0 0 8px 0', fontSize: '28px', color: '#111827' }}>Standard Operating Procedure</h1>
-                        <h2 style={{ margin: 0, fontSize: '20px', color: '#6b7280', fontWeight: '500' }}>ESG Platform Operations</h2>
-                    </div>
-
-                    <p><strong>Purpose:</strong> To define the standardized workflow for capturing, verifying, and reporting corporate Environmental, Social, and Governance (ESG) data using the proprietary ESG Compliance Platform.</p>
-                    <p><strong>Scope:</strong> Covers system initialization, data ingestion, Scope 3 supply chain management, audit verification, and final compliance reporting.</p>
-                    
-                    <h4 style={{ color: '#111827', marginTop: '24px', marginBottom: '8px' }}>Primary Roles:</h4>
-                    <ul style={{ marginTop: '0', paddingLeft: '20px' }}>
-                        <li><strong>Executive Admin:</strong> System configuration and boundary setting.</li>
-                        <li><strong>Facility Manager:</strong> Primary data entry and evidence upload.</li>
-                        <li><strong>Compliance Manager:</strong> Scope 3 dispatch and data approval.</li>
-                        <li><strong>Auditor:</strong> Independent verification of claims and evidence.</li>
+            <div style={{ display: 'flex', gap: '32px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                
+                {/* SOP Navigation Sidebar */}
+                <div style={{ flex: '1 1 250px', backgroundColor: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb', position: 'sticky', top: '24px' }}>
+                    <h3 style={{ margin: '0 0 16px 8px', fontSize: '12px', textTransform: 'uppercase', color: '#9ca3af', fontWeight: '700', letterSpacing: '0.05em' }}>
+                        Chapters
+                    </h3>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {sections.map((sec) => (
+                            <li key={sec.id}>
+                                <button 
+                                    onClick={() => setActiveSection(sec.id)}
+                                    style={{
+                                        width: '100%', textAlign: 'left', padding: '12px 16px', borderRadius: '8px', border: 'none', outline: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '600', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px',
+                                        backgroundColor: activeSection === sec.id ? '#eff6ff' : 'transparent',
+                                        color: activeSection === sec.id ? '#1d4ed8' : '#4b5563'
+                                    }}
+                                >
+                                    <span style={{ fontSize: '16px' }}>{sec.icon}</span> {sec.title}
+                                </button>
+                            </li>
+                        ))}
                     </ul>
+                </div>
 
-                    <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', margin: '32px 0' }} />
+                {/* SOP Content Area */}
+                <div style={{ flex: '3 1 600px', backgroundColor: 'white', padding: '40px', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)', lineHeight: '1.6', color: '#374151', minHeight: '500px' }}>
+                    
+                    {activeSection === 'overview' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>1. Platform Overview & Scope</h2>
+                            <p>This ESG Compliance Platform serves as the central ledger for all corporate sustainability data, including carbon emissions (Scope 1, 2, and 3), social metrics, and governance logs.</p>
+                            <p>To ensure audit readiness for frameworks like CSRD and ISSB, all data entered into this platform is subjected to strict role-based access controls (RBAC) and cryptographic verification.</p>
+                            <div style={infoBoxStyle}>
+                                <strong>System Roles:</strong>
+                                <ul style={{ marginTop: '8px', marginBottom: 0 }}>
+                                    <li><strong>Facility Managers:</strong> Can ingest raw data and upload receipts, but cannot verify or approve records.</li>
+                                    <li><strong>Admins & Managers:</strong> Hold the cryptographic keys to approve records in the Audit Queue and set Net-Zero targets.</li>
+                                    <li><strong>External Auditors:</strong> Can view the dashboard and Evidence Locker in read-only mode for assurance reporting.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    )}
 
-                    <h3 style={{ color: '#111827', borderBottom: '2px solid #f3f4f6', paddingBottom: '8px' }}>Phase 1: System Initialization & Boundary Setting</h3>
-                    <p style={{ fontStyle: 'italic', fontSize: '14px', color: '#6b7280' }}>Completed annually or during major corporate restructuring by the Executive Admin.</p>
-                    <ol style={{ paddingLeft: '20px' }}>
-                        <li><strong>Define Organizational Boundaries:</strong> Navigate to <code>Admin Settings &gt; Entity Boundaries</code>. Establish the corporate hierarchy by designating the Root Corporate Entity and mapping all subsidiaries, facilities, and regional hubs beneath it.</li>
-                        <li><strong>Set Consolidation Approach:</strong> Select the legal accounting rule for the fiscal year (Operational Control, Financial Control, or Equity Share).</li>
-                        <li><strong>Configure Equity & Control:</strong> For each child entity, input the specific Equity Share percentage or binary Operational Control status to dictate exactly how emissions will roll up into the final corporate footprint.</li>
-                        <li><strong>Establish Materiality:</strong> Navigate to <code>Metrics Config &gt; Materiality</code>. Plot the critical ESG topics on the matrix to lock in the reporting focus for the year.</li>
-                    </ol>
+                    {activeSection === 'quality-tiers' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>2. Data Quality & Auto-Grading Tiers</h2>
+                            <p>Not all carbon data is created equal. When Facility Managers log data via the Data Entry portal, the backend algorithm automatically assigns a <strong>Quality Tier</strong> based on the inputs provided.</p>
+                            
+                            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', marginBottom: '20px' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                                        <th style={{ padding: '12px', color: '#111827' }}>Tier</th>
+                                        <th style={{ padding: '12px', color: '#111827' }}>Definition</th>
+                                        <th style={{ padding: '12px', color: '#111827' }}>Requirement</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '12px' }}><span style={tierBadgeStyle('A', '#d1fae5', '#065f46')}>Tier A</span></td>
+                                        <td style={{ padding: '12px', fontWeight: '600' }}>Primary Data</td>
+                                        <td style={{ padding: '12px', fontSize: '14px' }}>Requires exact fuel/energy amounts AND a physical PDF receipt attached.</td>
+                                    </tr>
+                                    <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '12px' }}><span style={tierBadgeStyle('B', '#fef3c7', '#92400e')}>Tier B</span></td>
+                                        <td style={{ padding: '12px', fontWeight: '600' }}>Activity-Based</td>
+                                        <td style={{ padding: '12px', fontSize: '14px' }}>Requires exact fuel/energy amounts, but lacks physical receipt evidence.</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '12px' }}><span style={tierBadgeStyle('C', '#fee2e2', '#991b1b')}>Tier C</span></td>
+                                        <td style={{ padding: '12px', fontWeight: '600' }}>Spend-Based</td>
+                                        <td style={{ padding: '12px', fontSize: '14px' }}>Estimated based on financial expenditure (e.g., $5,000 spent on electricity). Lowest accuracy.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p style={{ fontSize: '14px', color: '#6b7280' }}>* Note: For European CSRD compliance, facilities must strive for <strong>Tier A</strong> data whenever possible.</p>
+                        </div>
+                    )}
 
-                    <h3 style={{ color: '#111827', borderBottom: '2px solid #f3f4f6', paddingBottom: '8px', marginTop: '32px' }}>Phase 2: Data Ingestion</h3>
-                    <p style={{ fontStyle: 'italic', fontSize: '14px', color: '#6b7280' }}>Completed monthly or quarterly by Facility Managers.</p>
-                    <ol style={{ paddingLeft: '20px' }}>
-                        <li><strong>Prepare Bulk Data:</strong> Aggregate utility bills, fuel logs, and social metrics into a standard spreadsheet (Long or Wide format).</li>
-                        <li><strong>Execute Bulk Upload:</strong> Navigate to <code>Data Entry &gt; Bulk CSV Upload</code>. The Universal Parser will automatically apply fuzzy-matching to map facilities and bypass blank cells.</li>
-                        <li><strong>Log Singular Events:</strong> For ad-hoc data, utilize the manual entry tabs (Env, Social, Gov).</li>
-                        <li><strong>Attach Audit Evidence:</strong> For high-risk entries, upload the corresponding PDF invoice. Utilize the Document AI extractor to auto-fill numeric values.</li>
-                    </ol>
+                    {activeSection === 'evidence-locker' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>3. The Evidence Locker</h2>
+                            <p>The Evidence Locker is the central repository isolating raw documentation from mathematical analytics. When a PDF invoice, utility bill, or image receipt is uploaded during data entry, it is routed here.</p>
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>Verification Protocol:</h4>
+                            <ol>
+                                <li style={{ marginBottom: '8px' }}>Admins navigate to the Evidence Locker.</li>
+                                <li style={{ marginBottom: '8px' }}>Click the document link to open the raw file in a secure viewer.</li>
+                                <li style={{ marginBottom: '8px' }}>Cross-reference the <strong>Raw Input</strong> amount logged in the system against the physical numbers on the receipt.</li>
+                                <li>If the numbers match and the document is legible, click <strong>Verify Quality</strong>. If the image is blurry or incorrect, click <strong>Reject Image</strong>.</li>
+                            </ol>
+                        </div>
+                    )}
 
-                    <h3 style={{ color: '#111827', borderBottom: '2px solid #f3f4f6', paddingBottom: '8px', marginTop: '32px' }}>Phase 3: Scope 3 Value Chain Engagement</h3>
-                    <p style={{ fontStyle: 'italic', fontSize: '14px', color: '#6b7280' }}>Completed bi-annually by the Compliance Manager.</p>
-                    <ol style={{ paddingLeft: '20px' }}>
-                        <li><strong>Dispatch Campaigns:</strong> Navigate to <code>Scope 3 Campaigns</code>. Enter the supplier's name, target metric, and deadline.</li>
-                        <li><strong>Distribute Secure Portals:</strong> Click the <code>Copy Link</code> action button on the Supplier Leaderboard and securely email the tokenized URL to the vendor.</li>
-                        <li><strong>Review Data Quality Tiers:</strong> Upon submission, assess the system-assigned Quality Tier (Tier A: Primary Data, Tier B: Industry Averages, Tier C: Spend-Based).</li>
-                    </ol>
+                    {activeSection === 'audit-queue' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>4. Audit Queue & Ledger Locks</h2>
+                            <p>Data entered by Facility Managers does NOT legally represent the company until it passes through the Audit Queue.</p>
+                            <p>Data exists in one of three states:</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', borderRadius: '4px' }}>
+                                    <strong>Pending:</strong> Default state. Invisible to Dashboard analytics and compliance matrix.
+                                </div>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #10b981', backgroundColor: '#ecfdf5', borderRadius: '4px' }}>
+                                    <strong>Approved:</strong> Cryptographically locked into the ledger. Populates dashboard charts and affects Net-Zero trajectory.
+                                </div>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #ef4444', backgroundColor: '#fef2f2', borderRadius: '4px' }}>
+                                    <strong>Rejected:</strong> Flagged back to the Facility Manager for correction and re-submission.
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                    <h3 style={{ color: '#111827', borderBottom: '2px solid #f3f4f6', paddingBottom: '8px', marginTop: '32px' }}>Phase 4: The Audit & Approval Workflow</h3>
-                    <p style={{ fontStyle: 'italic', fontSize: '14px', color: '#6b7280' }}>Completed continuously by Compliance Managers and Auditors.</p>
-                    <ol style={{ paddingLeft: '20px' }}>
-                        <li><strong>Access the Immutable Ledger:</strong> Navigate to <code>Review Data &gt; Audit Queue</code>. Review all "Pending" data.</li>
-                        <li><strong>Verify the Atomic Snapshot:</strong> For GHG entries, audit the underlying mathematics locked to the record (emission factor and methodology version).</li>
-                        <li><strong>Execute Status Change:</strong> Approve valid records to route them into the live compliance engine, or Reject records with notes for correction.</li>
-                    </ol>
+                    {activeSection === 'anomalies' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>5. Variance & Anomaly Detection</h2>
+                            <p>The platform is equipped with an automated algorithmic intelligence engine that monitors monthly data ingestion for typographical errors or severe operational inefficiencies.</p>
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>How it works:</h4>
+                            <p>The system calculates the mathematical <strong>Mean</strong> and <strong>Standard Deviation</strong> of all historical approved data.</p>
+                            <p>If a new approved entry causes the current month's emissions to spike beyond a <strong>1.5x Standard Deviation threshold</strong>, the system triggers a Red Warning Flag on the primary dashboard.</p>
+                            <div style={infoBoxStyle}>
+                                <strong>Action Required upon Anomaly:</strong>
+                                <p style={{ margin: '8px 0 0 0', fontSize: '14px' }}>If a High Variance Warning appears, the Executive Admin must immediately cross-reference the anomalous month in the Audit Queue against the physical receipt in the Evidence Locker to rule out a "fat-finger" typing error (e.g., logging 50,000 instead of 5,000).</p>
+                            </div>
+                        </div>
+                    )}
 
-                    <h3 style={{ color: '#111827', borderBottom: '2px solid #f3f4f6', paddingBottom: '8px', marginTop: '32px' }}>Phase 5: Framework Reporting & Gap Analysis</h3>
-                    <p style={{ fontStyle: 'italic', fontSize: '14px', color: '#6b7280' }}>Completed at the end of the reporting cycle by Executive Admins.</p>
-                    <ol style={{ paddingLeft: '20px' }}>
-                        <li><strong>Generate Compliance Reports:</strong> Navigate to <code>Compliance Alignment</code>. Select the target framework (CSRD, ISSB, GRI) and reporting year.</li>
-                        <li><strong>Review Fulfillment Scores:</strong> Analyze the automated gap analysis cross-referencing all "Approved" data against disclosure requirements.</li>
-                        <li><strong>Export & Disclose:</strong> Export the finalized, audit-grade report for publication.</li>
-                    </ol>
                 </div>
             </div>
+            
+            {/* Simple Inline CSS for the fade effect */}
+            <style>{`
+                .fade-in { animation: fadeIn 0.3s ease-in-out; }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+            `}</style>
         </div>
     );
 }
+
+// Reusable Styles
+const contentHeaderStyle = {
+    fontSize: '24px',
+    fontWeight: '800',
+    color: '#111827',
+    margin: '0 0 20px 0',
+    letterSpacing: '-0.01em'
+};
+
+const infoBoxStyle = {
+    marginTop: '24px',
+    padding: '20px',
+    backgroundColor: '#f8fafc',
+    border: '1px solid #bfdbfe',
+    borderRadius: '8px',
+    color: '#1e40af'
+};
+
+const tierBadgeStyle = (tier, bg, color) => ({
+    backgroundColor: bg,
+    color: color,
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontWeight: '800',
+    fontSize: '12px'
+});
 
 export default SOPPage;

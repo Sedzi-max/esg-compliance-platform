@@ -40,7 +40,7 @@ function MaterialityMatrix() {
     fetchOrgs();
   }, []);
 
-  // 2. THE NEW CIRCUIT: Automatically fetch scores when the organization changes!
+  // 2. Automatically fetch scores when the organization changes
   useEffect(() => {
     if (!selectedOrg) return;
 
@@ -51,7 +51,6 @@ function MaterialityMatrix() {
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        // If the database has custom saved scores for this org, map them in!
         if (res.data && res.data.length > 0) {
           const colors = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#f57c00', '#7b1fa2'];
           const loadedTopics = res.data.map((item, index) => ({
@@ -63,7 +62,6 @@ function MaterialityMatrix() {
           }));
           setTopics(loadedTopics);
         } else {
-          // If no custom scores exist, default back to the starting layout
           setTopics(initialTopics);
         }
       } catch (err) {
@@ -93,7 +91,8 @@ function MaterialityMatrix() {
       await axios.post('/api/materiality', {
         organization_id: selectedOrg,
         assessment_year: currentYear,
-        topics: topics
+        topics: topics,
+        overwrite_all: true // <-- CRITICAL FIX: Added this flag for the backend
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
