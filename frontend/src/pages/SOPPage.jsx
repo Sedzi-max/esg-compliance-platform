@@ -8,7 +8,8 @@ function SOPPage() {
         { id: 'quality-tiers', title: '2. Data Quality & Tiers', icon: '🥇' },
         { id: 'evidence-locker', title: '3. The Evidence Locker', icon: '🗄️' },
         { id: 'audit-queue', title: '4. Audit & Approval Workflow', icon: '✅' },
-        { id: 'anomalies', title: '5. Variance & Anomaly Flags', icon: '⚠️' }
+        { id: 'anomalies', title: '5. Variance & Anomaly Flags', icon: '⚠️' },
+        { id: 'materiality', title: '6. Double Materiality Alignment', icon: '🎯' }
     ];
 
     return (
@@ -20,7 +21,7 @@ function SOPPage() {
                     📄 Standard Operating Procedures
                 </h1>
                 <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>
-                    Official guidelines for data ingestion, evidence verification, and compliance auditing.
+                    Official guidelines for data ingestion, evidence verification, and framework-specific compliance.
                 </p>
             </div>
 
@@ -150,6 +151,23 @@ function SOPPage() {
                         </div>
                     )}
 
+                    {activeSection === 'materiality' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>6. Double Materiality Alignment</h2>
+                            <p>The platform utilizes a dynamic Double Materiality engine. Users must understand that <strong>it is normal and expected for the same organization to generate different materiality matrices</strong> depending on the selected framework (e.g., GSE vs. NIC).</p>
+                            
+                            <div style={infoBoxStyle}>
+                                <strong>Framework Lenses:</strong>
+                                <ul style={{ marginTop: '8px', marginBottom: 0 }}>
+                                    <li><strong>GSE (Ghana Stock Exchange):</strong> Prioritizes investor-focused metrics like "Board ESG Oversight," "Ethical Conduct," and "Diversity & Inclusion."</li>
+                                    <li><strong>NIC (National Insurance Commission):</strong> Prioritizes systemic risk indicators such as "Climate Stress Testing," "Portfolio ESG Screening," and "Sustainable Underwriting Exclusions."</li>
+                                </ul>
+                            </div>
+
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>Operating Procedure:</h4>
+                            <p>When provisioning a new workspace, always ensure the correct <strong>Starter Kit</strong> is deployed via the Sector Onboarding tool. Submitting an incorrect matrix (e.g., GSE-focused vs. NIC-mandated) during regulatory audit periods may lead to non-compliance flags.</p>
+                        </div>
+                    )}
                 </div>
             </div>
             

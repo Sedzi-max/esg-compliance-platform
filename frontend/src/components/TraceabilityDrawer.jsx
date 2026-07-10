@@ -3,6 +3,15 @@ import React from 'react';
 function TraceabilityDrawer({ isOpen, onClose, record }) {
   if (!isOpen || !record) return null;
 
+  // NEW: Helper function to handle all three status states dynamically
+  const getStatusDisplay = (status) => {
+    if (status === 'Approved') return { bg: '#ecfdf5', color: '#059669', label: '✓ SEALED & APPROVED' };
+    if (status === 'Rejected') return { bg: '#fef2f2', color: '#e11d48', label: '❌ REJECTED & RETURNED' };
+    return { bg: '#fffbeb', color: '#d97706', label: '⏳ PENDING REVIEW' };
+  };
+
+  const statusDisplay = getStatusDisplay(record.status);
+
   return (
     <>
       {/* Dark Overlay Background */}
@@ -35,15 +44,15 @@ function TraceabilityDrawer({ isOpen, onClose, record }) {
         {/* Drawer Scrollable Content */}
         <div style={{ padding: '25px', flex: 1, overflowY: 'auto' }}>
           
-          {/* Status Badge */}
+          {/* Status Badge - NOW DYNAMIC */}
           <div style={{ marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 'bold', color: '#475569', fontSize: '0.9rem' }}>Ledger Status:</span>
             <span style={{ 
-              background: record.status === 'Approved' ? '#ecfdf5' : '#fffbeb', 
-              color: record.status === 'Approved' ? '#059669' : '#d97706', 
+              background: statusDisplay.bg, 
+              color: statusDisplay.color, 
               padding: '6px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' 
             }}>
-              {record.status === 'Approved' ? '✓ SEALED & APPROVED' : '⏳ PENDING REVIEW'}
+              {statusDisplay.label}
             </span>
           </div>
 
@@ -71,7 +80,7 @@ function TraceabilityDrawer({ isOpen, onClose, record }) {
             </div>
           </div>
 
-          {/* The Atomic Checkout Data (This proves your backend works!) */}
+          {/* The Atomic Checkout Data */}
           <div style={{ marginBottom: '25px' }}>
             <h4 style={{ margin: '0 0 15px 0', color: '#0f172a', fontSize: '1rem', textTransform: 'uppercase' }}>2. Mathematical Transformation</h4>
             
@@ -82,7 +91,11 @@ function TraceabilityDrawer({ isOpen, onClose, record }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <span style={{ color: '#94a3b8' }}>Multiplier (Frozen):</span>
-                <span style={{ color: '#38bdf8' }}>× {record.emission_factor_used || 'N/A'}</span>
+                <span style={{ color: '#38bdf8' }}>
+                  {record.calculated_co2e && record.raw_amount 
+                    ? `× ${(Number(record.calculated_co2e) / Number(record.raw_amount)).toFixed(2)}` 
+                    : 'N/A'}
+                </span>
               </div>
               <div style={{ borderTop: '1px solid #334155', margin: '10px 0' }}></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.1rem' }}>

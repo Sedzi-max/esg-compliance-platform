@@ -5,14 +5,22 @@ import {
 } from 'recharts';
 
 function DecarbonizationForecaster() {
-    const [sector, setSector] = useState('manufacturing'); // Defaulting for demonstration
+    // Defaulting to empty so the user must actively select their industry
+    const [sector, setSector] = useState(''); 
     const [availableInitiatives, setAvailableInitiatives] = useState([]);
-    const [activeInitiatives, setActiveInitiatives] = useState({}); // Stores { id: boolean }
-    const [loading, setLoading] = useState(true);
+    const [activeInitiatives, setActiveInitiatives] = useState({});
+    const [loading, setLoading] = useState(false);
 
     // Fetch dynamic levers when the sector changes
     useEffect(() => {
         const fetchInitiatives = async () => {
+            // If no sector is selected, clear the board and do not call the API
+            if (!sector) {
+                setAvailableInitiatives([]);
+                setActiveInitiatives({});
+                return;
+            }
+
             setLoading(true);
             try {
                 const token = localStorage.getItem('token');
@@ -117,12 +125,13 @@ function DecarbonizationForecaster() {
                     </p>
                 </div>
 
-                {/* For testing, letting you switch the sector dynamically */}
                 <select 
                     value={sector} 
                     onChange={(e) => setSector(e.target.value)}
                     style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', fontSize: '14px', fontWeight: '600', color: '#374151', cursor: 'pointer', outline: 'none' }}
                 >
+                    <option value="" disabled>Select Industry Sector...</option>
+                    <option value="insurance">Sector: Insurance</option>
                     <option value="manufacturing">Sector: Manufacturing</option>
                     <option value="logistics">Sector: Logistics</option>
                     <option value="real_estate">Sector: Real Estate</option>
@@ -130,7 +139,6 @@ function DecarbonizationForecaster() {
                 </select>
             </div>
 
-            {/* FIX: Forced 2fr 1fr strict grid layout so they stay side-by-side */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', alignItems: 'start' }}>
                 
                 {/* Left Side: The Interactive Chart */}
@@ -156,8 +164,12 @@ function DecarbonizationForecaster() {
                         Industry Specific Levers
                     </h3>
 
-                    {loading ? (
+                    {sector === '' ? (
+                        <p style={{ color: '#6b7280', fontSize: '14px', fontStyle: 'italic' }}>Please select a sector to view decarbonization levers.</p>
+                    ) : loading ? (
                         <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading sector logic...</p>
+                    ) : availableInitiatives.length === 0 ? (
+                        <p style={{ color: '#6b7280', fontSize: '14px' }}>No initiatives found for this sector yet.</p>
                     ) : (
                         availableInitiatives.map((init) => (
                             <ToggleCard 
@@ -175,7 +187,7 @@ function DecarbonizationForecaster() {
     );
 }
 
-// Helper Component for the beautifully styled toggle buttons
+// Helper Component for the styled toggle buttons
 function ToggleCard({ title, description, isActive, onClick }) {
     return (
         <div 

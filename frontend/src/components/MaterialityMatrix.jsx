@@ -5,19 +5,33 @@ import {
   ResponsiveContainer, ReferenceLine, Cell, LabelList 
 } from 'recharts';
 
-const initialTopics = [
-  { id: 1, name: 'Human Rights', x: 3, y: 9, color: '#d32f2f' },
-  { id: 2, name: 'Data Privacy', x: 8, y: 9, color: '#1976d2' },
-  { id: 3, name: 'Carbon Emissions', x: 4, y: 6, color: '#388e3c' },
-  { id: 4, name: 'Diversity', x: 6, y: 5, color: '#fbc02d' },
-  { id: 5, name: 'Health & Safety', x: 5, y: 8, color: '#f57c00' },
-  { id: 6, name: 'Anti-Corruption', x: 2, y: 5, color: '#7b1fa2' },
-  { id: 7, name: 'Compliance', x: 3, y: 3, color: '#5d4037' },
-  { id: 8, name: 'Business Continuity', x: 5, y: 2, color: '#0288d1' }
-];
+const industryTemplates = {
+  standard: [
+    { id: 1, name: 'Human Rights', x: 3, y: 9, color: '#d32f2f' },
+    { id: 2, name: 'Data Privacy', x: 8, y: 9, color: '#1976d2' },
+    { id: 3, name: 'Carbon Emissions', x: 4, y: 6, color: '#388e3c' },
+    { id: 4, name: 'Diversity', x: 6, y: 5, color: '#fbc02d' },
+    { id: 5, name: 'Health & Safety', x: 5, y: 8, color: '#f57c00' },
+    { id: 6, name: 'Anti-Corruption', x: 2, y: 5, color: '#7b1fa2' },
+    { id: 7, name: 'Compliance', x: 3, y: 3, color: '#5d4037' },
+    { id: 8, name: 'Business Continuity', x: 5, y: 2, color: '#0288d1' }
+  ],
+  nic_insurance: [
+    // Topics derived directly from Ghana NIC Guidelines
+    { id: 101, name: 'Climate Change Risks', x: 7, y: 8, color: '#388e3c' }, 
+    { id: 102, name: 'Sustainable Underwriting', x: 8, y: 7, color: '#0288d1' }, 
+    { id: 103, name: 'Financial Inclusion', x: 6, y: 9, color: '#1976d2' }, 
+    { id: 104, name: 'Customer Welfare', x: 7, y: 8, color: '#fbc02d' }, 
+    { id: 105, name: 'Data Protection & Privacy', x: 9, y: 8, color: '#d32f2f' }, 
+    { id: 106, name: 'Board ESG Oversight', x: 8, y: 5, color: '#7b1fa2' }, 
+    { id: 107, name: 'Diversity & Inclusion', x: 4, y: 7, color: '#f57c00' },
+    { id: 108, name: 'Ethical Conduct', x: 9, y: 6, color: '#5d4037' }
+  ]
+};
 
 function MaterialityMatrix() {
-  const [topics, setTopics] = useState(initialTopics);
+  const [selectedTemplate, setSelectedTemplate] = useState('standard');
+  const [topics, setTopics] = useState(industryTemplates.standard);
   const [organizations, setOrganizations] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -62,16 +76,29 @@ function MaterialityMatrix() {
           }));
           setTopics(loadedTopics);
         } else {
-          setTopics(initialTopics);
+          // Fallback to the currently selected template if no data exists
+          setTopics(industryTemplates[selectedTemplate]);
         }
       } catch (err) {
         console.error("Failed to load saved profile", err);
-        setTopics(initialTopics);
+        setTopics(industryTemplates[selectedTemplate]);
       }
     };
 
     fetchSavedScores();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrg]);
+
+  // 3. Handle Template Dropdown Change
+  const handleTemplateChange = (e) => {
+    const templateKey = e.target.value;
+    setSelectedTemplate(templateKey);
+    
+    // Load those specific topics into the matrix
+    if (templateKey && industryTemplates[templateKey]) {
+      setTopics(industryTemplates[templateKey]);
+    }
+  };
 
   const handleScoreChange = (id, axis, value) => {
     setTopics(topics.map(topic => 
@@ -92,7 +119,7 @@ function MaterialityMatrix() {
         organization_id: selectedOrg,
         assessment_year: currentYear,
         topics: topics,
-        overwrite_all: true // <-- CRITICAL FIX: Added this flag for the backend
+        overwrite_all: true
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -133,18 +160,34 @@ function MaterialityMatrix() {
           </p>
         </div>
         
-        <div style={{ minWidth: '200px' }}>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Reporting Organization</label>
-          <select 
-            value={selectedOrg} 
-            onChange={(e) => setSelectedOrg(e.target.value)}
-            style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold' }}
-          >
-            {organizations.length === 0 && <option value="">Loading...</option>}
-            {organizations.map(org => (
-              <option key={org.unit_id} value={org.unit_id}>{org.name}</option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', gap: '20px' }}>
+          {/* Existing Organization Dropdown */}
+          <div style={{ minWidth: '200px' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Reporting Organization</label>
+            <select 
+              value={selectedOrg} 
+              onChange={(e) => setSelectedOrg(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold' }}
+            >
+              {organizations.length === 0 && <option value="">Loading...</option>}
+              {organizations.map(org => (
+                <option key={org.unit_id} value={org.unit_id}>{org.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* NEW Industry Template Dropdown */}
+          <div style={{ minWidth: '200px' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Industry Framework</label>
+            <select 
+              value={selectedTemplate} 
+              onChange={handleTemplateChange}
+              style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold', backgroundColor: '#f8f9fa' }}
+            >
+              <option value="standard">Standard (Generic)</option>
+              <option value="nic_insurance">Ghana NIC - Insurance</option>
+            </select>
+          </div>
         </div>
       </div>
 

@@ -1,0 +1,5 @@
+organization_name,pillar,activity_type,raw_amount,unit,quality_tier,methodology
+Accra Main Branch,E,electricity_grid_kwh,12500.50,kWh,A,Meter Reading
+Kumasi Hub,E,mobile_diesel_liters,450,liters,B,Fuel Receipts
+Head Office,S,community_investment_ghc,50000,GHC,A,Financial Ledger
+East Legon Branch,G,board_diversity_ratio,45,percent,A,HR Records

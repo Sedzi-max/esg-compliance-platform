@@ -1,56 +1,41 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-
-// ---------------------------------------------------------
-// MOCK DATABASE ABSTRACTION
-// ---------------------------------------------------------
-// For this stage, we will use an in-memory array. 
-// When you connect PostgreSQL or MongoDB later, you only need 
-// to swap out the logic inside these three helper functions.
-const db = {
-  users: [],
-  findUserByEmail: async (email) => {
-    return db.users.find(u => u.email === email);
-  },
-  createUser: async (user) => {
-    db.users.push(user);
-    return user;
-  }
-};
+const pool = require('../db'); // Imports the real PostgreSQL connection
 
 // ---------------------------------------------------------
 // 1. REGISTRATION WORKFLOW (PENDING APPROVAL)
 // ---------------------------------------------------------
 exports.register = async (req, res) => {
   try {
-    const { company_name, email, password } = req.body;
+    // Note: Swapped company_name for unit_id to match the database architecture
+    const { email, password, unit_id } = req.body;
 
     // A. Check if the corporate email is already in the system
-    const existingUser = await db.findUserByEmail(email);
-    if (existingUser) {
+    const existingUserResult = await pool.query(
+        'SELECT email FROM users WHERE email = $1', 
+        [email]
+    );
+    
+    if (existingUserResult.rows.length > 0) {
       return res.status(400).json({ error: 'An account with this corporate email already exists.' });
     }
 
     // B. Cryptographically hash the password
-    // We use 10 "salt rounds" - enough to stop brute-force attacks but fast enough for good UX.
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // C. Construct the user profile with a strictly locked 'Pending' role
-    const newUser = {
-      id: 'usr_' + Date.now().toString(),
-      company_name,
-      email,
-      password: hashedPassword, // The plain text password is gone forever
-      role: 'Pending', 
-      created_at: new Date()
-    };
+    // C. Insert the new user directly into the PostgreSQL database
+    const newUserResult = await pool.query(
+        `INSERT INTO users (email, password_hash, role, unit_id) 
+         VALUES ($1, $2, $3, $4) RETURNING user_id, email, role, unit_id`,
+        [email, hashedPassword, 'Pending', unit_id || null]
+    );
 
-    // D. Save to the database
-    await db.createUser(newUser);
-
-    // E. Return the success signal to trigger the frontend's "Application Received" screen
-    res.status(201).json({ message: 'Registration successful. Pending admin approval.' });
+    // D. Return the success signal to trigger the frontend's "Application Received" screen
+    res.status(201).json({ 
+        message: 'Registration successful. Pending admin approval.',
+        user: newUserResult.rows[0]
+    });
 
   } catch (error) {
     console.error('Registration Error:', error);
@@ -65,49 +50,53 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // A. Locate the user identity
-    const user = await db.findUserByEmail(email);
-    if (!user) {
+    // A. Locate the user identity in the real database
+    const userResult = await pool.query(
+        'SELECT user_id, email, password_hash, role, unit_id FROM users WHERE email = $1',
+        [email]
+    );
+
+    if (userResult.rows.length === 0) {
       // Use generic errors to prevent attackers from knowing which emails exist
       return res.status(401).json({ error: 'Invalid authorization credentials.' });
     }
 
+    const user = userResult.rows[0];
+
     // B. Security Checkpoint: Is the account approved?
+    // Note: We bypass this check if the user is an admin so you can log in right now!
     if (user.role === 'Pending') {
       return res.status(403).json({ error: 'Account is pending corporate compliance approval.' });
     }
 
     // C. Password Verification
-    // Bcrypt compares the plain text password against the stored mathematical hash
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid authorization credentials.' });
     }
 
     // D. Generate the Cryptographic Session Key (JWT)
-    // The payload contains safe data we want the frontend to know about.
     const payload = {
-      user_id: user.id,
+      user_id: user.user_id,
       role: user.role,
-      email: user.email
+      email: user.email,
+      unit_id: user.unit_id // Injects the multi-tenant routing ID directly into the token
     };
 
-    // Sign the token using your server's secret vault key.
-    // In production, process.env.JWT_SECRET MUST be a long, random string.
     const token = jwt.sign(
       payload, 
       process.env.JWT_SECRET || 'fallback_development_secret_do_not_use_in_prod', 
-      { expiresIn: '24h' } // Force re-authentication every 24 hours
+      { expiresIn: '24h' }
     );
 
     // E. Transmit the token and safe profile data back to the React frontend
     res.status(200).json({
       token,
       user: {
-        id: user.id,
+        user_id: user.user_id,
         email: user.email,
         role: user.role,
-        company_name: user.company_name
+        unit_id: user.unit_id
       }
     });
 

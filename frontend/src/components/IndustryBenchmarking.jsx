@@ -4,21 +4,48 @@ import {
 } from 'recharts';
 
 function IndustryBenchmarking() {
-    // In production, this would be fetched dynamically based on the user's industry/sector
-    const [selectedMetric, setSelectedMetric] = useState('fleet_efficiency');
+    // Defaulting to the new Insurance metric
+    const [selectedMetric, setSelectedMetric] = useState('portfolio_esg_screening');
 
     // --- MOCK DATA ENGINE ---
     // Simulating aggregated, anonymized data from the multi-tenant database
     const benchmarkData = {
+        portfolio_esg_screening: {
+            title: "Portfolio ESG Screening (Governance & Scope 3)",
+            unit: "% of total AUM screened",
+            userValue: 45,
+            globalAverage: 65,
+            regionalAverage: 30, 
+            topPerformers: 85,
+            userPercentile: 60,
+            insight: "Your firm screens 45% of its portfolio. You are outperforming the regional average of 30%, but still lag behind global insurance leaders who screen over 80% of their assets.",
+            userRange: '40-60',
+            distributionData: [
+                { range: '0-20', count: 15 },
+                { range: '20-40', count: 35 }, // Regional Average (30%) falls here
+                { range: '40-60', count: 25, isUser: true }, // User (45%) falls here
+                { range: '60-80', count: 15 }, // Global Average (65%) falls here
+                { range: '80-100', count: 10 } // Top Performers
+            ]
+        },
         fleet_efficiency: {
             title: "Fleet Fuel Efficiency (Scope 1)",
             unit: "kg CO2e per ton-mile",
             userValue: 1.2,
             globalAverage: 0.9,
-            regionalAverage: 1.1, // Localized benchmark
+            regionalAverage: 1.1,
             topPerformers: 0.6,
             userPercentile: 25,
-            insight: "Your fleet emits 1.2 kg of CO2e per ton-mile. You are in the bottom 25th percentile for fuel efficiency compared to 50 other regional logistics operators on this platform."
+            insight: "Your fleet emits 1.2 kg of CO2e per ton-mile. You are in the bottom 25th percentile for fuel efficiency compared to 50 other regional logistics operators on this platform.",
+            userRange: '1.2-1.4',
+            distributionData: [
+                { range: '0.4-0.6', count: 5 },
+                { range: '0.6-0.8', count: 15 },
+                { range: '0.8-1.0', count: 40 }, 
+                { range: '1.0-1.2', count: 25 },
+                { range: '1.2-1.4', count: 10, isUser: true }, 
+                { range: '1.4-1.6', count: 5 }
+            ]
         },
         facility_energy: {
             title: "Facility Energy Intensity (Scope 2)",
@@ -28,7 +55,16 @@ function IndustryBenchmarking() {
             regionalAverage: 210,
             topPerformers: 95,
             userPercentile: 78,
-            insight: "Excellent performance. Your facilities consume 145 kWh/sqm, placing you in the top 25% of commercial real estate operators in your sector."
+            insight: "Excellent performance. Your facilities consume 145 kWh/sqm, placing you in the top 25% of commercial real estate operators in your sector.",
+            userRange: '120-150',
+            distributionData: [
+                { range: '60-90', count: 5 },
+                { range: '90-120', count: 15 },
+                { range: '120-150', count: 20, isUser: true }, 
+                { range: '150-180', count: 30 }, 
+                { range: '180-210', count: 20 },
+                { range: '210-240', count: 10 }
+            ]
         }
     };
 
@@ -40,16 +76,6 @@ function IndustryBenchmarking() {
         { name: 'Global Average', value: activeData.globalAverage, fill: '#9ca3af' },    // Gray
         { name: 'Regional Average', value: activeData.regionalAverage, fill: '#6b7280' },  // Darker Gray
         { name: 'Your Company', value: activeData.userValue, fill: activeData.userPercentile < 50 ? '#ef4444' : '#3b82f6' } // Red if bad, Blue if good
-    ];
-
-    // Simulated Bell Curve / Distribution Data
-    const distributionData = [
-        { range: '0.4-0.6', count: 5 },
-        { range: '0.6-0.8', count: 15 },
-        { range: '0.8-1.0', count: 40 }, // Peak (Average is 0.9)
-        { range: '1.0-1.2', count: 25 },
-        { range: '1.2-1.4', count: 10, isUser: true }, // User falls here (1.2)
-        { range: '1.4-1.6', count: 5 }
     ];
 
     const CustomTooltip = ({ active, payload }) => {
@@ -84,8 +110,9 @@ function IndustryBenchmarking() {
                     onChange={(e) => setSelectedMetric(e.target.value)}
                     style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', fontSize: '14px', fontWeight: '600', color: '#374151', cursor: 'pointer', outline: 'none' }}
                 >
-                    <option value="fleet_efficiency">Logistics: Fleet Efficiency</option>
-                    <option value="facility_energy">Real Estate: Facility Energy</option>
+                    <option value="portfolio_esg_screening">Sector: Insurance (ESG Screening)</option>
+                    <option value="fleet_efficiency">Sector: Logistics (Fleet Efficiency)</option>
+                    <option value="facility_energy">Sector: Real Estate (Energy Intensity)</option>
                 </select>
             </div>
 
@@ -100,7 +127,7 @@ function IndustryBenchmarking() {
                 </span>
                 <div>
                     <h4 style={{ margin: '0 0 6px 0', color: activeData.userPercentile < 50 ? '#991b1b' : '#1e40af', fontSize: '16px', fontWeight: '700' }}>
-                        {activeData.userPercentile < 50 ? 'Efficiency Warning' : 'Top Quartile Performer'}
+                        {activeData.userPercentile < 50 ? 'Efficiency Warning' : 'Competitive Performance'}
                     </h4>
                     <p style={{ margin: 0, color: activeData.userPercentile < 50 ? '#7f1d1d' : '#1e3a8a', fontSize: '14px', lineHeight: '1.5' }}>
                         {activeData.insight}
@@ -132,36 +159,34 @@ function IndustryBenchmarking() {
                     </div>
                 </div>
 
-                {/* Chart 2: The Industry Distribution Curve */}
-                {selectedMetric === 'fleet_efficiency' && (
-                    <div>
-                        <h3 style={{ margin: '0 0 16px 0', color: '#374151', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
-                            Industry Distribution Curve
-                        </h3>
-                        <div style={{ width: '100%', height: '300px' }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={distributionData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                                    <XAxis dataKey="range" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#d1d5db'}} tickLine={false} />
-                                    <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    
-                                    {/* The Bell Curve */}
-                                    <Area type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
-                                    
-                                    {/* Pinpointing the User on the curve */}
-                                    <ReferenceLine x="1.2-1.4" stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'top', value: 'Your Co.', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
+                {/* Chart 2: The Industry Distribution Curve (Now Dynamic for all sectors) */}
+                <div>
+                    <h3 style={{ margin: '0 0 16px 0', color: '#374151', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>
+                        Industry Distribution Curve
+                    </h3>
+                    <div style={{ width: '100%', height: '300px' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={activeData.distributionData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                <XAxis dataKey="range" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#d1d5db'}} tickLine={false} />
+                                <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                
+                                {/* The Bell Curve */}
+                                <Area type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                                
+                                {/* Dynamically Pinpointing the User on the curve based on activeData.userRange */}
+                                <ReferenceLine x={activeData.userRange} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'top', value: 'Your Co.', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
-                )}
+                </div>
 
             </div>
         </div>

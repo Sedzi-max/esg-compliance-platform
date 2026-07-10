@@ -9,18 +9,12 @@ const CARBON_MULTIPLIERS = require('./utils/carbonFactors');
 const multer = require('multer');
 const path = require('path');
 const auditorGuard = require('./middleware/auditorGuard');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 // --- NEW IMPORTS FOR CSV PARSING ---
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-
 const app = express();
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-// Expose the uploads folder so the React frontend can fetch the files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ==========================================
 // MULTER CONFIGURATIONS
@@ -36,6 +30,108 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage: storage });
+
+// Middleware
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'https://esgradarcompliance.com', 'https://www.esgradarcompliance.com'];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
+app.use(express.json());
+// Expose the uploads folder so the React frontend can fetch the files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api', uploadRoutes);
+
+// ==========================================
+// GET ALL EMISSIONS (For Dashboards)
+// ==========================================
+app.get('/api/emissions', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT e.*, u.name as organization_name
+             FROM esg_observation e
+             JOIN Organization_Unit u ON e.unit_id = u.unit_id
+             ORDER BY 
+                CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
+                created_at DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching emissions:", err.message);
+        res.status(500).send('Server error fetching emissions');
+    }
+});
+
+// ==========================================
+// AUDIT QUEUE ROUTE (UNIFIED & PATCHED)
+// ==========================================
+app.get('/api/audit/pending', authorize, async (req, res) => {
+    try {
+        const query = `
+            -- 1. FETCH CARBON DATA
+            SELECT 
+                e.observation_id as id,  -- 👈 FIXED: Changed e.id to e.observation_id
+                'GHG' as type, 
+                u.name as organization_name,
+                e.scope_category,
+                e.activity_type as metric, 
+                e.activity_type,             
+                e.raw_amount::text as value, 
+                e.raw_amount,                
+                e.calculated_co2e,           
+                'units' as unit_of_measure,
+                e.quality_tier,
+                e.evidence_url as evidence_file_url,
+                e.status, 
+                COALESCE(e.created_at, e.timestamp) as created_at 
+            FROM esg_observation e
+            JOIN organization_unit u ON e.unit_id = u.unit_id
+            WHERE e.scope_category IS NOT NULL -- 👈 NEW: Prevents duplicate ghost rows
+            
+            UNION ALL
+            
+            -- 2. FETCH GENERAL, SOCIAL, & GOV DATA
+            SELECT 
+                o.observation_id as id, 
+                CASE 
+                    WHEN o.pillar = 'E' THEN 'Environment'
+                    WHEN o.pillar = 'S' THEN 'Social'
+                    WHEN o.pillar = 'G' THEN 'Governance'
+                    ELSE 'General' 
+                END as type, 
+                u.name as organization_name,
+                'N/A' as scope_category,
+                o.metric_name as metric, 
+                o.metric_name as activity_type,             
+                COALESCE(o.numeric_value::text, o.text_value) as value, 
+                o.numeric_value as raw_amount,                
+                NULL::numeric as calculated_co2e,           
+                o.unit_of_measure,
+                'C'::varchar as quality_tier,   
+                o.evidence_url as evidence_file_url,
+                o.status, 
+                COALESCE(o.timestamp, o.created_at) as created_at 
+            FROM esg_observation o
+            JOIN organization_unit u ON o.unit_id = u.unit_id
+            WHERE o.pillar IS NOT NULL -- 👈 NEW: Prevents duplicate ghost rows
+            
+            ORDER BY created_at DESC;
+        `;
+        const result = await pool.query(query);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching audit queue:", err.message);
+        res.status(500).json({ error: "Failed to fetch audit queue." });
+    }
+});
 
 // Setup memory storage specifically for reading CSV text directly into the pipeline
 const memoryUpload = multer({ storage: multer.memoryStorage() });
@@ -107,7 +203,8 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
 app.get('/api/organizations', authorize, async (req, res) => {
     try {
         const allOrgs = await pool.query(
-            "SELECT * FROM Organization_Unit WHERE company_id = $1 ORDER BY created_at DESC",
+            // FIXED: Changed from company_id to unit_id
+            "SELECT * FROM Organization_Unit WHERE unit_id = $1 ORDER BY created_at DESC", 
             [req.user.company_id]
         );
         res.json(allOrgs.rows);
@@ -179,12 +276,11 @@ app.get('/api/metrics', authorize, async (req, res) => {
 
 app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        let { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
+        let { unit_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-        // --- THE FIX: Scrub the FormData Strings ---
         // FormData turns empty variables into literal text strings. We must convert them back.
-        if (!organization_id || organization_id === 'undefined' || organization_id === 'null' || organization_id === '') {
+        if (!unit_id || unit_id === 'undefined' || unit_id === 'null' || unit_id === '') {
             return res.status(400).json({ error: "Please select an Organization from the dropdown." });
         }
 
@@ -196,13 +292,12 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
             ? null 
             : text_value;
 
-        // Note: Using ESG_Observation (matching your GET route)
         const result = await pool.query(`
             INSERT INTO ESG_Observation 
             (unit_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_file_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *;
-        `, [organization_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
+        `, [unit_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
 
         res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
@@ -226,7 +321,7 @@ app.get('/api/observations', authorize, async (req, res) => {
             FROM ESG_Observation o
             JOIN Organization_Unit u ON o.unit_id = u.unit_id
             LEFT JOIN Metric_Definition m ON o.metric_id = m.metric_id
-            WHERE u.company_id = $1
+            WHERE u.unit_id = $1
             ORDER BY o.timestamp DESC
         `;
         const allObs = await pool.query(query, [req.user.company_id]);
@@ -238,224 +333,42 @@ app.get('/api/observations', authorize, async (req, res) => {
 });
 
 // ==========================================
-// BULK CSV UPLOAD PIPELINE
+// GHG EMISSIONS (CARBON TRACKER) ROUTE
 // ==========================================
-
-app.post('/api/upload-csv', authorize, memoryUpload.single('file'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
-
-    const results = [];
-    const errors = [];
-    let rowCount = 0;
-
-    const stream = Readable.from(req.file.buffer.toString('utf-8'));
-
-    stream
-        .pipe(csv({
-            mapHeaders: ({ header }) => header.trim().toLowerCase().replace(/ /g, '_')
-        }))
-        .on('data', (data) => {
-            rowCount++;
-            results.push({ row: rowCount, ...data });
-        })
-        .on('end', async () => {
-            if (results.length === 0) {
-                return res.status(400).json({ error: "No valid data found to unpack." });
-            }
-
-            const client = await pool.connect();
-            try {
-                await client.query('BEGIN');
-
-                const orgQuery = await client.query('SELECT unit_id, name FROM Organization_Unit WHERE company_id = $1', [req.user.company_id]);
-                const validOrgs = orgQuery.rows.reduce((acc, org) => {
-                    acc[org.name.toLowerCase()] = org.unit_id;
-                    return acc;
-                }, {});
-
-                let successCount = 0;
-
-                for (const row of results) {
-                    const rawOrg = row.organization || row.facility || row.company || row.organization_name;
-                    const orgName = rawOrg ? rawOrg.trim().toLowerCase() : null;
-                    const orgId = validOrgs[orgName];
-
-                    if (!orgId) {
-                        errors.push(`Row ${row.row}: Facility/Organization '${rawOrg || 'Unknown'}' not found.`);
-                        continue; 
-                    }
-
-                    const explicitMetricCol = row.activity_type || row.metric || row.metric_name || row.activity;
-                    const explicitValueCol = row.raw_amount || row.value || row.amount || row.numeric_value;
-
-                    // --- INTEGRATED TIER LOGIC ---
-                    const explicitTier = row.quality_tier || row.tier || row.data_quality;
-                    const explicitMethodology = row.methodology || row.calculation_method;
-
-                    let calculatedTier = explicitTier ? explicitTier.toUpperCase() : 'C';
-                    let calculatedMethodology = explicitMethodology || 'Spend-Based Estimate';
-
-                    if (!explicitTier && calculatedMethodology.toLowerCase().includes('activity')) {
-                        calculatedTier = 'A';
-                    }
-
-                    const recordsToProcess = [];
-
-                    if (explicitMetricCol) {
-                        if (explicitValueCol === '' || explicitValueCol === undefined) continue;
-
-                        recordsToProcess.push({
-                            metric: explicitMetricCol,
-                            value: explicitValueCol,
-                            pillar: row.pillar || row.category || 'E',
-                            unit: row.unit || row.unit_of_measure || 'units',
-                            tier: calculatedTier,
-                            methodology: calculatedMethodology
-                        });
-                    } else {
-                        const ignoredColumns = ['organization', 'facility', 'company', 'organization_name', 'date', 'timestamp', 'row', 'pillar', 'category', 'unit', 'quality_tier', 'tier', 'data_quality', 'methodology', 'calculation_method'];
-                        
-                        for (const colName of Object.keys(row)) {
-                            if (ignoredColumns.includes(colName)) continue;
-                            
-                            const cellValue = row[colName];
-                            
-                            if (cellValue === '' || cellValue === undefined || cellValue === '0') continue;
-
-                            recordsToProcess.push({
-                                metric: colName,
-                                value: cellValue,
-                                pillar: 'E', 
-                                unit: 'units',
-                                tier: calculatedTier,
-                                methodology: calculatedMethodology
-                            });
-                        }
-                    }
-
-                    for (const record of recordsToProcess) {
-                        const rawAmountClean = Number(record.value.toString().replace(/,/g, ''));
-                        if (isNaN(rawAmountClean)) continue; 
-
-                        if (record.pillar.toUpperCase() === 'E') {
-                            const multiplier = CARBON_MULTIPLIERS['scope_1']?.[record.metric] || 2.3; 
-                            const calculatedCo2e = rawAmountClean * multiplier;
-
-                            // --- INTEGRATED TIER INSERT ---
-                            await client.query(
-                                `INSERT INTO ghg_emissions (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, status, quality_tier, methodology) 
-                                 VALUES ($1, $2, $3, $4, $5, 'Pending', $6, $7)`,
-                                [orgId, 'Scope 1', record.metric, rawAmountClean, calculatedCo2e, record.tier, record.methodology]
-                            );
-                            successCount++;
-                        } else {
-                            await client.query(
-                                `INSERT INTO Observations (organization_id, pillar, metric_name, numeric_value, unit_of_measure) 
-                                 VALUES ($1, $2, $3, $4, $5)`,
-                                [orgId, record.pillar.toUpperCase(), record.metric, rawAmountClean, record.unit]
-                            );
-                            successCount++;
-                        }
-                    }
-                }
-
-                await client.query('COMMIT');
-                
-                res.json({ 
-                    message: "Upload processing complete.", 
-                    rows_processed: rowCount,
-                    successful_inserts: successCount,
-                    errors: errors 
-                });
-
-            } catch (err) {
-                await client.query('ROLLBACK');
-                console.error("CSV Transaction Error:", err);
-                res.status(500).json({ error: `Database error: ${err.message}` });
-            } finally {
-                client.release();
-            }
-        });
-});
-
-// ==========================================
-// GHG EMISSIONS ROUTES 
-// ==========================================
-
-app.get('/api/emissions', authorize, async (req, res) => {
-    try {
-        const result = await pool.query(
-            `SELECT e.*, u.name as organization_name
-             FROM ghg_emissions e
-             JOIN Organization_Unit u ON e.organization_id = u.unit_id
-             WHERE u.company_id = $1
-             ORDER BY 
-                CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
-                created_at DESC 
-             LIMIT 100`,
-             [req.user.company_id]
-        );
-        res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching emissions:", err.message);
-        res.status(500).send('Server error fetching emissions');
-    }
-});
-
-// POST Route: The Carbon Conversion Engine
 app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        const { organization_id, scope_category, activity_type, raw_amount, unit_of_measure } = req.body;
-        
+        const { unit_id, scope_category, activity_type, raw_amount } = req.body;
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
-        const baseMultiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
+        const quality_tier = req.file ? 'A' : 'C'; // Auto-grades to Tier A if evidence exists
 
-        if (baseMultiplier === undefined) {
-            return res.status(400).json({ error: `Unrecognized activity type: ${activity_type}. No emission factor found.` });
-        }
+        const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3; 
+        const calculated_co2e = Number(raw_amount) * multiplier;
 
-        const factorMetadata = {
-            multiplier: baseMultiplier,
-            source: scope_category === 'scope_1' ? 'GHG Protocol Stationary' : 'EPA eGRID 2026',
-            version: 'v3.2.1'
-        };
-
-        const calculated_co2e = Number(raw_amount) * factorMetadata.multiplier;
-
-        // --- NEW: AUTO-GRADE QUALITY TIER BASED ON EVIDENCE ATTACHMENT ---
-        const autoTier = req.file ? 'A' : 'B';
-        const autoMethod = req.file ? 'Primary Data (Receipt)' : 'Activity-Based Estimate';
-
-        const insertQuery = `
-            INSERT INTO ghg_emissions 
-            (organization_id, scope_category, activity_type, raw_amount, unit_of_measure, calculated_co2e, status, evidence_file_url, emission_factor_used, factor_source, methodology_version, quality_tier, methodology) 
-            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, $9, $10, $11, $12) 
+        const result = await pool.query(`
+            INSERT INTO esg_observation 
+            (unit_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier)
+            VALUES ($1, $2, $3, $4, $5, 'Pending', $6, $7)
             RETURNING *;
-        `;
+        `, [unit_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
 
-        const values = [
-            organization_id, 
-            scope_category, 
-            activity_type, 
-            raw_amount, 
-            unit_of_measure || 'units',
-            calculated_co2e,
-            evidence_url,               
-            factorMetadata.multiplier,  
-            factorMetadata.source,      
-            factorMetadata.version,
-            autoTier,                   // <-- NEW Auto-Grade 
-            autoMethod                  // <-- NEW Auto-Method
-        ];
-
-        const newEmission = await pool.query(insertQuery, values);
-
-        res.status(201).json(newEmission.rows[0]);
+        res.json({ message: "GHG Emission securely logged!", data: result.rows[0] });
     } catch (err) {
-        console.error("Error saving atomic emission transaction:", err.message);
-        res.status(500).send('Server error sealing atomic transaction');
+        console.error("Error saving GHG emission:", err.message);
+        res.status(500).json({ error: "Failed to save GHG data." });
     }
 });
+
+const crypto = require('crypto'); 
+
+// --- 1. EMISSION FACTOR ENGINE ---
+const EMISSION_FACTORS = {
+    'mobile_diesel_liters': 2.68,
+    'mobile_petrol_liters': 2.31,
+    'electricity_grid_kwh': 0.43,
+    'spend_diesel_ghc': 0.18,            
+    'spend_electricity_ghc': 0.25,
+    'spend_flights_ghc': 0.85
+};
 
 app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) => {
     try {
@@ -467,11 +380,11 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         const { status } = req.body; 
 
         const updatedEmission = await pool.query(
-            `UPDATE ghg_emissions SET status = $1 
-             WHERE id = $2 AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $3)
-             RETURNING *`,
-            [status, id, req.user.company_id]
-        );
+    `UPDATE esg_observation SET status = $1 
+     WHERE id = $2 AND unit_id IN (SELECT unit_id FROM Organization_Unit WHERE unit_id = $3)
+     RETURNING *`,
+    [status, id, req.user.company_id]
+);
 
         res.json(updatedEmission.rows[0]);
     } catch (err) {
@@ -494,7 +407,7 @@ app.post('/api/emissions/bulk', authorize, auditorGuard, async (req, res) => {
         let insertedCount = 0;
 
         for (const row of emissionsArray) {
-            const { organization_id, scope_category, activity_type, raw_amount } = row;
+            const { unit_id, scope_category, activity_type, raw_amount } = row;
             
             const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type];
             if (multiplier === undefined) {
@@ -504,10 +417,10 @@ app.post('/api/emissions/bulk', authorize, auditorGuard, async (req, res) => {
             const calculated_co2e = Number(raw_amount) * multiplier;
 
             await client.query(
-                `INSERT INTO ghg_emissions 
-                (organization_id, scope_category, activity_type, raw_amount, calculated_co2e) 
+                `INSERT INTO esg_observation 
+                (unit_id, scope_category, activity_type, raw_amount, calculated_co2e) 
                 VALUES ($1, $2, $3, $4, $5)`,
-                [organization_id, scope_category, activity_type, raw_amount, calculated_co2e]
+                [unit_id, scope_category, activity_type, raw_amount, calculated_co2e]
             );
             insertedCount++;
         }
@@ -531,11 +444,11 @@ app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res)
         }
 
         const updatedEmissions = await pool.query(
-            `UPDATE ghg_emissions SET status = 'Approved' 
-             WHERE status = 'Pending' AND organization_id IN (SELECT unit_id FROM Organization_Unit WHERE company_id = $1)
-             RETURNING *`,
-            [req.user.company_id]
-        );
+    `UPDATE esg_observation SET status = 'Approved' 
+     WHERE status = 'Pending' AND unit_id IN (SELECT unit_id FROM Organization_Unit WHERE unit_id = $1)
+     RETURNING *`,
+    [req.user.company_id]
+);
 
         res.json({ 
             message: `Successfully approved ${updatedEmissions.rowCount} records.`, 
@@ -548,15 +461,12 @@ app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res)
 });
 
 // ==========================================
-// AUTOMATED FRAMEWORK REPORTING
+// AUTOMATED FRAMEWORK REPORTING (PATCHED)
 // ==========================================
 app.get('/api/reports/framework', authorize, async (req, res) => {
     try {
         const { framework, year } = req.query;
-
-        if (!framework || !year) {
-            return res.status(400).json({ error: "Framework and year parameters are required." });
-        }
+        if (!framework || !year) return res.status(400).json({ error: "Missing parameters." });
 
         const query = `
             SELECT 
@@ -564,19 +474,17 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
                 fm.description as disclosure_requirement,
                 SUM(e.calculated_co2e) as total_tco2e,
                 SUM(e.raw_amount) as total_raw_amount
-            FROM ghg_emissions e
-            JOIN Organization_Unit u ON e.organization_id = u.unit_id
+            FROM esg_observation e
+            JOIN Organization_Unit u ON e.unit_id = u.unit_id
             JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-            WHERE u.company_id = $1 
+            WHERE u.unit_id = $1   -- FIXED: Changed company_id to unit_id
               AND e.status = 'Approved'
               AND fm.framework_name = $2
               AND EXTRACT(YEAR FROM e.created_at) = $3 
             GROUP BY fm.framework_code, fm.description
             ORDER BY fm.framework_code;
         `;
-
         const reportData = await pool.query(query, [req.user.company_id, framework, year]);
-        
         res.json(reportData.rows);
     } catch (err) {
         console.error("Report Engine Error:", err.message);
@@ -587,14 +495,13 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
 app.get('/api/reports/readiness', authorize, async (req, res) => {
     try {
         const year = req.query.year || new Date().getFullYear().toString();
-        
         const query = `
             WITH CompanyFulfilled AS (
                 SELECT DISTINCT fm.framework_code
-                FROM ghg_emissions e
-                JOIN Organization_Unit u ON e.organization_id = u.unit_id
+                FROM esg_observation e
+                JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.company_id = $1 
+                WHERE u.unit_id = $1   -- FIXED
                   AND e.status = 'Approved' 
                   AND EXTRACT(YEAR FROM e.created_at) = $2
             )
@@ -608,36 +515,29 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
             GROUP BY f.framework_name
             ORDER BY readiness_score DESC;
         `;
-
         const readinessData = await pool.query(query, [req.user.company_id, year]);
         res.json(readinessData.rows);
-
     } catch (err) {
         console.error("Readiness Engine Error:", err.message);
-        res.status(500).json({ error: "Failed to calculate framework readiness." });
+        res.status(500).json({ error: "Failed to calculate readiness." });
     }
 });
 
-// --- UPGRADED: Detailed Gap Analysis (Now dynamically extracts Quality Tier from DB) ---
 app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
     try {
         const { framework, year } = req.query;
+        if (!framework || !year) return res.status(400).json({ error: "Missing parameters." });
 
-        if (!framework || !year) {
-            return res.status(400).json({ error: "Framework and year are required." });
-        }
-
-        // UPGRADE: Uses MIN(e.quality_tier) to grab the highest grade of data available ('A' < 'B' < 'C')
         const query = `
             WITH CompanyFulfilled AS (
                 SELECT 
                     fm.framework_code, 
                     SUM(e.calculated_co2e) as total_co2e,
                     MIN(e.quality_tier) as quality_tier
-                FROM ghg_emissions e
-                JOIN Organization_Unit u ON e.organization_id = u.unit_id
+                FROM esg_observation e
+                JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.company_id = $1 
+                WHERE u.unit_id = $1  -- FIXED
                   AND e.status = 'Approved' 
                   AND EXTRACT(YEAR FROM e.created_at) = $2
                 GROUP BY fm.framework_code
@@ -654,10 +554,8 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
             WHERE f.framework_name = $3
             ORDER BY is_fulfilled ASC, f.framework_code ASC;
         `;
-
         const gapData = await pool.query(query, [req.user.company_id, year, framework]);
         res.json(gapData.rows);
-
     } catch (err) {
         console.error("Gap Analysis Engine Error:", err.message);
         res.status(500).json({ error: "Failed to compile gap analysis." });
@@ -668,25 +566,31 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
 // ADMIN FRAMEWORK MAPPING ROUTES
 // ==========================================
 
-// 1. Get all mappings for the admin table
-app.get('/api/mappings', authorize, async (req, res) => {
+app.get('/api/framework-mappings', authorize, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM Framework_Mappings ORDER BY framework_name, framework_code');
-        res.json(result.rows);
+        const query = `
+            SELECT 
+                m.name AS metric_name,
+                f.framework_name,
+                f.framework_code,
+                f.description
+            FROM Framework_Mappings f
+            JOIN Metric_Definition m ON f.activity_type = m.name
+            ORDER BY f.framework_name, m.name;
+        `;
+        const mappings = await pool.query(query);
+        res.status(200).json(mappings.rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to fetch framework mappings" });
+        console.error("Mapping Engine Error:", err.message);
+        res.status(500).json({ error: "Failed to fetch framework mappings", details: err.message });
     }
 });
 
-// 2. Create a new mapping rule
 app.post('/api/mappings', authorize, async (req, res) => {
     try {
-        // Security check: Only Admins can alter compliance rules
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Only Administrators can modify framework mappings." });
         }
-
         const { framework_name, framework_code, description, activity_type } = req.body;
         const result = await pool.query(
             `INSERT INTO Framework_Mappings (framework_name, framework_code, description, activity_type) 
@@ -700,7 +604,6 @@ app.post('/api/mappings', authorize, async (req, res) => {
     }
 });
 
-// 3. Delete a mapping rule
 app.delete('/api/mappings/:id', authorize, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
@@ -715,35 +618,15 @@ app.delete('/api/mappings/:id', authorize, async (req, res) => {
 });
 
 // ==========================================
-// NET-ZERO TARGET ROUTES 
+// NET-ZERO TARGET ROUTES (PATCHED)
 // ==========================================
-
-app.post('/api/targets', authorize, auditorGuard, async (req, res) => {
-    try {
-        if (req.user.role !== 'Admin') return res.status(403).json({ error: "Admins only." });
-
-        const { organization_id, scope_category, baseline_year, target_year, reduction_percentage } = req.body;
-
-        const newTarget = await pool.query(
-            `INSERT INTO reduction_targets 
-            (organization_id, scope_category, baseline_year, target_year, reduction_percentage) 
-            VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [organization_id, scope_category, baseline_year, target_year, reduction_percentage]
-        );
-        res.json(newTarget.rows[0]);
-    } catch (err) {
-        console.error("Error saving target:", err.message);
-        res.status(500).json({ error: "Failed to set target." });
-    }
-});
-
 app.get('/api/targets', authorize, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT t.*, o.name as organization_name 
             FROM reduction_targets t
-            JOIN Organization_Unit o ON t.organization_id = o.unit_id
-            WHERE o.company_id = $1
+            JOIN Organization_Unit o ON t.unit_id = o.unit_id
+            WHERE o.unit_id = $1  -- FIXED
             ORDER BY created_at DESC
         `, [req.user.company_id]);
         res.json(result.rows);
@@ -760,9 +643,9 @@ app.get('/api/targets', authorize, async (req, res) => {
 app.get('/api/admin/pending', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT u.user_id, u.email, u.created_at, c.company_name
-      FROM Users u
-      JOIN Companies c ON u.company_id = c.company_id
+      SELECT u.user_id, u.email, u.created_at, o.unit_name AS company_name
+      FROM users u
+      JOIN organization_unit o ON u.unit_id = o.unit_id
       WHERE u.status = 'pending'
       ORDER BY u.created_at DESC
     `);
@@ -776,7 +659,7 @@ app.get('/api/admin/pending', async (req, res) => {
 app.put('/api/admin/approve/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query("UPDATE Users SET status = 'approved' WHERE user_id = $1", [id]);
+    await pool.query("UPDATE users SET status = 'approved' WHERE user_id = $1", [id]);
     res.json({ message: "Corporate account approved successfully." });
   } catch (err) {
     console.error("Error approving account:", err);
@@ -789,47 +672,55 @@ app.put('/api/admin/approve/:id', async (req, res) => {
 // ==========================================
 
 app.post('/api/auth/register', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { email, password, company_name } = req.body;
-    
-    if (!company_name) return res.status(400).json({ error: "Company name required." });
+    const client = await pool.connect();
+    try {
+        const { email, password, company_name } = req.body;
+        
+        if (!company_name) return res.status(400).json({ error: "Company name required." });
+        if (!password) return res.status(400).json({ error: "Password required." });
 
-    await client.query('BEGIN');
+        // 1. Generate the missing bcrypt hash for the password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
-    const newComp = await client.query(
-        "INSERT INTO Companies (company_name) VALUES ($1) RETURNING company_id",
-        [company_name]
-    );
-    const newCompanyId = newComp.rows[0].company_id;
+        // 2. Start the transaction using the exact same CLIENT
+        await client.query('BEGIN');
 
-    const salt = await bcrypt.genSalt(10);
-    const password_hash = await bcrypt.hash(password, salt);
+        const newOrgResult = await client.query(
+            'INSERT INTO organization_unit (name) VALUES ($1) RETURNING unit_id',
+            [company_name]
+        );
 
-    await client.query(
-      "INSERT INTO Users (email, password_hash, company_id, role, status) VALUES ($1, $2, $3, 'Admin', 'pending')",
-      [email, password_hash, newCompanyId]
-    );
+        const newUnitId = newOrgResult.rows[0].unit_id;
 
-    await client.query('COMMIT');
-    
-    res.json({ message: "Registration successful. Your account is pending admin approval." });
+        // 3. Insert the user directly linking the unit_id 
+        const newUserResult = await client.query(
+            `INSERT INTO users (email, password_hash, role, unit_id, status) 
+             VALUES ($1, $2, $3, $4, $5) RETURNING user_id, email, role, unit_id`,
+            [email, hashedPassword, 'Pending', newUnitId, 'pending']
+        );
 
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error("REGISTRATION FAILED:", err); 
-    res.status(500).json({ error: "Check server logs for registration error." });
-  } finally {
-    client.release();
-  }
+        await client.query('COMMIT');
+        
+        res.json({ message: "Registration successful. Your account is pending admin approval." });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("REGISTRATION FAILED:", err); 
+        res.status(500).json({ error: "Check server logs for registration error." });
+    } finally {
+        // 4. Safely release the client back to the pool
+        client.release();
+    }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // A. Query the database, fetching unit_id instead of the non-existent company_id
     const user = await pool.query(
-      'SELECT user_id, email, password_hash, role, company_id, status FROM Users WHERE email = $1',
+      'SELECT user_id, email, password_hash, role, unit_id, status FROM users WHERE email = $1',
       [email]
     );
 
@@ -846,8 +737,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(403).json({ error: "Access Denied: Your corporate account is still pending verification." });
     }
 
+    // B. Inject unit_id into the session token but map it to company_id so your legacy routes still work!
     const token = jwt.sign(
-      { id: user.rows[0].user_id, role: user.rows[0].role, company_id: user.rows[0].company_id },
+      { 
+          id: user.rows[0].user_id, 
+          role: user.rows[0].role, 
+          company_id: user.rows[0].unit_id 
+      },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
@@ -882,7 +778,7 @@ app.post('/api/users', authorize, async (req, res) => {
 
         await client.query('BEGIN');
 
-        const userExists = await client.query("SELECT * FROM Users WHERE email = $1", [email]);
+        const userExists = await client.query("SELECT * FROM users WHERE email = $1", [email]);
         if (userExists.rows.length > 0) {
             return res.status(400).json({ error: "A user with this email already exists." });
         }
@@ -891,7 +787,7 @@ app.post('/api/users', authorize, async (req, res) => {
         const password_hash = await bcrypt.hash(password, salt);
 
         const newUser = await client.query(
-            `INSERT INTO Users (email, password_hash, company_id, role, status) 
+            `INSERT INTO users (email, password_hash, unit_id, role, status) 
              VALUES ($1, $2, $3, $4, 'approved') 
              RETURNING user_id, email, role, status, created_at`,
             [email, password_hash, req.user.company_id, role]
@@ -916,7 +812,7 @@ app.get('/api/users', authorize, async (req, res) => {
         }
 
         const allUsers = await pool.query(
-            "SELECT user_id, email, role, created_at FROM Users WHERE company_id = $1 ORDER BY created_at DESC",
+            "SELECT user_id, email, role, created_at FROM users WHERE unit_id = $1 ORDER BY created_at DESC",
             [req.user.company_id]
         );
         res.json(allUsers.rows);
@@ -936,7 +832,7 @@ app.put('/api/users/:id/role', authorize, auditorGuard, async (req, res) => {
         const { role } = req.body;
 
         const updatedUser = await pool.query(
-            "UPDATE Users SET role = $1 WHERE user_id = $2 AND company_id = $3 RETURNING user_id, email, role",
+            "UPDATE users SET role = $1 WHERE user_id = $2 AND unit_id = $3 RETURNING user_id, email, role",
             [role, id, req.user.company_id]
         );
 
@@ -954,9 +850,9 @@ app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
     const client = await pool.connect();
     
     try {
-        const { organization_id, assessment_year, topics, overwrite_all } = req.body;
+        const { unit_id, assessment_year, topics, overwrite_all } = req.body;
 
-        if (!organization_id) {
+        if (!unit_id) {
             return res.status(400).json({ error: "Organization ID is required." });
         }
 
@@ -965,20 +861,20 @@ app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
         if (overwrite_all) {
             await client.query(`
                 DELETE FROM Materiality_Scores 
-                WHERE organization_id = $1 AND assessment_year = $2
-            `, [organization_id, assessment_year]);
+                WHERE unit_id = $1 AND assessment_year = $2
+            `, [unit_id, assessment_year]);
         }
 
         for (const topic of topics) {
             await client.query(`
                 INSERT INTO Materiality_Scores 
-                (organization_id, topic_name, stakeholder_importance_score, business_impact_score, assessment_year)
+                (unit_id, topic_name, stakeholder_importance_score, business_impact_score, assessment_year)
                 VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (organization_id, topic_name, assessment_year) 
+                ON CONFLICT (unit_id, topic_name, assessment_year) 
                 DO UPDATE SET 
                     stakeholder_importance_score = EXCLUDED.stakeholder_importance_score,
                     business_impact_score = EXCLUDED.business_impact_score;
-            `, [organization_id, topic.name, topic.y, topic.x, assessment_year]);
+            `, [unit_id, topic.name, topic.y, topic.x, assessment_year]);
         }
 
         await client.query('COMMIT');
@@ -1001,13 +897,93 @@ app.get('/api/materiality/:orgId', authorize, async (req, res) => {
         const result = await pool.query(`
             SELECT topic_name as name, stakeholder_importance_score as y, business_impact_score as x
             FROM Materiality_Scores
-            WHERE organization_id = $1 AND assessment_year = $2
+            WHERE unit_id = $1 AND assessment_year = $2
         `, [orgId, currentYear]);
 
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching materiality:", err.message);
         res.status(500).json({ error: "Failed to fetch scores." });
+    }
+});
+
+// ==========================================
+// CLIMATE SCENARIO ANALYSIS (STRESS TESTING)
+// ==========================================
+
+app.post('/api/scenarios', authorize, auditorGuard, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+            return res.status(403).json({ error: "Access Denied: Only Admins/Managers can log stress tests." });
+        }
+
+        const { 
+            assessment_year, 
+            scenario_name, 
+            time_horizon, 
+            physical_risk_impact, 
+            transition_risk_impact, 
+            projected_financial_impact_ghs, 
+            mitigation_strategy 
+        } = req.body;
+
+        const insertQuery = `
+            INSERT INTO Climate_Scenario_Analysis 
+            (unit_id, assessment_year, scenario_name, time_horizon, physical_risk_impact, transition_risk_impact, projected_financial_impact_ghs, mitigation_strategy) 
+            VALUES (
+    (SELECT unit_id FROM Organization_Unit WHERE unit_id = $1 LIMIT 1), 
+    $2, $3, $4, $5, $6, $7, $8
+) 
+            RETURNING *;
+        `;
+
+        const values = [
+            req.user.company_id,
+            assessment_year,
+            scenario_name,
+            time_horizon,
+            physical_risk_impact,
+            transition_risk_impact,
+            projected_financial_impact_ghs,
+            mitigation_strategy
+        ];
+
+        const newScenario = await pool.query(insertQuery, values);
+        res.status(201).json(newScenario.rows[0]);
+
+    } catch (err) {
+        console.error("Error saving scenario analysis:", err.message);
+        if (err.code === '23505') {
+            return res.status(400).json({ error: "A scenario with this name and time horizon already exists for this year." });
+        }
+        res.status(500).json({ error: "Failed to save climate scenario." });
+    }
+});
+
+app.get('/api/scenarios', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        let query = `
+            SELECT s.*, u.name as organization_name 
+            FROM Climate_Scenario_Analysis s
+            JOIN Organization_Unit u ON s.unit_id = u.unit_id
+            WHERE u.unit_id = $1
+        `;
+        const values = [req.user.company_id];
+
+        if (year) {
+            query += ` AND s.assessment_year = $2`;
+            values.push(year);
+        }
+
+        query += ` ORDER BY s.assessment_year DESC, s.created_at DESC`;
+
+        const scenarios = await pool.query(query, values);
+        res.json(scenarios.rows);
+
+    } catch (err) {
+        console.error("Error fetching scenarios:", err.message);
+        res.status(500).json({ error: "Failed to fetch scenario analysis reports." });
     }
 });
 
@@ -1034,9 +1010,9 @@ app.get('/api/public/campaigns/:token', async (req, res) => {
     try {
         const { token } = req.params;
         const result = await pool.query(
-            `SELECT sc.*, c.company_name
+            `SELECT sc.*, c.unit_name as company_name
              FROM Supplier_Campaigns sc
-             JOIN Companies c ON sc.company_id = c.company_id
+             JOIN Organization_Unit c ON sc.company_id = c.unit_id
              WHERE sc.token = $1`,
             [token]
         );
@@ -1080,7 +1056,7 @@ app.get('/api/campaigns', authorize, async (req, res) => {
             `SELECT token as id, supplier_name as supplier, activity_type as metric, 
                     deadline, status, evidence_url, created_at 
              FROM Supplier_Campaigns 
-             WHERE company_id = $1 
+             WHERE unit_id = $1 
              ORDER BY created_at DESC`,
             [req.user.company_id]
         );
@@ -1091,7 +1067,6 @@ app.get('/api/campaigns', authorize, async (req, res) => {
     }
 });
 
-// NEW: Allows Admins to Approve/Reject Supplier Evidence from the Locker
 app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -1124,13 +1099,12 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
                     EXTRACT(MONTH FROM COALESCE(e.recorded_date, e.created_at)) as month_num,
                     SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
                     SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
-                FROM ghg_emissions e
-                JOIN Organization_Unit u ON e.organization_id = u.unit_id
-                WHERE u.company_id = $1 
+                FROM esg_observation e
+                JOIN Organization_Unit u ON e.unit_id = u.unit_id
+                WHERE u.unit_id = $1   -- FIXED: Changed from company_id to unit_id
                   AND e.status = 'Approved'
                 GROUP BY month_num
             )
-            -- Generate a static 12-month table to ensure missing data doesn't break the chart X-Axis
             SELECT 
                 m.month_abbr as month,
                 COALESCE(d.current_co2e, 0) as current_co2e,
@@ -1159,7 +1133,6 @@ app.get('/api/initiatives', authorize, async (req, res) => {
     try {
         const { sector } = req.query;
         
-        // If no sector is provided, default to a generic set or reject
         if (!sector) {
             return res.status(400).json({ error: "Sector query parameter is required." });
         }
@@ -1178,6 +1151,23 @@ app.get('/api/initiatives', authorize, async (req, res) => {
         console.error("Failed to fetch initiatives:", err.message);
         res.status(500).json({ error: "Failed to load sector initiatives." });
     }
+});
+
+// ==========================================
+// ONE-TIME DATABASE SCHEMA PATCH
+// ==========================================
+pool.query(`
+    -- Patch GHG Table
+    ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
+    ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
+
+    -- Patch Observation Table (The missing piece!)
+    ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
+    ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
+`).then(() => {
+    console.log("✅ Database schema successfully patched for ALL tables!");
+}).catch(err => {
+    console.error("⚠️ Schema patch skipped or failed:", err.message);
 });
 
 // ==========================================

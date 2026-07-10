@@ -5,7 +5,7 @@ async function fixDatabase() {
     console.log("⏳ Connecting to Render Database...");
     try {
         await pool.query(`
-            ALTER TABLE ghg_emissions 
+            ALTER TABLE esg_observation 
             ADD COLUMN IF NOT EXISTS unit_of_measure VARCHAR(50) DEFAULT 'units';
         `);
         console.log("✅ SUCCESS! The unit_of_measure column has been permanently added.");

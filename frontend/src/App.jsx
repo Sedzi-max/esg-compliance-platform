@@ -16,8 +16,9 @@ import EntityManagement from './pages/EntityManagement';
 import SOPPage from './pages/SOPPage'; 
 import EvidenceLocker from './pages/EvidenceLocker'; 
 import FrameworkManager from './pages/FrameworkManager'; 
-import Sidebar from './components/Sidebar'; // 👈 Moved this up here!
+import Sidebar from './components/Sidebar'; 
 import axios from 'axios';
+import ScenarioAnalysis from './pages/ScenarioAnalysis';
 
 // Tells React to use the live URL if it exists, otherwise fallback to localhost
 axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -51,7 +52,7 @@ function App() {
                   <Route 
                     path="/dashboard" 
                     element={isAuditor ? <AuditorDashboard /> : <Dashboard />} 
-                  />
+                    />
                   <Route path="/data-entry" element={<DataEntry />} />
                   
                   {/* Manager & Admin Routes */}
@@ -59,6 +60,9 @@ function App() {
                   <Route path="/evidence-locker" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><EvidenceLocker /></ProtectedRoute>} />
                   <Route path="/campaigns" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><SurveyCampaigns /></ProtectedRoute>} />
                   <Route path="/alignment" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><FrameworkAlignment /></ProtectedRoute>} />
+                  
+                  {/* NEW: Climate Stress Testing & Scenario Analysis Route */}
+                  <Route path="/scenarios" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><ScenarioAnalysis /></ProtectedRoute>} />
 
                   {/* Admin Only Routes */}
                   <Route path="/organizations" element={<ProtectedRoute allowedRoles={['Admin']}><Organizations /></ProtectedRoute>} />
@@ -70,6 +74,7 @@ function App() {
                   
                   {/* Catch-all redirect */}
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  
                 </Routes>
               </main>
 

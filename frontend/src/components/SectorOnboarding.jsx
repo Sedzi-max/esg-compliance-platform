@@ -30,7 +30,14 @@ const SECTOR_KITS = {
     { id: 403, name: 'Land Rehabilitation', x: 8, y: 8, color: '#388e3c' },
     { id: 404, name: 'Community Impacts', x: 7, y: 9, color: '#f57c00' },
     { id: 405, name: 'Biodiversity', x: 8, y: 7, color: '#1976d2' }
-  ]
+  ],
+  'Insurance': [
+    { id: 501, name: 'Sustainable Underwriting', x: 10, y: 9, color: '#1976d2' },
+    { id: 502, name: 'Climate Stress Testing', x: 9, y: 10, color: '#d32f2f' },
+    { id: 503, name: 'Portfolio ESG Screening', x: 8, y: 8, color: '#388e3c' },
+    { id: 504, name: 'Data Privacy & Security', x: 9, y: 9, color: '#f57c00' },
+    { id: 505, name: 'Green Fleet Transition', x: 6, y: 7, color: '#7b1fa2' }
+  ],
 };
 
 function SectorOnboarding() {

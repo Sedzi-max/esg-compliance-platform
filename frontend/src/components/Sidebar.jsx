@@ -95,6 +95,10 @@ function Sidebar() {
               <li style={getSectionHeaderStyle()}>Supply Chain</li>
               <li><Link to="/campaigns" style={getLinkStyle('/campaigns')}>🚀 Scope 3 Campaigns</Link></li>
               <li><Link to="/alignment" style={getLinkStyle('/alignment')}>🎯 Alignment Matrix</Link></li>
+              
+              {/* NEW: Added Climate Stress Testing Here */}
+              <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>
+              <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
             </>
           )}
 

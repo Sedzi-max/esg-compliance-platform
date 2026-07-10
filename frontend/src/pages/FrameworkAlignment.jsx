@@ -1,6 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import DelegateTaskModal from '../components/DelegateTaskModal'; // <-- IMPORTING YOUR EMAIL ENGINE
+
+// --- BoG 7 Principles Data ---
+const bogGapAnalysisData = [
+    { 
+        framework_code: 'BoG-P1', 
+        description: 'E&S Risk Management in Lending (Portfolio Screening)', 
+        activity_type: 'portfolio_risk', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P2', 
+        description: 'Internal Footprint (Energy, Paper, Waste Metrics)', 
+        activity_type: 'facility_emissions', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P3', 
+        description: 'Corporate Governance & Anti-Corruption Protocols', 
+        activity_type: 'governance_audit', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P4', 
+        description: 'Gender Equality (Board Diversity & Equal Pay Metrics)', 
+        activity_type: 'social_metrics', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P5', 
+        description: 'Financial Inclusion (Unbanked Demographic Reach)', 
+        activity_type: 'product_reach', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P6', 
+        description: 'Resource Efficiency & Green Product Offerings', 
+        activity_type: 'client_engagement', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    },
+    { 
+        framework_code: 'BoG-P7', 
+        description: 'Transparent Annual ESG Reporting & Disclosure', 
+        activity_type: 'reporting_publication', 
+        is_fulfilled: false, 
+        quality_tier: null 
+    }
+];
 
 const FrameworkAlignment = () => {
     const navigate = useNavigate();
@@ -8,11 +62,15 @@ const FrameworkAlignment = () => {
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('2026');
 
-    // Modal State
+    // Gap Analysis Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeFramework, setActiveFramework] = useState(null);
     const [gapData, setGapData] = useState([]);
     const [loadingGap, setLoadingGap] = useState(false);
+
+    // Delegation Modal State
+    const [isDelegateOpen, setIsDelegateOpen] = useState(false);
+    const [selectedGapTask, setSelectedGapTask] = useState('');
 
     useEffect(() => {
         fetchReadiness();
@@ -27,7 +85,9 @@ const FrameworkAlignment = () => {
             });
             
             if (response.data.length === 0) {
+                // Added the BoG Framework to your mock data view
                 setReadinessData([
+                    { framework_name: 'Bank of Ghana Sustainable Banking Principles', fulfilled_requirements: 0, total_requirements: 7, readiness_score: 0 },
                     { framework_name: 'GSE Mandatory Disclosures', fulfilled_requirements: 2, total_requirements: 3, readiness_score: 67 },
                     { framework_name: 'IFRS S2 Climate Disclosures', fulfilled_requirements: 1, total_requirements: 3, readiness_score: 33 }
                 ]);
@@ -54,14 +114,25 @@ const FrameworkAlignment = () => {
             setGapData(response.data);
         } catch (err) {
             console.error("Failed to load gap analysis", err);
-            // Mock data for visual testing
-            setGapData([
-                { framework_code: 'GSE-E1', description: 'Total Scope 1 GHG Emissions', activity_type: 'mobile_diesel', is_fulfilled: true, quality_tier: 'A' },
-                { framework_code: 'GSE-E2', description: 'Total Scope 2 Purchased Electricity', activity_type: 'electricity_grid_kwh', is_fulfilled: false, quality_tier: null }
-            ]);
+            
+            // Conditionally load the exact BoG principles if that card is clicked
+            if (frameworkName === 'Bank of Ghana Sustainable Banking Principles') {
+                setGapData(bogGapAnalysisData);
+            } else {
+                // Mock data for other frameworks
+                setGapData([
+                    { framework_code: 'GSE-E1', description: 'Total Scope 1 GHG Emissions', activity_type: 'mobile_diesel', is_fulfilled: true, quality_tier: 'A' },
+                    { framework_code: 'GSE-E2', description: 'Total Scope 2 Purchased Electricity', activity_type: 'electricity_grid_kwh', is_fulfilled: false, quality_tier: null }
+                ]);
+            }
         } finally {
             setLoadingGap(false);
         }
+    };
+
+    const handleOpenDelegate = (gapDescription) => {
+        setSelectedGapTask(`Missing Data: ${gapDescription}`);
+        setIsDelegateOpen(true);
     };
 
     const getStatusColor = (score) => {
@@ -167,7 +238,7 @@ const FrameworkAlignment = () => {
                                             <th style={thStyle}>Status</th>
                                             <th style={thStyle}>Clause</th>
                                             <th style={thStyle}>Quality Tier</th>
-                                            <th style={thStyle}>Action</th>
+                                            <th style={thStyle}>Action required</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -187,9 +258,14 @@ const FrameworkAlignment = () => {
                                                 </td>
                                                 <td style={{ padding: '16px' }}>
                                                     {!gap.is_fulfilled && (
-                                                        <button onClick={() => navigate('/data-entry')} style={{ color: '#2563eb', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-                                                            Log Missing Data →
-                                                        </button>
+                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                                            <button onClick={() => navigate('/data-entry')} style={{ color: '#4b5563', border: '1px solid #d1d5db', background: 'white', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                                Self Log
+                                                            </button>
+                                                            <button onClick={() => handleOpenDelegate(gap.description)} style={{ color: 'white', border: 'none', background: '#2563eb', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                                Delegate 📤
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </td>
                                             </tr>
@@ -201,6 +277,15 @@ const FrameworkAlignment = () => {
                     </div>
                 </div>
             )}
+
+            {/* Email Delegation Sub-Modal */}
+            <DelegateTaskModal 
+                isOpen={isDelegateOpen} 
+                onClose={() => setIsDelegateOpen(false)} 
+                defaultTaskName={selectedGapTask}
+                defaultFacility="Corporate HQ"
+            />
+
         </div>
     );
 };
