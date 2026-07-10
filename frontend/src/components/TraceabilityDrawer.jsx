@@ -118,7 +118,7 @@ function TraceabilityDrawer({ isOpen, onClose, record }) {
 
             {record.evidence_file_url ? (
               <a 
-                href={`http://localhost:5000${record.evidence_file_url}`} 
+                href={`https://esg-compliance-platform-production.up.railway.app${record.evidence_file_url}`} 
                 target="_blank" rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#f1f5f9', color: '#0369a1', padding: '15px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', border: '1px solid #bae6fd', transition: 'background 0.2s' }}
               >

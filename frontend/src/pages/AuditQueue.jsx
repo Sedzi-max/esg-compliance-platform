@@ -298,14 +298,14 @@ function AuditQueue() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3 style={{ margin: 0, color: '#1e293b', fontSize: '16px' }}>Evidence Locker: Attached File</h3>
                   {selectedLog.evidence_file_url && (
-                    <a href={`http://localhost:5000${selectedLog.evidence_file_url}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>Open File in New Tab ↗</a>
+                    <a href={`https://esg-compliance-platform-production.up.railway.app${selectedLog.evidence_file_url}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>Open File in New Tab ↗</a>
                   )}
                 </div>
                 
                 <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '8px', border: '2px solid #cbd5e1', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
                   {selectedLog.evidence_file_url ? (
                     <iframe 
-                      src={`http://localhost:5000${selectedLog.evidence_file_url}`} 
+                      src={`https://esg-compliance-platform-production.up.railway.app${selectedLog.evidence_file_url}`} 
                       title="Evidence Viewer"
                       style={{ width: '100%', height: '100%', border: 'none' }}
                     />

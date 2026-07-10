@@ -12,7 +12,7 @@ const AuditorDashboard = () => {
         const fetchAuditData = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('http://localhost:5000/api/emissions', {
+                const response = await fetch('https://esg-compliance-platform-production.up.railway.app/api/emissions', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -228,7 +228,7 @@ const AuditorDashboard = () => {
                             {selectedTransaction.evidence_file_url && (
                                 <div>
                                     <p style={{ fontSize: '12px', color: '#adb5bd', textTransform: 'uppercase', fontWeight: 'bold', margin: '0 0 10px 0', letterSpacing: '1px' }}>Evidence</p>
-                                    <a href={`http://localhost:5000${selectedTransaction.evidence_file_url}`} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '20px', backgroundColor: '#052c65', border: '1px solid #0a58ca', borderRadius: '8px', textDecoration: 'none' }}>
+                                    <a href={`https://esg-compliance-platform-production.up.railway.app${selectedTransaction.evidence_file_url}`} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '20px', backgroundColor: '#052c65', border: '1px solid #0a58ca', borderRadius: '8px', textDecoration: 'none' }}>
                                         <p style={{ fontSize: '14px', fontWeight: 'bold', color: 'white', margin: '0 0 5px 0' }}>📄 View Source Evidence</p>
                                         <p style={{ fontSize: '12px', color: '#6ea8fe', margin: 0 }}>Verified File Hash Attached</p>
                                     </a>

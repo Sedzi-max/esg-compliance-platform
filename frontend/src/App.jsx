@@ -21,7 +21,7 @@ import axios from 'axios';
 import ScenarioAnalysis from './pages/ScenarioAnalysis';
 
 // Tells React to use the live URL if it exists, otherwise fallback to localhost
-axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'https://esg-compliance-platform-production.up.railway.app';
 
 function App() {
   // Grab the user data to determine dashboard routing

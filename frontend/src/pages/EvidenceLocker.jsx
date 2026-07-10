@@ -142,7 +142,7 @@ function EvidenceLocker() {
                                     {doc.evidence_file_url.endsWith('.pdf') ? '📄' : '🖼️'}
                                 </span>
                                 <a 
-                                    href={`http://localhost:5000${doc.evidence_file_url}`} 
+                                    href={`https://esg-compliance-platform-production.up.railway.app${doc.evidence_file_url}`} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     style={{ color: '#2563eb', fontWeight: '700', fontSize: '14px', textDecoration: 'none', textAlign: 'center' }}

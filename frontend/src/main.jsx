@@ -1,14 +1,12 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
-import App from './App.jsx'
-import axios from 'axios'
-import './index.css'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App.jsx';
+import axios from 'axios';
+import './index.css';
 
 // 1. Global API Configuration
-axios.defaults.baseURL = import.meta.env.MODE === 'production' 
-  ? 'https://esg-compliance-platform.onrender.com' 
-  : 'http://localhost:5000';
+axios.defaults.baseURL = import.meta.env.VITE_API_URL;
 
 // 2. --- AXIOS REQUEST INTERCEPTOR ---
 // Automatically attaches the JWT token to every outgoing request
@@ -42,5 +40,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <App />
     </BrowserRouter>
-  </React.StrictMode>,
-)
+  </React.StrictMode>
+);
