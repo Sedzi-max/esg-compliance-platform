@@ -2,8 +2,7 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_PUBLIC_URL
-    // Notice: The entire ssl: {} block is gone
+    connectionString: process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL,
 });
 
 pool.query('SELECT NOW()', (err, res) => {
