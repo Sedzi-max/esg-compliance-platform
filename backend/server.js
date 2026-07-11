@@ -643,10 +643,14 @@ app.get('/api/targets', authorize, async (req, res) => {
 app.get('/api/admin/pending', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT u.user_id, u.email, u.created_at, o.unit_name AS company_name
+      SELECT 
+        u.user_id, 
+        u.email, 
+        u.created_at, 
+        o.unit_name AS company_name -- ⚠️ UPDATE THIS if 'unit_name' does not exist in your DB!
       FROM users u
-      JOIN organization_unit o ON u.unit_id = o.unit_id
-      WHERE u.status = 'pending'
+      LEFT JOIN organization_unit o ON u.unit_id = o.unit_id
+      WHERE u.role = 'Pending'
       ORDER BY u.created_at DESC
     `);
     res.json(result.rows);
