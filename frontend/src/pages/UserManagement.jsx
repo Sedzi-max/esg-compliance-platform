@@ -18,6 +18,9 @@ function UserManagement() {
     role: 'auditor'
   });
 
+  // 1. Global API URL for all requests
+  const apiUrl = import.meta.env.VITE_API_URL;
+
   useEffect(() => {
     fetchDirectoryData();
   }, []);
@@ -26,26 +29,19 @@ function UserManagement() {
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-
+      
       const [usersRes, pendingRes, orgsRes] = await Promise.all([
-        axios.get('/api/users', config).catch(() => ({ data: [] })),
-        axios.get('/api/admin/pending', config).catch(() => ({ data: [] })),
-        axios.get('/api/organizations', config).catch(() => ({ data: [] }))
+        axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
+        axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] })),
+        axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
       ]);
       
-      setUsers(usersRes.data.length ? usersRes.data : [
-        { user_id: 'u1', email: 'cso@obcorporate.com', role: 'Admin', organization_name: 'Accra Headquarters', created_at: '2025-01-10' },
-        { user_id: 'u2', email: 'manager@kumasiplant.com', role: 'Manager', organization_name: 'Kumasi Plant', created_at: '2025-06-15' },
-        { user_id: 'u3', email: 'clerk@takoradi.com', role: 'Data Entry', organization_name: 'Takoradi Port', created_at: '2026-02-20' },
-        { user_id: 'u4', email: 'kpmg_audit@example.com', role: 'auditor', organization_name: 'External', created_at: '2026-06-18' }
-      ]);
-      
-      setPendingUsers(pendingRes.data.length ? pendingRes.data : [
-        { user_id: 'p1', company_name: 'Northern Mining subsidiary', email: 'admin@northernmining.com', created_at: new Date().toISOString() }
-      ]);
-
+      // 2. Set the real data directly (No fake mock data!)
+      setUsers(usersRes.data);
+      setPendingUsers(pendingRes.data);
       setOrganizations(orgsRes.data);
       setLoading(false);
+
     } catch (err) {
       console.error("Error fetching directory data:", err);
       setError("Failed to load user data. Ensure you have Admin privileges.");
@@ -56,7 +52,7 @@ function UserManagement() {
   const handleApprove = async (userId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`/api/admin/approve/${userId}`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.put(`${apiUrl}/api/admin/approve/${userId}`, {}, { headers: { Authorization: `Bearer ${token}` } });
       
       const approvedUser = pendingUsers.find(u => u.user_id === userId);
       setPendingUsers(pendingUsers.filter(user => user.user_id !== userId));
@@ -66,25 +62,21 @@ function UserManagement() {
       }
       showSuccess("✅ Account successfully approved and provisioned.");
     } catch (err) {
-      // Optimistic Fallback
-      const approvedUser = pendingUsers.find(u => u.user_id === userId);
-      setPendingUsers(pendingUsers.filter(user => user.user_id !== userId));
-      setUsers([...users, { ...approvedUser, role: 'Data Entry', organization_name: approvedUser.company_name }]);
-      showSuccess("✅ Account successfully approved and provisioned.");
+      console.error("Approval Error:", err);
+      setError("Failed to approve account. Check server connection.");
     }
   };
 
   const handleRoleChange = async (userId, newRole) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`/api/users/${userId}/role`, { role: newRole }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.put(`${apiUrl}/api/users/${userId}/role`, { role: newRole }, { headers: { Authorization: `Bearer ${token}` } });
       
       setUsers(users.map(user => user.user_id === userId ? { ...user, role: newRole } : user));
       showSuccess("🔒 Security role successfully updated.");
     } catch (err) {
-      // Optimistic Fallback
-      setUsers(users.map(user => user.user_id === userId ? { ...user, role: newRole } : user));
-      showSuccess("🔒 Security role successfully updated.");
+      console.error("Role Update Error:", err);
+      setError("Failed to update security role.");
     }
   };
 
@@ -93,13 +85,13 @@ function UserManagement() {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${apiUrl}/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+      
       setUsers(users.filter(user => user.user_id !== userId));
       showSuccess("🚫 User access has been revoked.");
     } catch (err) {
-      // Optimistic Fallback
-      setUsers(users.filter(user => user.user_id !== userId));
-      showSuccess("🚫 User access has been revoked.");
+      console.error("Suspension Error:", err);
+      setError("Failed to suspend user.");
     }
   };
 
@@ -109,12 +101,10 @@ function UserManagement() {
     
     try {
       const token = localStorage.getItem('token');
-      
-      // Hooked into the new internal user creation route
-      const response = await axios.post('/api/users', inviteForm, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await axios.post(`${apiUrl}/api/users`, inviteForm, { headers: { Authorization: `Bearer ${token}` } });
       
       const newUser = {
-        user_id: response.data.user_id || 'new_' + Date.now(),
+        user_id: response.data.user_id,
         email: inviteForm.email,
         role: inviteForm.role,
         organization_name: 'HQ / Global',
@@ -126,15 +116,8 @@ function UserManagement() {
       setIsModalOpen(false);
       showSuccess(`📧 Provisioned! ${inviteForm.email} can now log in.`);
     } catch (err) {
-      // Optimistic Fallback for development
-      setUsers([{
-        user_id: 'new_' + Date.now(), email: inviteForm.email, role: inviteForm.role, 
-        organization_name: 'HQ / Global', created_at: new Date().toISOString()
-      }, ...users]);
-      
-      setIsModalOpen(false);
-      setInviteForm({ email: '', password: '', role: 'auditor' });
-      showSuccess(`📧 Provisioned securely! Give ${inviteForm.email} their temporary password.`);
+      console.error("Provisioning Error:", err);
+      setError("Failed to provision new account.");
     } finally {
       setIsSubmitting(false);
     }

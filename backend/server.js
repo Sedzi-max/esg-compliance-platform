@@ -647,7 +647,7 @@ app.get('/api/admin/pending', async (req, res) => {
         u.user_id, 
         u.email, 
         u.created_at, 
-        o.unit_name AS company_name -- ⚠️ UPDATE THIS if 'unit_name' does not exist in your DB!
+        o.name AS company_name 
       FROM users u
       LEFT JOIN organization_unit o ON u.unit_id = o.unit_id
       WHERE u.role = 'Pending'
