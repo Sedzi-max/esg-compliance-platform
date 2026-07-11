@@ -22,10 +22,14 @@ function Login() {
     setIsAuthenticating(true);
     setError('');
 
+    // Construct the base API URL from your .env file
+    const apiUrl = import.meta.env.VITE_API_URL;
+
     try {
       if (isRegistering) {
         // --- REGISTRATION FLOW ---
-        await axios.post('/api/auth/register', {
+        // Updated to use the dynamic environment variable
+        await axios.post(`${apiUrl}/api/auth/register`, {
           email: formData.email,
           password: formData.password,
           company_name: formData.company_name
@@ -33,7 +37,8 @@ function Login() {
         setRegistrationSuccess(true);
       } else {
         // --- LOGIN FLOW ---
-        const response = await axios.post('/api/auth/login', {
+        // Updated to use the dynamic environment variable
+        const response = await axios.post(`${apiUrl}/api/auth/login`, {
           email: formData.email,
           password: formData.password
         });
