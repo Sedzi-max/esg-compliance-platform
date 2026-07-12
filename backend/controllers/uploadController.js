@@ -54,43 +54,55 @@ const processCsvUpload = async (req, res) => {
                 for (let i = 0; i < results.length; i++) {
                     const row = results[i];
                     try {
-                        // Extracting the exact headers from your CSV Template
                         const { organization_name, pillar, activity_type, raw_amount, unit, quality_tier, methodology } = row;
                         
                         if (!organization_name || !activity_type || raw_amount === undefined) {
                             throw new Error('Missing required fields. Ensure headers match the template.');
                         }
 
-                        // STEP A: Lookup the organization's UUID based on the text name
+                        // STEP A: Lookup the organization's UUID
                         const orgLookup = await pool.query(
                             'SELECT unit_id FROM organization_unit WHERE name = $1 LIMIT 1',
                             [organization_name]
                         );
 
                         if (orgLookup.rowCount === 0) {
-                            throw new Error(`Organization '${organization_name}' not found in the database.`);
+                            throw new Error(`Organization '${organization_name}' not found in database.`);
                         }
                         const unit_id = orgLookup.rows[0].unit_id;
 
-                        // STEP B: Calculate CO2e
+                        // STEP B: Lookup the metric's UUID
+                        // Note: If your column in metric_definition is named 'name' instead of 'metric_name', adjust this query!
+                        const metricLookup = await pool.query(
+                            'SELECT metric_id FROM metric_definition WHERE metric_name = $1 LIMIT 1',
+                            [activity_type]
+                        );
+
+                        if (metricLookup.rowCount === 0) {
+                            throw new Error(`Metric '${activity_type}' not found in metric_definition table.`);
+                        }
+                        const metric_id = metricLookup.rows[0].metric_id;
+
+                        // STEP C: Calculate CO2e
                         const final_co2e = calculateCarbonFootprint(activity_type, raw_amount);
 
-                        // STEP C: Insert into the correct esg_observation table
+                        // STEP D: Insert into esg_observation with metric_id included
                         const query = `
                             INSERT INTO esg_observation 
-                            (unit_id, pillar, activity_type, raw_amount, unit_of_measure, quality_tier, text_value, calculated_co2e, timestamp)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                            (unit_id, metric_id, pillar, activity_type, raw_amount, unit_of_measure, quality_tier, text_value, calculated_co2e, timestamp)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                             RETURNING observation_id;
                         `;
                         
                         const insertRes = await pool.query(query, [
                             unit_id, 
+                            metric_id, 
                             pillar || null, 
                             activity_type, 
                             parseFloat(raw_amount), 
                             unit || null,
                             quality_tier || null,
-                            methodology || null, // Saving methodology in the text_value column
+                            methodology || null, 
                             final_co2e,                                 
                             new Date().toISOString()
                         ]);
