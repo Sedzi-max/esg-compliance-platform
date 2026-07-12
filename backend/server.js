@@ -569,17 +569,18 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
 // ADMIN FRAMEWORK MAPPING ROUTES
 // ==========================================
 
-app.get('/api/framework-mappings', authorize, async (req, res) => {
+// FIX 1: Changed route from '/api/framework-mappings' to '/api/mappings' to match the frontend
+app.get('/api/mappings', authorize, async (req, res) => {
     try {
         const query = `
             SELECT 
-                m.name AS metric_name,
+                m.metric_name AS metric_name, -- FIX 2: Changed m.name to m.metric_name
                 f.framework_name,
                 f.framework_code,
                 f.description
             FROM Framework_Mappings f
-            JOIN Metric_Definition m ON f.activity_type = m.name
-            ORDER BY f.framework_name, m.name;
+            JOIN Metric_Definition m ON f.activity_type = m.metric_name -- FIX 3: Changed m.name to m.metric_name
+            ORDER BY f.framework_name, m.metric_name;
         `;
         const mappings = await pool.query(query);
         res.status(200).json(mappings.rows);
