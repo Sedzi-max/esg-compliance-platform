@@ -158,10 +158,13 @@ app.get('/api/health', async (req, res) => {
 app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
         const { name, unit_type, jurisdiction } = req.body;
+        
+        // FIX: Changed 'company_id' to 'parent_unit_id' in the SQL query
         const newOrg = await pool.query(
-            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, company_id) VALUES ($1, $2, $3, $4) RETURNING *",
+            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, parent_unit_id) VALUES ($1, $2, $3, $4) RETURNING *",
             [name, unit_type, jurisdiction, req.user.company_id]
         );
+        
         res.json(newOrg.rows[0]);
     } catch (err) {
         console.error(err.message);
