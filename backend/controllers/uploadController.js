@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-// Database imported correctly!
 const pool = require('../db'); 
 
 // --- 1. EMISSION FACTOR ENGINE ---
@@ -29,7 +28,6 @@ const processCsvUpload = async (req, res) => {
         const fileBuffer = req.file.buffer;
         const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-        // FIX 1: Changed db.query to pool.query
         const hashCheck = await pool.query(
             'SELECT uploaded_at FROM uploaded_files_log WHERE file_hash = $1', 
             [fileHash]
@@ -51,42 +49,53 @@ const processCsvUpload = async (req, res) => {
             .on('data', (data) => results.push(data))
             .on('end', async () => {
                 let successfulInserts = 0;
-                let duplicatesSkipped = 0;
                 let rowErrors = [];
 
                 for (let i = 0; i < results.length; i++) {
                     const row = results[i];
                     try {
-                        const { organization_id, scope_category, activity_type, raw_amount, recorded_date } = row;
+                        // Extracting the exact headers from your CSV Template
+                        const { organization_name, pillar, activity_type, raw_amount, unit, quality_tier, methodology } = row;
                         
-                        if (!organization_id || !activity_type || raw_amount === undefined) {
-                            throw new Error('Missing required fields. Ensure headers match exactly: organization_id, scope_category, activity_type, raw_amount');
+                        if (!organization_name || !activity_type || raw_amount === undefined) {
+                            throw new Error('Missing required fields. Ensure headers match the template.');
                         }
 
+                        // STEP A: Lookup the organization's UUID based on the text name
+                        const orgLookup = await pool.query(
+                            'SELECT unit_id FROM organization_unit WHERE name = $1 LIMIT 1',
+                            [organization_name]
+                        );
+
+                        if (orgLookup.rowCount === 0) {
+                            throw new Error(`Organization '${organization_name}' not found in the database.`);
+                        }
+                        const unit_id = orgLookup.rows[0].unit_id;
+
+                        // STEP B: Calculate CO2e
                         const final_co2e = calculateCarbonFootprint(activity_type, raw_amount);
 
+                        // STEP C: Insert into the correct esg_observation table
                         const query = `
-                            INSERT INTO esg_observation
-                            (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, recorded_date)
-                            VALUES ($1, $2, $3, $4, $5, $6)
-                            ON CONFLICT ON CONSTRAINT unique_emission_log 
-                            DO NOTHING
-                            RETURNING id;
+                            INSERT INTO esg_observation 
+                            (unit_id, pillar, activity_type, raw_amount, unit_of_measure, quality_tier, text_value, calculated_co2e, timestamp)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                            RETURNING observation_id;
                         `;
                         
-                        // FIX 2: Changed db.query to pool.query
                         const insertRes = await pool.query(query, [
-                            organization_id, 
-                            scope_category, 
+                            unit_id, 
+                            pillar || null, 
                             activity_type, 
                             parseFloat(raw_amount), 
+                            unit || null,
+                            quality_tier || null,
+                            methodology || null, // Saving methodology in the text_value column
                             final_co2e,                                 
-                            recorded_date || new Date().toISOString()
+                            new Date().toISOString()
                         ]);
 
-                        if (insertRes.rowCount === 0) {
-                            duplicatesSkipped++;
-                        } else {
+                        if (insertRes.rowCount > 0) {
                             successfulInserts++;
                         }
                     } catch (rowErr) {
@@ -95,7 +104,6 @@ const processCsvUpload = async (req, res) => {
                     }
                 }
 
-                // FIX 3: Changed db.query to pool.query
                 await pool.query(
                     'INSERT INTO uploaded_files_log (file_hash, file_name) VALUES ($1, $2)',
                     [fileHash, req.file.originalname]
@@ -104,7 +112,6 @@ const processCsvUpload = async (req, res) => {
                 res.json({
                     rows_processed: results.length,
                     successful_inserts: successfulInserts,
-                    duplicates_skipped: duplicatesSkipped,
                     errors: rowErrors
                 });
             });
