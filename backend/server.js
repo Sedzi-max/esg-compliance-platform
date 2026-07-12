@@ -157,12 +157,15 @@ app.get('/api/health', async (req, res) => {
 // CREATE a new Organization Unit
 app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
-        const { name, unit_type, jurisdiction } = req.body;
+        // 1. Extract parent_unit_id directly from the React payload
+        const { name, unit_type, jurisdiction, parent_unit_id } = req.body;
         
-        // FIX: Changed 'company_id' to 'parent_unit_id' in the SQL query
+        // 2. Format the ID: If React sends an empty string, turn it into a SQL NULL
+        const finalParentId = parent_unit_id === "" || !parent_unit_id ? null : parent_unit_id;
+
         const newOrg = await pool.query(
             "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, parent_unit_id) VALUES ($1, $2, $3, $4) RETURNING *",
-            [name, unit_type, jurisdiction, req.user.company_id]
+            [name, unit_type, jurisdiction, finalParentId] // 3. Inject the formatted ID
         );
         
         res.json(newOrg.rows[0]);
@@ -184,11 +187,12 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
 
         const safeParentId = parent_unit_id === "" ? null : parent_unit_id;
 
+        // FIX: Removed the non-existent 'company_id' from the WHERE clause
         const updatedOrg = await pool.query(
             `UPDATE Organization_Unit 
              SET name = $1, parent_unit_id = $2, equity_share_percentage = $3, has_operational_control = $4 
-             WHERE unit_id = $5 AND company_id = $6 RETURNING *`,
-            [name, safeParentId, equity_share_percentage, has_operational_control, id, req.user.company_id]
+             WHERE unit_id = $5 RETURNING *`,
+            [name, safeParentId, equity_share_percentage, has_operational_control, id]
         );
 
         if (updatedOrg.rows.length === 0) {
