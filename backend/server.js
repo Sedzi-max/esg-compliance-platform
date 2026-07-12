@@ -1100,9 +1100,9 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
         const query = `
             WITH MonthlyData AS (
                 SELECT 
-                    EXTRACT(MONTH FROM COALESCE(e.recorded_date, e.created_at)) as month_num,
-                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
-                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.recorded_date, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
+                    EXTRACT(MONTH FROM COALESCE(e.timestamp, e.created_at)) as month_num,
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 WHERE u.unit_id = $1   -- FIXED: Changed from company_id to unit_id

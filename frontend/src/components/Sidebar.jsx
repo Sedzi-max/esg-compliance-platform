@@ -1,21 +1,21 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext'; // Ensure this path matches your folder structure
 
 function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Grab user data for Role-Based Access Control
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  // Grab the live user state and the logout function directly from Context
+  const { user, logout } = useAuth();
   
-  const isAdmin = user?.role === 'Admin'; 
-  const isManager = user?.role === 'Manager';
-  const isAuditor = user?.role === 'auditor'; 
+  // Standardize the casing check so 'Auditor' or 'auditor' both work
+  const isAdmin = user?.role?.toLowerCase() === 'admin'; 
+  const isManager = user?.role?.toLowerCase() === 'manager';
+  const isAuditor = user?.role?.toLowerCase() === 'auditor'; 
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user'); 
+    logout(); // Use the global logout function
     navigate('/login');
   };
 
@@ -96,7 +96,7 @@ function Sidebar() {
               <li><Link to="/campaigns" style={getLinkStyle('/campaigns')}>🚀 Scope 3 Campaigns</Link></li>
               <li><Link to="/alignment" style={getLinkStyle('/alignment')}>🎯 Alignment Matrix</Link></li>
               
-              {/* NEW: Added Climate Stress Testing Here */}
+              {/* Climate Stress Testing */}
               <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>
               <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
             </>
@@ -134,7 +134,7 @@ function Sidebar() {
             onMouseOver={e => e.target.style.background = '#b91c1c'}
             onMouseOut={e => e.target.style.background = '#dc2626'}
           >
-           Secure Log Out
+            Secure Log Out
          </button>
       </div>
     </nav>

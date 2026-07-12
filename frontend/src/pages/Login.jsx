@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+// 1. Import the custom hook at the top
+import { useAuth } from '../AuthContext';
 
 function Login() {
   const navigate = useNavigate();
+  
+  // 2. Extract the login function from Context
+  const { login } = useAuth();
   
   // Dual-view state management
   const [isRegistering, setIsRegistering] = useState(false);
@@ -28,7 +33,6 @@ function Login() {
     try {
       if (isRegistering) {
         // --- REGISTRATION FLOW ---
-        // Updated to use the dynamic environment variable
         await axios.post(`${apiUrl}/api/auth/register`, {
           email: formData.email,
           password: formData.password,
@@ -37,15 +41,13 @@ function Login() {
         setRegistrationSuccess(true);
       } else {
         // --- LOGIN FLOW ---
-        // Updated to use the dynamic environment variable
         const response = await axios.post(`${apiUrl}/api/auth/login`, {
           email: formData.email,
           password: formData.password
         });
         
-        const { token, user } = response.data;
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user)); // Saves role for Sidebar
+        // 3. Use the global login function (pass the user object and the token)
+        login(response.data.user, response.data.token);
 
         navigate('/dashboard');
       }

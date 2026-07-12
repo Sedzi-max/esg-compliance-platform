@@ -1,25 +1,20 @@
 const crypto = require('crypto');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-// Assuming you have a db connection file, e.g., const db = require('../config/db');
+// Database imported correctly!
+const pool = require('../db'); 
 
 // --- 1. EMISSION FACTOR ENGINE ---
-// A standard mapping of activity types to their Carbon Multipliers (kg CO2e per unit)
 const EMISSION_FACTORS = {
-    // Volume-based factors
-    'mobile_diesel_liters': 2.68,         // 1 liter of diesel = ~2.68 kg CO2e
-    'mobile_petrol_liters': 2.31,         // 1 liter of petrol = ~2.31 kg CO2e
-    'electricity_grid_kwh': 0.43,         // Ghana average grid factor (kg CO2e per kWh)
-    
-    // Financial / Spend-based factors (Estimated kg CO2e per GHC spent)
-    'spend_diesel_ghc': 0.18,             
+    'mobile_diesel_liters': 2.68,        
+    'mobile_petrol_liters': 2.31,        
+    'electricity_grid_kwh': 0.43,        
+    'spend_diesel_ghc': 0.18,            
     'spend_electricity_ghc': 0.25,
     'spend_flights_ghc': 0.85
 };
 
-// Helper function to calculate the final footprint
 const calculateCarbonFootprint = (activity_type, raw_amount) => {
-    // Look up the multiplier, default to 1.0 if not found
     const multiplier = EMISSION_FACTORS[activity_type] || 1.0; 
     return parseFloat(raw_amount) * multiplier;
 };
@@ -32,12 +27,10 @@ const processCsvUpload = async (req, res) => {
         }
 
         const fileBuffer = req.file.buffer;
-
-        // Cryptographic File Hashing (The Intake Shield)
         const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-        // Check if file was already processed
-        const hashCheck = await db.query(
+        // FIX 1: Changed db.query to pool.query
+        const hashCheck = await pool.query(
             'SELECT uploaded_at FROM uploaded_files_log WHERE file_hash = $1', 
             [fileHash]
         );
@@ -49,7 +42,6 @@ const processCsvUpload = async (req, res) => {
             });
         }
 
-        // Parsing & Graceful Upsert
         const results = [];
         const bufferStream = new Readable();
         bufferStream.push(fileBuffer);
@@ -67,16 +59,14 @@ const processCsvUpload = async (req, res) => {
                     try {
                         const { organization_id, scope_category, activity_type, raw_amount, recorded_date } = row;
                         
-                        // Safety Check: Ensure no undefined values crash the database
                         if (!organization_id || !activity_type || raw_amount === undefined) {
                             throw new Error('Missing required fields. Ensure headers match exactly: organization_id, scope_category, activity_type, raw_amount');
                         }
 
-                        // CALCULATE CARBON FOOTPRINT
                         const final_co2e = calculateCarbonFootprint(activity_type, raw_amount);
 
                         const query = `
-                            INSERT INTO emissions 
+                            INSERT INTO esg_observation
                             (organization_id, scope_category, activity_type, raw_amount, calculated_co2e, recorded_date)
                             VALUES ($1, $2, $3, $4, $5, $6)
                             ON CONFLICT ON CONSTRAINT unique_emission_log 
@@ -84,12 +74,13 @@ const processCsvUpload = async (req, res) => {
                             RETURNING id;
                         `;
                         
-                        const insertRes = await db.query(query, [
+                        // FIX 2: Changed db.query to pool.query
+                        const insertRes = await pool.query(query, [
                             organization_id, 
                             scope_category, 
                             activity_type, 
                             parseFloat(raw_amount), 
-                            final_co2e,                                 // Injecting the calculated footprint
+                            final_co2e,                                 
                             recorded_date || new Date().toISOString()
                         ]);
 
@@ -104,8 +95,8 @@ const processCsvUpload = async (req, res) => {
                     }
                 }
 
-                // Lock the file hash in the database
-                await db.query(
+                // FIX 3: Changed db.query to pool.query
+                await pool.query(
                     'INSERT INTO uploaded_files_log (file_hash, file_name) VALUES ($1, $2)',
                     [fileHash, req.file.originalname]
                 );
