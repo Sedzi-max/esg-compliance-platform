@@ -345,9 +345,25 @@ app.get('/api/observations', authorize, async (req, res) => {
 app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
         const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+
         if (!organization_id || !scope_category || !activity_type || raw_amount == null) {
-    return res.status(400).json({ error: "Missing required field(s)" });
-}
+            return res.status(400).json({ error: "Missing required field(s)" });
+        }
+
+        // Look up the metric_id that corresponds to this activity_type
+        const metricResult = await pool.query(
+            `SELECT metric_id FROM metric_definition WHERE name = $1 LIMIT 1`,
+            [activity_type]
+        );
+
+        if (metricResult.rows.length === 0) {
+            return res.status(400).json({
+                error: `No metric definition found for activity type "${activity_type}".`
+            });
+        }
+
+        const metric_id = metricResult.rows[0].metric_id;
+
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
         const quality_tier = req.file ? 'A' : 'C';
 
@@ -356,10 +372,10 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
 
         const result = await pool.query(`
             INSERT INTO esg_observation 
-            (unit_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier)
-            VALUES ($1, $2, $3, $4, $5, 'Pending', $6, $7)
+            (unit_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier)
+            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8)
             RETURNING *;
-        `, [organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
+        `, [organization_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
 
         res.json({ message: "GHG Emission securely logged!", data: result.rows[0] });
     } catch (err) {
