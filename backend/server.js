@@ -344,11 +344,14 @@ app.get('/api/observations', authorize, async (req, res) => {
 // ==========================================
 app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        const { unit_id, scope_category, activity_type, raw_amount } = req.body;
+        const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+        if (!organization_id || !scope_category || !activity_type || raw_amount == null) {
+    return res.status(400).json({ error: "Missing required field(s)" });
+}
         const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
-        const quality_tier = req.file ? 'A' : 'C'; // Auto-grades to Tier A if evidence exists
+        const quality_tier = req.file ? 'A' : 'C';
 
-        const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3; 
+        const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3;
         const calculated_co2e = Number(raw_amount) * multiplier;
 
         const result = await pool.query(`
@@ -356,7 +359,7 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
             (unit_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier)
             VALUES ($1, $2, $3, $4, $5, 'Pending', $6, $7)
             RETURNING *;
-        `, [unit_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
+        `, [organization_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
 
         res.json({ message: "GHG Emission securely logged!", data: result.rows[0] });
     } catch (err) {
