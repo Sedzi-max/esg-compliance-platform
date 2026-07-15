@@ -404,16 +404,24 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         const { id } = req.params;
         const { status } = req.body;
 
-        // FIX: observation_id is the correct PK; removed non-existent company_id scoping
-        const updatedEmission = await pool.query(
-            `UPDATE esg_observation SET status = $1 
-             WHERE observation_id = $2 
-             RETURNING *`,
-            [status, id]
-        );
+        // Admins have org-wide approval rights.
+        // Managers are restricted to their own unit (req.user.company_id is really their unit_id).
+        const updatedEmission = req.user.role === 'Admin'
+            ? await pool.query(
+                `UPDATE esg_observation SET status = $1 
+                 WHERE observation_id = $2 
+                 RETURNING *`,
+                [status, id]
+              )
+            : await pool.query(
+                `UPDATE esg_observation SET status = $1 
+                 WHERE observation_id = $2 AND unit_id = $3
+                 RETURNING *`,
+                [status, id, req.user.company_id]
+              );
 
         if (updatedEmission.rows.length === 0) {
-            return res.status(404).json({ error: "Emission record not found." });
+            return res.status(404).json({ error: "Emission record not found, or you don't have permission to approve this unit's data." });
         }
 
         res.json(updatedEmission.rows[0]);
@@ -487,6 +495,49 @@ app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res)
     } catch (err) {
         console.error("Error in bulk approval:", err.message);
         res.status(500).send('Server error during bulk approval');
+    }
+});
+
+// Create a new task assignment
+app.post('/api/tasks/assign', authorize, async (req, res) => {
+    try {
+        const { framework_code, description, severity, facility_id, due_date } = req.body;
+
+        if (!framework_code || !description || !due_date) {
+            return res.status(400).json({ error: "Missing required field(s)" });
+        }
+
+        const isExternal = facility_id === 'external_vendor';
+        const assigned_unit_id = isExternal ? null : facility_id;
+
+        const result = await pool.query(
+            `INSERT INTO compliance_task_assignment 
+             (framework_code, description, severity, assigned_unit_id, assigned_to_external, due_date, assigned_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *`,
+            [framework_code, description, severity || null, assigned_unit_id, isExternal, due_date, req.user.id || null]
+        );
+
+        res.json({ message: "Task assigned successfully", data: result.rows[0] });
+    } catch (err) {
+        console.error("Error assigning task:", err.message);
+        res.status(500).json({ error: "Failed to assign task." });
+    }
+});
+
+// Fetch all task assignments (so the dashboard reflects real state on reload)
+app.get('/api/tasks', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT ta.*, ou.name AS facility_name
+            FROM compliance_task_assignment ta
+            LEFT JOIN organization_unit ou ON ta.assigned_unit_id = ou.unit_id
+            ORDER BY ta.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching task assignments:", err.message);
+        res.status(500).json({ error: "Failed to fetch task assignments." });
     }
 });
 
