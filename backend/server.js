@@ -1073,15 +1073,11 @@ app.get('/api/scenarios', authorize, async (req, res) => {
     }
 });
 
-// ==========================================
-// SCOPE 3 CAMPAIGNS 
-// ==========================================
-
 app.post('/api/campaigns', authorize, async (req, res) => {
     try {
         const { token, supplier_name, activity_type, deadline } = req.body;
         const newCamp = await pool.query(
-            `INSERT INTO Supplier_Campaigns (token, supplier_name, activity_type, deadline, company_id)
+            `INSERT INTO Supplier_Campaigns (token, supplier_name, activity_type, deadline, unit_id)
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
             [token, supplier_name, activity_type, deadline, req.user.company_id]
         );
@@ -1096,9 +1092,9 @@ app.get('/api/public/campaigns/:token', async (req, res) => {
     try {
         const { token } = req.params;
         const result = await pool.query(
-            `SELECT sc.*, c.unit_name as company_name
+            `SELECT sc.*, c.name as company_name
              FROM Supplier_Campaigns sc
-             JOIN Organization_Unit c ON sc.company_id = c.unit_id
+             JOIN Organization_Unit c ON sc.unit_id = c.unit_id
              WHERE sc.token = $1`,
             [token]
         );
@@ -1113,46 +1109,6 @@ app.get('/api/public/campaigns/:token', async (req, res) => {
     }
 });
 
-app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (req, res) => {
-    try {
-        const { campaign_token, raw_amount } = req.body;
-        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-        const updateResult = await pool.query(
-            `UPDATE Supplier_Campaigns 
-             SET status = 'Completed', submitted_amount = $1, evidence_url = $2 
-             WHERE token = $3 RETURNING *`,
-            [raw_amount, evidence_url, campaign_token]
-        );
-
-        if (updateResult.rows.length === 0) {
-            return res.status(400).json({ error: "Invalid campaign token." });
-        }
-
-        res.json({ message: "Submission successful" });
-    } catch (err) {
-        console.error("Error saving supplier submission:", err.message);
-        res.status(500).json({ error: "Failed to submit data" });
-    }
-});
-
-app.get('/api/campaigns', authorize, async (req, res) => {
-    try {
-        const result = await pool.query(
-            `SELECT token as id, supplier_name as supplier, activity_type as metric, 
-                    deadline, status, evidence_url, created_at 
-             FROM Supplier_Campaigns 
-             WHERE unit_id = $1 
-             ORDER BY created_at DESC`,
-            [req.user.company_id]
-        );
-        res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching campaigns:", err.message);
-        res.status(500).json({ error: "Failed to fetch campaigns" });
-    }
-});
-
 app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -1160,13 +1116,26 @@ app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res
         }
         const { token } = req.params;
         const { status } = req.body;
-        
-        const updated = await pool.query(
-            `UPDATE Supplier_Campaigns SET status = $1 WHERE token = $2 AND company_id = $3 RETURNING *`,
-            [status, token, req.user.company_id]
-        );
+
+        // Admins have org-wide approval rights.
+        // Managers are restricted to campaigns belonging to their own unit.
+        const updated = req.user.role === 'Admin'
+            ? await pool.query(
+                `UPDATE Supplier_Campaigns SET status = $1 WHERE token = $2 RETURNING *`,
+                [status, token]
+              )
+            : await pool.query(
+                `UPDATE Supplier_Campaigns SET status = $1 WHERE token = $2 AND unit_id = $3 RETURNING *`,
+                [status, token, req.user.company_id]
+              );
+
+        if (updated.rows.length === 0) {
+            return res.status(404).json({ error: "Campaign not found or access denied." });
+        }
+
         res.json(updated.rows[0]);
     } catch (err) {
+        console.error("Error updating campaign status:", err.message);
         res.status(500).json({ error: "Failed to update campaign status." });
     }
 });
