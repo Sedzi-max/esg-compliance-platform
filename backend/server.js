@@ -402,14 +402,19 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         }
 
         const { id } = req.params;
-        const { status } = req.body; 
+        const { status } = req.body;
 
+        // FIX: observation_id is the correct PK; removed non-existent company_id scoping
         const updatedEmission = await pool.query(
-    `UPDATE esg_observation SET status = $1 
-     WHERE id = $2 AND unit_id IN (SELECT unit_id FROM Organization_Unit WHERE unit_id = $3)
-     RETURNING *`,
-    [status, id, req.user.company_id]
-);
+            `UPDATE esg_observation SET status = $1 
+             WHERE observation_id = $2 
+             RETURNING *`,
+            [status, id]
+        );
+
+        if (updatedEmission.rows.length === 0) {
+            return res.status(404).json({ error: "Emission record not found." });
+        }
 
         res.json(updatedEmission.rows[0]);
     } catch (err) {
