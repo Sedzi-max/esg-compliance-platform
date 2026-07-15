@@ -350,7 +350,6 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
             return res.status(400).json({ error: "Missing required field(s)" });
         }
 
-        // Look up the metric_id that corresponds to this activity_type
         const metricResult = await pool.query(
             `SELECT metric_id FROM metric_definition WHERE name = $1 LIMIT 1`,
             [activity_type]
@@ -372,8 +371,8 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
 
         const result = await pool.query(`
             INSERT INTO esg_observation 
-            (unit_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier)
-            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8)
+            (unit_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier, "timestamp")
+            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, NOW())
             RETURNING *;
         `, [organization_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
 
