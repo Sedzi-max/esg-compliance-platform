@@ -16,48 +16,48 @@ function EvidenceLocker() {
     }, []);
 
     const fetchDocuments = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const config = { headers: { Authorization: `Bearer ${token}` } };
-            
-            // 1. Fetch BOTH internal emissions and external vendor campaigns simultaneously
-            const [emissionsRes, campaignsRes] = await Promise.all([
-                axios.get('/api/emissions', config),
-                axios.get('/api/campaigns', config)
-            ]);
-            
-            // 2. Process Internal Data
-            const internalDocs = emissionsRes.data
-                .filter(record => record.evidence_file_url)
-                .map(doc => ({
-                    ...doc,
-                    source: 'Internal'
-                }));
+    setLoading(true);
+    try {
+        const token = localStorage.getItem('token');
+        const config = { headers: { Authorization: `Bearer ${token}` } };
+        
+        const [emissionsRes, campaignsRes] = await Promise.all([
+            axios.get('/api/emissions', config),
+            axios.get('/api/campaigns', config)
+        ]);
+        
+        // Process Internal Data — normalize field names to match what the rest of this component expects
+        const internalDocs = emissionsRes.data
+            .filter(record => record.evidence_url)
+            .map(doc => ({
+                ...doc,
+                id: doc.observation_id,          // real PK column
+                evidence_file_url: doc.evidence_url,
+                recorded_date: doc.timestamp,
+                source: 'Internal'
+            }));
 
-            // 3. Process External Vendor Data (Map it to look like internal data for the UI)
-            const externalDocs = campaignsRes.data
-                .filter(camp => camp.evidence_url) // Only grab campaigns where the vendor attached a file
-                .map(camp => ({
-                    id: camp.id, // For campaigns, the ID is the token string
-                    evidence_file_url: camp.evidence_url,
-                    organization_name: `Supplier: ${camp.supplier}`, 
-                    activity_type: camp.metric,
-                    recorded_date: camp.created_at,
-                    quality_tier: 'A', // Primary receipts default to Tier A
-                    // Map 'Completed' campaigns to 'Pending' so they show up in the verification queue
-                    status: camp.status === 'Completed' ? 'Pending' : camp.status,
-                    source: 'External'
-                }));
+        // Process External Vendor Data (unchanged)
+        const externalDocs = campaignsRes.data
+            .filter(camp => camp.evidence_url)
+            .map(camp => ({
+                id: camp.id,
+                evidence_file_url: camp.evidence_url,
+                organization_name: `Supplier: ${camp.supplier}`, 
+                activity_type: camp.metric,
+                recorded_date: camp.created_at,
+                quality_tier: 'A',
+                status: camp.status === 'Completed' ? 'Pending' : camp.status,
+                source: 'External'
+            }));
 
-            // 4. Combine the vaults
-            setDocuments([...internalDocs, ...externalDocs]);
-        } catch (err) {
-            console.error("Failed to load evidence locker:", err);
-        } finally {
-            setLoading(false);
-        }
-    };
+        setDocuments([...internalDocs, ...externalDocs]);
+    } catch (err) {
+        console.error("Failed to load evidence locker:", err);
+    } finally {
+        setLoading(false);
+    }
+};
 
     const handleDocumentVerification = async (id, newStatus, source) => {
         try {
