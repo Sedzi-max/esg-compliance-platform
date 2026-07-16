@@ -11,16 +11,12 @@ const path = require('path');
 const auditorGuard = require('./middleware/auditorGuard');
 const uploadRoutes = require('./routes/uploadRoutes');
 
-// --- NEW IMPORTS FOR CSV PARSING ---
-const csv = require('csv-parser');
-const { Readable } = require('stream');
 const app = express();
 
 // ==========================================
-// MULTER CONFIGURATIONS
+// MULTER / R2 CONFIGURATION
 // ==========================================
 
-// Setup local storage for physical files (Evidence PDFs, Receipts)
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const multerS3 = require('multer-s3');
@@ -59,7 +55,6 @@ app.use(cors({
 }));
 
 app.use(express.json());
-// Expose the uploads folder so the React frontend can fetch the files
 app.use('/api', uploadRoutes);
 
 // ==========================================
@@ -90,7 +85,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
         const query = `
             -- 1. FETCH CARBON DATA
             SELECT 
-                e.observation_id as id,  -- 👈 FIXED: Changed e.id to e.observation_id
+                e.observation_id as id,
                 'GHG' as type, 
                 u.name as organization_name,
                 e.scope_category,
@@ -106,7 +101,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 COALESCE(e.created_at, e.timestamp) as created_at 
             FROM esg_observation e
             JOIN organization_unit u ON e.unit_id = u.unit_id
-            WHERE e.scope_category IS NOT NULL -- 👈 NEW: Prevents duplicate ghost rows
+            WHERE e.scope_category IS NOT NULL
             
             UNION ALL
             
@@ -133,7 +128,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 COALESCE(o.timestamp, o.created_at) as created_at 
             FROM esg_observation o
             JOIN organization_unit u ON o.unit_id = u.unit_id
-            WHERE o.pillar IS NOT NULL -- 👈 NEW: Prevents duplicate ghost rows
+            WHERE o.pillar IS NOT NULL
             
             ORDER BY created_at DESC;
         `;
@@ -147,7 +142,6 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
 
 // Setup memory storage specifically for reading CSV text directly into the pipeline
 const memoryUpload = multer({ storage: multer.memoryStorage() });
-
 
 // ==========================================
 // HEALTH CHECK ROUTE (Unprotected)
@@ -169,15 +163,12 @@ app.get('/api/health', async (req, res) => {
 // CREATE a new Organization Unit
 app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
-        // 1. Extract parent_unit_id directly from the React payload
         const { name, unit_type, jurisdiction, parent_unit_id } = req.body;
-        
-        // 2. Format the ID: If React sends an empty string, turn it into a SQL NULL
         const finalParentId = parent_unit_id === "" || !parent_unit_id ? null : parent_unit_id;
 
         const newOrg = await pool.query(
             "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, parent_unit_id) VALUES ($1, $2, $3, $4) RETURNING *",
-            [name, unit_type, jurisdiction, finalParentId] // 3. Inject the formatted ID
+            [name, unit_type, jurisdiction, finalParentId]
         );
         
         res.json(newOrg.rows[0]);
@@ -199,7 +190,6 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
 
         const safeParentId = parent_unit_id === "" ? null : parent_unit_id;
 
-        // FIX: Removed the non-existent 'company_id' from the WHERE clause
         const updatedOrg = await pool.query(
             `UPDATE Organization_Unit 
              SET name = $1, parent_unit_id = $2, equity_share_percentage = $3, has_operational_control = $4 
@@ -218,7 +208,7 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
     }
 });
 
-// READ all Organization Units
+// READ all Organization Units (full hierarchy under the root company)
 app.get('/api/organizations', authorize, async (req, res) => {
     try {
         const query = `
@@ -258,6 +248,9 @@ app.get('/api/organizations', authorize, async (req, res) => {
 });
 
 // DELETE an Organization Unit
+// (Note: this was previously defined twice in the file — the duplicate, buggy
+// version referencing a non-existent 'company_id' column has been removed.
+// This is the single, corrected definition.)
 app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
@@ -267,12 +260,12 @@ app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) =
         const { id } = req.params;
 
         const deletedOrg = await pool.query(
-            "DELETE FROM Organization_Unit WHERE unit_id = $1 AND company_id = $2 RETURNING *",
-            [id, req.user.company_id]
+            "DELETE FROM Organization_Unit WHERE unit_id = $1 RETURNING *",
+            [id]
         );
 
         if (deletedOrg.rows.length === 0) {
-            return res.status(404).json({ error: "Organization not found or you do not have permission." });
+            return res.status(404).json({ error: "Organization not found." });
         }
 
         res.json({ message: "Organization deleted successfully." });
@@ -334,7 +327,6 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
             ? null 
             : text_value;
 
-        // Look up metric_id the same way the GHG emissions route does
         const metricResult = await pool.query(
             `SELECT metric_id FROM metric_definition WHERE name = $1 LIMIT 1`,
             [metric_name]
@@ -431,18 +423,6 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
     }
 });
 
-const crypto = require('crypto'); 
-
-// --- 1. EMISSION FACTOR ENGINE ---
-const EMISSION_FACTORS = {
-    'mobile_diesel_liters': 2.68,
-    'mobile_petrol_liters': 2.31,
-    'electricity_grid_kwh': 0.43,
-    'spend_diesel_ghc': 0.18,            
-    'spend_electricity_ghc': 0.25,
-    'spend_flights_ghc': 0.85
-};
-
 app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -530,11 +510,11 @@ app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res)
         }
 
         const updatedEmissions = await pool.query(
-    `UPDATE esg_observation SET status = 'Approved' 
-     WHERE status = 'Pending' AND unit_id IN (SELECT unit_id FROM Organization_Unit WHERE unit_id = $1)
-     RETURNING *`,
-    [req.user.company_id]
-);
+            `UPDATE esg_observation SET status = 'Approved' 
+             WHERE status = 'Pending' AND unit_id IN (SELECT unit_id FROM Organization_Unit WHERE unit_id = $1)
+             RETURNING *`,
+            [req.user.company_id]
+        );
 
         res.json({ 
             message: `Successfully approved ${updatedEmissions.rowCount} records.`, 
@@ -546,7 +526,10 @@ app.put('/api/emissions/bulk-approve', authorize, auditorGuard, async (req, res)
     }
 });
 
-// Create a new task assignment
+// ==========================================
+// COMPLIANCE TASK ASSIGNMENT ROUTES
+// ==========================================
+
 app.post('/api/tasks/assign', authorize, async (req, res) => {
     try {
         const { framework_code, description, severity, facility_id, due_date } = req.body;
@@ -573,7 +556,6 @@ app.post('/api/tasks/assign', authorize, async (req, res) => {
     }
 });
 
-// Fetch all task assignments (so the dashboard reflects real state on reload)
 app.get('/api/tasks', authorize, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -606,7 +588,7 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
             FROM esg_observation e
             JOIN Organization_Unit u ON e.unit_id = u.unit_id
             JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-            WHERE u.unit_id = $1   -- FIXED: Changed company_id to unit_id
+            WHERE u.unit_id = $1
               AND e.status = 'Approved'
               AND fm.framework_name = $2
               AND EXTRACT(YEAR FROM e.created_at) = $3 
@@ -630,7 +612,7 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.unit_id = $1   -- FIXED
+                WHERE u.unit_id = $1
                   AND e.status = 'Approved' 
                   AND EXTRACT(YEAR FROM e.created_at) = $2
             )
@@ -666,7 +648,7 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.unit_id = $1  -- FIXED
+                WHERE u.unit_id = $1
                   AND e.status = 'Approved' 
                   AND EXTRACT(YEAR FROM e.created_at) = $2
                 GROUP BY fm.framework_code
@@ -695,17 +677,16 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
 // ADMIN FRAMEWORK MAPPING ROUTES
 // ==========================================
 
-// FIX 1: Changed route from '/api/framework-mappings' to '/api/mappings' to match the frontend
 app.get('/api/mappings', authorize, async (req, res) => {
     try {
         const query = `
             SELECT 
-                m.metric_name AS metric_name, -- FIX 2: Changed m.name to m.metric_name
+                m.metric_name AS metric_name,
                 f.framework_name,
                 f.framework_code,
                 f.description
             FROM Framework_Mappings f
-            JOIN Metric_Definition m ON f.activity_type = m.metric_name -- FIX 3: Changed m.name to m.metric_name
+            JOIN Metric_Definition m ON f.activity_type = m.metric_name
             ORDER BY f.framework_name, m.metric_name;
         `;
         const mappings = await pool.query(query);
@@ -734,30 +715,35 @@ app.post('/api/mappings', authorize, async (req, res) => {
     }
 });
 
-app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
+app.delete('/api/mappings/:id', authorize, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
-            return res.status(403).json({ error: "Access Denied: Admins only." });
+            return res.status(403).json({ error: "Access Denied." });
         }
-
-        const { id } = req.params;
-
-        const deletedOrg = await pool.query(
-            "DELETE FROM Organization_Unit WHERE unit_id = $1 RETURNING *",
-            [id]
-        );
-
-        if (deletedOrg.rows.length === 0) {
-            return res.status(404).json({ error: "Organization not found." });
-        }
-
-        res.json({ message: "Organization deleted successfully." });
+        await pool.query('DELETE FROM Framework_Mappings WHERE id = $1', [req.params.id]);
+        res.json({ message: "Mapping deleted successfully" });
     } catch (err) {
-        console.error(err.message);
-        if (err.code === '23503') {
-            return res.status(400).json({ error: "Cannot delete: This organization already has emissions or observations logged against it." });
-        }
-        res.status(500).json({ error: "Failed to delete organization" });
+        console.error(err);
+        res.status(500).json({ error: "Failed to delete mapping" });
+    }
+});
+
+// ==========================================
+// NET-ZERO TARGET ROUTES (RESTORED — was missing)
+// ==========================================
+app.get('/api/targets', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT t.*, o.name as organization_name 
+            FROM reduction_targets t
+            JOIN Organization_Unit o ON t.unit_id = o.unit_id
+            WHERE o.unit_id = $1
+            ORDER BY created_at DESC
+        `, [req.user.company_id]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching targets:", err.message);
+        res.status(500).json({ error: "Failed to load targets." });
     }
 });
 
@@ -808,11 +794,9 @@ app.post('/api/auth/register', async (req, res) => {
         if (!company_name) return res.status(400).json({ error: "Company name required." });
         if (!password) return res.status(400).json({ error: "Password required." });
 
-        // 1. Generate the missing bcrypt hash for the password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // 2. Start the transaction using the exact same CLIENT
         await client.query('BEGIN');
 
         const newOrgResult = await client.query(
@@ -822,7 +806,6 @@ app.post('/api/auth/register', async (req, res) => {
 
         const newUnitId = newOrgResult.rows[0].unit_id;
 
-        // 3. Insert the user directly linking the unit_id 
         const newUserResult = await client.query(
             `INSERT INTO users (email, password_hash, role, unit_id, status) 
              VALUES ($1, $2, $3, $4, $5) RETURNING user_id, email, role, unit_id`,
@@ -838,7 +821,6 @@ app.post('/api/auth/register', async (req, res) => {
         console.error("REGISTRATION FAILED:", err); 
         res.status(500).json({ error: "Check server logs for registration error." });
     } finally {
-        // 4. Safely release the client back to the pool
         client.release();
     }
 });
@@ -847,7 +829,6 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // A. Query the database, fetching unit_id instead of the non-existent company_id
     const user = await pool.query(
       'SELECT user_id, email, password_hash, role, unit_id, status FROM users WHERE email = $1',
       [email]
@@ -866,7 +847,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(403).json({ error: "Access Denied: Your corporate account is still pending verification." });
     }
 
-    // B. Inject unit_id into the session token but map it to company_id so your legacy routes still work!
     const token = jwt.sign(
       { 
           id: user.rows[0].user_id, 
@@ -1059,10 +1039,7 @@ app.post('/api/scenarios', authorize, auditorGuard, async (req, res) => {
         const insertQuery = `
             INSERT INTO Climate_Scenario_Analysis 
             (unit_id, assessment_year, scenario_name, time_horizon, physical_risk_impact, transition_risk_impact, projected_financial_impact_ghs, mitigation_strategy) 
-            VALUES (
-    (SELECT unit_id FROM Organization_Unit WHERE unit_id = $1 LIMIT 1), 
-    $2, $3, $4, $5, $6, $7, $8
-) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *;
         `;
 
@@ -1116,6 +1093,10 @@ app.get('/api/scenarios', authorize, async (req, res) => {
     }
 });
 
+// ==========================================
+// SUPPLIER CAMPAIGNS (SCOPE 3)
+// ==========================================
+
 app.post('/api/campaigns', authorize, async (req, res) => {
     try {
         const { token, supplier_name, activity_type, deadline } = req.body;
@@ -1128,6 +1109,24 @@ app.post('/api/campaigns', authorize, async (req, res) => {
     } catch (err) {
         console.error("Error creating campaign:", err.message);
         res.status(500).json({ error: "Failed to create campaign" });
+    }
+});
+
+// RESTORED — this route was missing from the file, causing 404s on the Evidence Locker
+app.get('/api/campaigns', authorize, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT token as id, supplier_name as supplier, activity_type as metric, 
+                    deadline, status, evidence_url, created_at 
+             FROM Supplier_Campaigns 
+             WHERE unit_id = $1 
+             ORDER BY created_at DESC`,
+            [req.user.company_id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching campaigns:", err.message);
+        res.status(500).json({ error: "Failed to fetch campaigns" });
     }
 });
 
@@ -1152,6 +1151,29 @@ app.get('/api/public/campaigns/:token', async (req, res) => {
     }
 });
 
+app.post('/api/public/supplier-submit', upload.single('evidence_file'), async (req, res) => {
+    try {
+        const { campaign_token, raw_amount } = req.body;
+        const evidence_url = req.file ? req.file.key : null;
+
+        const updateResult = await pool.query(
+            `UPDATE Supplier_Campaigns 
+             SET status = 'Completed', submitted_amount = $1, evidence_url = $2 
+             WHERE token = $3 RETURNING *`,
+            [raw_amount, evidence_url, campaign_token]
+        );
+
+        if (updateResult.rows.length === 0) {
+            return res.status(400).json({ error: "Invalid campaign token." });
+        }
+
+        res.json({ message: "Submission successful" });
+    } catch (err) {
+        console.error("Error saving supplier submission:", err.message);
+        res.status(500).json({ error: "Failed to submit data" });
+    }
+});
+
 app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
@@ -1160,8 +1182,6 @@ app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res
         const { token } = req.params;
         const { status } = req.body;
 
-        // Admins have org-wide approval rights.
-        // Managers are restricted to campaigns belonging to their own unit.
         const updated = req.user.role === 'Admin'
             ? await pool.query(
                 `UPDATE Supplier_Campaigns SET status = $1 WHERE token = $2 RETURNING *`,
@@ -1199,7 +1219,7 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
                     SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
-                WHERE u.unit_id = $1   -- FIXED: Changed from company_id to unit_id
+                WHERE u.unit_id = $1
                   AND e.status = 'Approved'
                 GROUP BY month_num
             )
@@ -1251,6 +1271,9 @@ app.get('/api/initiatives', authorize, async (req, res) => {
     }
 });
 
+// ==========================================
+// EVIDENCE VIEWING (R2 PRESIGNED URLS)
+// ==========================================
 app.get('/api/evidence/:key/view', authorize, async (req, res) => {
     try {
         const { key } = req.params;
@@ -1265,15 +1288,14 @@ app.get('/api/evidence/:key/view', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to generate evidence link." });
     }
 });
+
 // ==========================================
 // ONE-TIME DATABASE SCHEMA PATCH
 // ==========================================
 pool.query(`
-    -- Patch GHG Table
     ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
     ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
 
-    -- Patch Observation Table (The missing piece!)
     ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
     ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
 `).then(() => {
