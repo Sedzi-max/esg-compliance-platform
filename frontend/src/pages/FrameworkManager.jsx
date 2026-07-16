@@ -10,7 +10,7 @@ function FrameworkManager() {
         framework_name: 'CSRD / ESRS',
         framework_code: '',
         description: '',
-        activity_type: 'mobile_diesel' // Default starting value
+        activity_type: 'mobile_diesel_liters' // Default starting value — matches real metric_definition name
     });
 
     useEffect(() => {
@@ -51,12 +51,12 @@ function FrameworkManager() {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (mappingId) => {
         if (!window.confirm("Are you sure you want to delete this mapping rule? It will immediately affect generated reports.")) return;
         
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/mappings/${id}`, {
+            await axios.delete(`/api/mappings/${mappingId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             fetchMappings();
@@ -122,16 +122,27 @@ function FrameworkManager() {
                                 value={formData.activity_type} onChange={e => setFormData({...formData, activity_type: e.target.value})}
                                 style={inputStyle}
                             >
+                                {/* Values corrected to match the real metric_definition names — previously
+                                    these (mobile_diesel, purchased_electricity, business_travel_flights,
+                                    waste_landfill, stationary_natural_gas) didn't match anything in the
+                                    metrics table, so mappings created here could never actually link to
+                                    a real metric downstream. */}
                                 <optgroup label="Scope 1 (Direct)">
-                                    <option value="mobile_diesel">Mobile Combustion (Diesel)</option>
-                                    <option value="stationary_natural_gas">Stationary Combustion (Natural Gas)</option>
+                                    <option value="mobile_diesel_liters">Mobile Combustion (Diesel)</option>
+                                    <option value="mobile_petrol_liters">Mobile Combustion (Petrol)</option>
+                                    <option value="generator_diesel_liters">Mobile Combustion (Generator Diesel)</option>
+                                    <option value="stationary_natural_gas_therms">Stationary Combustion (Natural Gas)</option>
                                 </optgroup>
                                 <optgroup label="Scope 2 (Indirect)">
-                                    <option value="purchased_electricity">Purchased Electricity</option>
+                                    <option value="electricity_grid_kwh">Purchased Electricity (Grid)</option>
+                                    <option value="district_heating_kwh">Purchased District Heating</option>
                                 </optgroup>
                                 <optgroup label="Scope 3 (Value Chain)">
-                                    <option value="business_travel_flights">Business Travel (Flights)</option>
-                                    <option value="waste_landfill">Waste Generated in Operations</option>
+                                    <option value="travel_flight_short_haul_km">Business Travel (Short-Haul Flights)</option>
+                                    <option value="travel_flight_long_haul_km">Business Travel (Long-Haul Flights)</option>
+                                    <option value="travel_hotel_stay_nights">Business Travel (Hotel Stays)</option>
+                                    <option value="waste_landfill_kg">Waste Sent to Landfill</option>
+                                    <option value="waste_recycled_kg">Waste Recycled</option>
                                 </optgroup>
                             </select>
                         </div>
@@ -162,7 +173,7 @@ function FrameworkManager() {
                                 </thead>
                                 <tbody>
                                     {mappings.map((rule) => (
-                                        <tr key={rule.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <tr key={rule.mapping_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                             <td style={{ padding: '16px', fontWeight: '700', color: '#111827' }}>{rule.framework_name}</td>
                                             <td style={{ padding: '16px', color: '#3b82f6', fontWeight: '600' }}>{rule.framework_code}</td>
                                             <td style={{ padding: '16px', color: '#4b5563' }}>{rule.description}</td>
@@ -170,7 +181,7 @@ function FrameworkManager() {
                                                 {rule.activity_type}
                                             </td>
                                             <td style={{ padding: '16px' }}>
-                                                <button onClick={() => handleDelete(rule.id)} style={{ color: '#ef4444', backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                                                <button onClick={() => handleDelete(rule.mapping_id)} style={{ color: '#ef4444', backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
                                                     Remove
                                                 </button>
                                             </td>

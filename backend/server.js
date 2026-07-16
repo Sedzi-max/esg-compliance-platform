@@ -682,13 +682,15 @@ app.get('/api/mappings', authorize, async (req, res) => {
     try {
         const query = `
             SELECT 
-                m.metric_name AS metric_name,
+                f.mapping_id,
+                m.name AS metric_name,
                 f.framework_name,
                 f.framework_code,
-                f.description
+                f.description,
+                f.activity_type
             FROM Framework_Mappings f
-            JOIN Metric_Definition m ON f.activity_type = m.metric_name
-            ORDER BY f.framework_name, m.metric_name;
+            JOIN Metric_Definition m ON f.activity_type = m.name
+            ORDER BY f.framework_name, m.name;
         `;
         const mappings = await pool.query(query);
         res.status(200).json(mappings.rows);
@@ -721,7 +723,18 @@ app.delete('/api/mappings/:id', authorize, async (req, res) => {
         if (req.user.role !== 'Admin') {
             return res.status(403).json({ error: "Access Denied." });
         }
-        await pool.query('DELETE FROM Framework_Mappings WHERE id = $1', [req.params.id]);
+
+        const { id } = req.params;
+
+        const result = await pool.query(
+            'DELETE FROM Framework_Mappings WHERE mapping_id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Mapping not found." });
+        }
+
         res.json({ message: "Mapping deleted successfully" });
     } catch (err) {
         console.error(err);
