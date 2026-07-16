@@ -21,12 +21,25 @@ const app = express();
 // ==========================================
 
 // Setup local storage for physical files (Evidence PDFs, Receipts)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/') 
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const multerS3 = require('multer-s3');
+
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname))
+});
+
+const storage = multerS3({
+  s3: s3Client,
+  bucket: process.env.R2_BUCKET_NAME,
+  key: function (req, file, cb) {
+    const uniqueName = `${Date.now()}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
   }
 });
 const upload = multer({ storage: storage });
@@ -47,7 +60,6 @@ app.use(cors({
 
 app.use(express.json());
 // Expose the uploads folder so the React frontend can fetch the files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api', uploadRoutes);
 
 // ==========================================
@@ -209,11 +221,35 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
 // READ all Organization Units
 app.get('/api/organizations', authorize, async (req, res) => {
     try {
-        const allOrgs = await pool.query(
-            // FIXED: Changed from company_id to unit_id
-            "SELECT * FROM Organization_Unit WHERE unit_id = $1 ORDER BY created_at DESC", 
-            [req.user.company_id]
-        );
+        const query = `
+            WITH RECURSIVE 
+            root_finder AS (
+                SELECT unit_id, parent_unit_id, name
+                FROM Organization_Unit
+                WHERE unit_id = $1
+
+                UNION ALL
+
+                SELECT ou.unit_id, ou.parent_unit_id, ou.name
+                FROM Organization_Unit ou
+                JOIN root_finder rf ON ou.unit_id = rf.parent_unit_id
+            ),
+            root_unit AS (
+                SELECT unit_id FROM root_finder WHERE parent_unit_id IS NULL
+                LIMIT 1
+            ),
+            org_tree AS (
+                SELECT * FROM Organization_Unit WHERE unit_id = (SELECT unit_id FROM root_unit)
+
+                UNION ALL
+
+                SELECT ou.*
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT * FROM org_tree ORDER BY created_at DESC;
+        `;
+        const allOrgs = await pool.query(query, [req.user.company_id]);
         res.json(allOrgs.rows);
     } catch (err) {
         console.error(err.message);
@@ -284,9 +320,8 @@ app.get('/api/metrics', authorize, async (req, res) => {
 app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
         let { unit_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
-        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
+        const evidence_url = req.file ? req.file.key : null;
 
-        // FormData turns empty variables into literal text strings. We must convert them back.
         if (!unit_id || unit_id === 'undefined' || unit_id === 'null' || unit_id === '') {
             return res.status(400).json({ error: "Please select an Organization from the dropdown." });
         }
@@ -299,12 +334,26 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
             ? null 
             : text_value;
 
+        // Look up metric_id the same way the GHG emissions route does
+        const metricResult = await pool.query(
+            `SELECT metric_id FROM metric_definition WHERE name = $1 LIMIT 1`,
+            [metric_name]
+        );
+
+        if (metricResult.rows.length === 0) {
+            return res.status(400).json({
+                error: `No metric definition found for "${metric_name}".`
+            });
+        }
+
+        const metric_id = metricResult.rows[0].metric_id;
+
         const result = await pool.query(`
             INSERT INTO ESG_Observation 
-            (unit_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_file_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (unit_id, metric_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_url, "timestamp")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             RETURNING *;
-        `, [unit_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
+        `, [unit_id, metric_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
 
         res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
@@ -362,8 +411,7 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
         }
 
         const metric_id = metricResult.rows[0].metric_id;
-
-        const evidence_url = req.file ? `/uploads/${req.file.filename}` : null;
+        const evidence_url = req.file ? req.file.key : null;
         const quality_tier = req.file ? 'A' : 'C';
 
         const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3;
@@ -686,35 +734,30 @@ app.post('/api/mappings', authorize, async (req, res) => {
     }
 });
 
-app.delete('/api/mappings/:id', authorize, async (req, res) => {
+app.delete('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
     try {
         if (req.user.role !== 'Admin') {
-            return res.status(403).json({ error: "Access Denied." });
+            return res.status(403).json({ error: "Access Denied: Admins only." });
         }
-        await pool.query('DELETE FROM Framework_Mappings WHERE id = $1', [req.params.id]);
-        res.json({ message: "Mapping deleted successfully" });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to delete mapping" });
-    }
-});
 
-// ==========================================
-// NET-ZERO TARGET ROUTES (PATCHED)
-// ==========================================
-app.get('/api/targets', authorize, async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT t.*, o.name as organization_name 
-            FROM reduction_targets t
-            JOIN Organization_Unit o ON t.unit_id = o.unit_id
-            WHERE o.unit_id = $1  -- FIXED
-            ORDER BY created_at DESC
-        `, [req.user.company_id]);
-        res.json(result.rows);
+        const { id } = req.params;
+
+        const deletedOrg = await pool.query(
+            "DELETE FROM Organization_Unit WHERE unit_id = $1 RETURNING *",
+            [id]
+        );
+
+        if (deletedOrg.rows.length === 0) {
+            return res.status(404).json({ error: "Organization not found." });
+        }
+
+        res.json({ message: "Organization deleted successfully." });
     } catch (err) {
-        console.error("Error fetching targets:", err.message);
-        res.status(500).json({ error: "Failed to load targets." });
+        console.error(err.message);
+        if (err.code === '23503') {
+            return res.status(400).json({ error: "Cannot delete: This organization already has emissions or observations logged against it." });
+        }
+        res.status(500).json({ error: "Failed to delete organization" });
     }
 });
 
@@ -1208,6 +1251,20 @@ app.get('/api/initiatives', authorize, async (req, res) => {
     }
 });
 
+app.get('/api/evidence/:key/view', authorize, async (req, res) => {
+    try {
+        const { key } = req.params;
+        const command = new GetObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: key,
+        });
+        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+        res.json({ url: signedUrl });
+    } catch (err) {
+        console.error("Error generating evidence URL:", err.message);
+        res.status(500).json({ error: "Failed to generate evidence link." });
+    }
+});
 // ==========================================
 // ONE-TIME DATABASE SCHEMA PATCH
 // ==========================================

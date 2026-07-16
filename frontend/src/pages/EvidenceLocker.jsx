@@ -5,6 +5,7 @@ function EvidenceLocker() {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('Pending'); 
+    const [viewingKey, setViewingKey] = useState(null); // tracks which doc's link is being fetched
 
     // Role verification
     const userStr = localStorage.getItem('user');
@@ -16,54 +17,53 @@ function EvidenceLocker() {
     }, []);
 
     const fetchDocuments = async () => {
-    setLoading(true);
-    try {
-        const token = localStorage.getItem('token');
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        
-        const [emissionsRes, campaignsRes] = await Promise.all([
-            axios.get('/api/emissions', config),
-            axios.get('/api/campaigns', config)
-        ]);
-        
-        // Process Internal Data — normalize field names to match what the rest of this component expects
-        const internalDocs = emissionsRes.data
-            .filter(record => record.evidence_url)
-            .map(doc => ({
-                ...doc,
-                id: doc.observation_id,          // real PK column
-                evidence_file_url: doc.evidence_url,
-                recorded_date: doc.timestamp,
-                source: 'Internal'
-            }));
+        setLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        // Process External Vendor Data (unchanged)
-        const externalDocs = campaignsRes.data
-            .filter(camp => camp.evidence_url)
-            .map(camp => ({
-                id: camp.id,
-                evidence_file_url: camp.evidence_url,
-                organization_name: `Supplier: ${camp.supplier}`, 
-                activity_type: camp.metric,
-                recorded_date: camp.created_at,
-                quality_tier: 'A',
-                status: camp.status === 'Completed' ? 'Pending' : camp.status,
-                source: 'External'
-            }));
+            const [emissionsRes, campaignsRes] = await Promise.all([
+                axios.get('/api/emissions', config).catch(err => { console.error("Emissions fetch failed:", err); return { data: [] }; }),
+                axios.get('/api/campaigns', config).catch(err => { console.error("Campaigns fetch failed:", err); return { data: [] }; })
+            ]);
 
-        setDocuments([...internalDocs, ...externalDocs]);
-    } catch (err) {
-        console.error("Failed to load evidence locker:", err);
-    } finally {
-        setLoading(false);
-    }
-};
+            // Process Internal Data — normalize field names to match what the rest of this component expects
+            const internalDocs = emissionsRes.data
+                .filter(record => record.evidence_url)
+                .map(doc => ({
+                    ...doc,
+                    id: doc.observation_id,          // real PK column
+                    evidence_file_url: doc.evidence_url, // this is now an R2 object key, not a path
+                    recorded_date: doc.timestamp,
+                    source: 'Internal'
+                }));
+
+            // Process External Vendor Data
+            const externalDocs = campaignsRes.data
+                .filter(camp => camp.evidence_url)
+                .map(camp => ({
+                    id: camp.id,
+                    evidence_file_url: camp.evidence_url, // also an R2 object key
+                    organization_name: `Supplier: ${camp.supplier}`, 
+                    activity_type: camp.metric,
+                    recorded_date: camp.created_at,
+                    quality_tier: 'A',
+                    status: camp.status === 'Completed' ? 'Pending' : camp.status,
+                    source: 'External'
+                }));
+
+            setDocuments([...internalDocs, ...externalDocs]);
+        } catch (err) {
+            console.error("Failed to load evidence locker:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleDocumentVerification = async (id, newStatus, source) => {
         try {
             const token = localStorage.getItem('token');
             
-            // Route the API call based on which vault the document came from
             if (source === 'External') {
                 await axios.put(`/api/campaigns/${id}/status`, { status: newStatus }, {
                     headers: { Authorization: `Bearer ${token}` }
@@ -74,10 +74,27 @@ function EvidenceLocker() {
                 });
             }
             
-            // Update UI instantly
             setDocuments(documents.map(doc => doc.id === id ? { ...doc, status: newStatus } : doc));
         } catch (err) {
             alert("Failed to update document status. Ensure you have the correct permissions.");
+        }
+    };
+
+    // Fetches a fresh, temporary signed URL from the backend and opens it,
+    // instead of linking directly to the (now private) R2 object.
+    const handleViewEvidence = async (key) => {
+        setViewingKey(key);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(`/api/evidence/${key}/view`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            window.open(res.data.url, '_blank');
+        } catch (err) {
+            console.error("Failed to load evidence file:", err);
+            alert("Failed to load evidence file. It may have been removed or the link expired.");
+        } finally {
+            setViewingKey(null);
         }
     };
 
@@ -141,14 +158,17 @@ function EvidenceLocker() {
                                 <span style={{ fontSize: '48px', marginBottom: '12px' }}>
                                     {doc.evidence_file_url.endsWith('.pdf') ? '📄' : '🖼️'}
                                 </span>
-                                <a 
-                                    href={`https://esg-compliance-platform-production.up.railway.app${doc.evidence_file_url}`} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    style={{ color: '#2563eb', fontWeight: '700', fontSize: '14px', textDecoration: 'none', textAlign: 'center' }}
+                                <button
+                                    onClick={() => handleViewEvidence(doc.evidence_file_url)}
+                                    disabled={viewingKey === doc.evidence_file_url}
+                                    style={{
+                                        color: '#2563eb', fontWeight: '700', fontSize: '14px', textDecoration: 'none',
+                                        textAlign: 'center', background: 'none', border: 'none',
+                                        cursor: viewingKey === doc.evidence_file_url ? 'wait' : 'pointer', padding: 0
+                                    }}
                                 >
-                                    {getFileName(doc.evidence_file_url)}
-                                </a>
+                                    {viewingKey === doc.evidence_file_url ? 'Loading...' : getFileName(doc.evidence_file_url)}
+                                </button>
                             </div>
 
                             <div style={{ padding: '20px' }}>
