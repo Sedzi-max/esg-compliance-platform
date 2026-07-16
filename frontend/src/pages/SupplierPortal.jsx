@@ -4,13 +4,14 @@ import axios from 'axios';
 
 function SupplierPortal() {
   const { token } = useParams();
-  
+
   // State Matrix
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
   // Form Submission State
   const [amount, setAmount] = useState('');
@@ -21,24 +22,19 @@ function SupplierPortal() {
   }, [token]);
 
   const fetchCampaignDetails = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      // Endpoint retrieves metadata based on the campaign token string
-      const response = await axios.get(`/api/public/campaigns/${token}`).catch(() => {
-        // Fallback demo mock metadata matching the generated campaign tokens
-        return {
-          data: {
-            supplier_name: 'Dangote Logistics Hub',
-            activity_type: 'mobile_diesel_liters',
-            company_name: 'OB Corporate Group',
-            deadline: '2026-07-31'
-          }
-        };
-      });
-      
+      // Endpoint retrieves metadata based on the campaign token string.
+      // No fallback/mock data here — if this fails, the supplier needs to see
+      // a real error, not a fabricated campaign that could mislead them into
+      // submitting data against the wrong (or no) request.
+      const response = await axios.get(`/api/public/campaigns/${token}`);
       setCampaign(response.data);
-      setLoading(false);
     } catch (err) {
+      console.error("Failed to load campaign:", err);
       setError("This secure compliance link has expired or is invalid.");
+    } finally {
       setLoading(false);
     }
   };
@@ -46,7 +42,7 @@ function SupplierPortal() {
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError(null);
+    setSubmitError(null);
 
     try {
       const submitData = new FormData();
@@ -61,8 +57,13 @@ function SupplierPortal() {
 
       setSuccess(true);
     } catch (err) {
-      // Even if backend isn't mapped, simulate success for client preview flows
-      setSuccess(true);
+      // A failed submission must show as failed — silently reporting
+      // success here would let a supplier believe their disclosure was
+      // recorded when it never reached the database.
+      console.error("Submission failed:", err);
+      setSubmitError(
+        err.response?.data?.error || "Something went wrong while submitting your data. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -81,6 +82,11 @@ function SupplierPortal() {
         </div>
     </div>
   );
+
+  // Guards against re-submission if the supplier reopens a link they've
+  // already completed — the backend only supports UPDATE (not append/versioning),
+  // so a second submit would silently overwrite the first one's data.
+  const alreadySubmitted = campaign?.status === 'Completed';
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -108,6 +114,14 @@ function SupplierPortal() {
               Thank you. Your accounting data and accompanying assurance documents have been cryptographically sealed and transmitted directly to the compliance audit queue.
             </p>
           </div>
+        ) : alreadySubmitted ? (
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ fontSize: '64px', marginBottom: '24px', lineHeight: '1' }}>📄</div>
+            <h2 style={{ color: '#374151', margin: '0 0 12px 0', fontSize: '22px', fontWeight: '700' }}>Already Submitted</h2>
+            <p style={{ color: '#6b7280', lineHeight: '1.6', margin: 0, fontSize: '15px' }}>
+              A response for this request has already been received. If you need to correct or update your submission, please contact <strong style={{ color: '#374151' }}>{campaign.company_name}</strong> directly.
+            </p>
+          </div>
         ) : (
           <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
@@ -131,6 +145,12 @@ function SupplierPortal() {
                   </p>
               </div>
             </div>
+
+            {submitError && (
+              <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '14px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600', border: '1px solid #fecaca' }}>
+                ⚠️ {submitError}
+              </div>
+            )}
 
             {/* Ingestion Value */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

@@ -10,6 +10,7 @@ const multer = require('multer');
 const path = require('path');
 const auditorGuard = require('./middleware/auditorGuard');
 const uploadRoutes = require('./routes/uploadRoutes');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -1200,6 +1201,56 @@ app.put('/api/campaigns/:token/status', authorize, auditorGuard, async (req, res
     } catch (err) {
         console.error("Error updating campaign status:", err.message);
         res.status(500).json({ error: "Failed to update campaign status." });
+    }
+});
+
+// ==========================================
+// REQUEST CORRECTION (creates a new campaign, keeps the original intact)
+// ==========================================
+app.post('/api/campaigns/:token/request-correction', authorize, auditorGuard, async (req, res) => {
+    try {
+        if (req.user.role !== 'Admin' && req.user.role !== 'Manager') {
+            return res.status(403).json({ error: "Access Denied." });
+        }
+
+        const { token } = req.params;
+        const { deadline } = req.body; // new deadline for the correction request
+
+        // Fetch the original campaign, scoped the same way status updates are
+        const originalResult = req.user.role === 'Admin'
+            ? await pool.query(`SELECT * FROM Supplier_Campaigns WHERE token = $1`, [token])
+            : await pool.query(
+                `SELECT * FROM Supplier_Campaigns WHERE token = $1 AND unit_id = $2`,
+                [token, req.user.company_id]
+              );
+
+        if (originalResult.rows.length === 0) {
+            return res.status(404).json({ error: "Original campaign not found or access denied." });
+        }
+
+        const original = originalResult.rows[0];
+
+        if (original.status !== 'Completed') {
+            return res.status(400).json({ error: "Only completed submissions can have a correction requested." });
+        }
+
+        // Generate a fresh token for the new link
+        const newToken = crypto.randomBytes(16).toString('hex');
+
+        const newCampaign = await pool.query(
+            `INSERT INTO Supplier_Campaigns (token, supplier_name, activity_type, deadline, unit_id, status)
+             VALUES ($1, $2, $3, $4, $5, 'Pending')
+             RETURNING *`,
+            [newToken, original.supplier_name, original.activity_type, deadline || original.deadline, original.unit_id]
+        );
+
+        res.status(201).json({
+            message: "Correction request created. Share the new link with the supplier.",
+            data: newCampaign.rows[0]
+        });
+    } catch (err) {
+        console.error("Error creating correction request:", err.message);
+        res.status(500).json({ error: "Failed to create correction request." });
     }
 });
 

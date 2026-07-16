@@ -15,6 +15,12 @@ function SurveyCampaigns() {
     // State to track which link was just copied
     const [copiedToken, setCopiedToken] = useState(null);
 
+    // Correction request state
+    const [requestingCorrection, setRequestingCorrection] = useState(null); // token currently being processed
+    const [correctionDeadline, setCorrectionDeadline] = useState('');
+    const [correctionModalToken, setCorrectionModalToken] = useState(null); // which row's modal is open
+    const [correctionResult, setCorrectionResult] = useState(null); // { token, link } for the newly created campaign
+
     useEffect(() => {
         fetchCampaigns();
     }, []);
@@ -77,6 +83,45 @@ function SurveyCampaigns() {
         });
     };
 
+    const openCorrectionModal = (campaignToken) => {
+        setCorrectionModalToken(campaignToken);
+        setCorrectionDeadline('');
+        setCorrectionResult(null);
+    };
+
+    const handleRequestCorrection = async (e) => {
+        e.preventDefault();
+        setRequestingCorrection(correctionModalToken);
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.post(
+                `/api/campaigns/${correctionModalToken}/request-correction`,
+                { deadline: correctionDeadline || null },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            const newToken = response.data.data.token;
+            const newLink = `${window.location.origin}/supplier-portal/${newToken}`;
+
+            setCorrectionResult({ token: newToken, link: newLink });
+            fetchCampaigns(); // refresh the list so the new Pending campaign shows up
+        } catch (err) {
+            console.error("Failed to request correction:", err);
+            alert(err.response?.data?.error || "Failed to create correction request.");
+        } finally {
+            setRequestingCorrection(null);
+        }
+    };
+
+    const handleCopyCorrectionLink = () => {
+        if (!correctionResult) return;
+        navigator.clipboard.writeText(correctionResult.link).then(() => {
+            alert("Correction link copied to clipboard.");
+        }).catch(() => {
+            alert("Failed to copy link. Check browser permissions.");
+        });
+    };
+
     // CORE LOGIC: DATA QUALITY TIERS
     const getQualityMetrics = (methodology) => {
         switch (methodology) {
@@ -135,11 +180,17 @@ function SurveyCampaigns() {
                             <label style={labelStyle}>Target Metric</label>
                             <select required value={newCampaign.activity_type} onChange={e => setNewCampaign({...newCampaign, activity_type: e.target.value})} style={inputStyle}>
                                 <option value="">Select Metric...</option>
-                                {/* CRITICAL FIX: The values must match the backend CARBON_MULTIPLIERS keys */}
-                                <option value="mobile_diesel">Logistics: Diesel Fuel (Liters)</option>
-                                <option value="business_travel_flights">Business Travel: Flights (Miles)</option>
-                                <option value="purchased_electricity">Facilities: Electricity (kWh)</option>
-                                <option value="waste_landfill">Operations: Landfill Waste (Tons)</option>
+                                {/* Values now match the actual metric_definition / CARBON_MULTIPLIERS keys used
+                                    by the backend — previously these were mismatched (e.g. "mobile_diesel"
+                                    instead of "mobile_diesel_liters"), so campaigns created here could never
+                                    be matched to a real metric downstream. Labels/units corrected to match too. */}
+                                <option value="mobile_diesel_liters">Logistics: Diesel Fuel (Liters)</option>
+                                <option value="travel_flight_short_haul_km">Business Travel: Short-Haul Flights (km)</option>
+                                <option value="travel_flight_long_haul_km">Business Travel: Long-Haul Flights (km)</option>
+                                <option value="travel_hotel_stay_nights">Business Travel: Hotel Stays (Nights)</option>
+                                <option value="electricity_grid_kwh">Facilities: Grid Electricity (kWh)</option>
+                                <option value="waste_landfill_kg">Operations: Landfill Waste (kg)</option>
+                                <option value="waste_recycled_kg">Operations: Recycled Waste (kg)</option>
                             </select>
                         </div>
                         <div style={{ flex: '1 1 200px' }}>
@@ -221,7 +272,6 @@ function SurveyCampaigns() {
                                             
                                             {/* Action Column */}
                                             <td style={tdStyle}>
-                                                {/* Checks for 'Active' or 'Pending' */}
                                                 {camp.status === 'Pending' || camp.status === 'Active' ? (
                                                     <button 
                                                         onClick={() => handleCopyLink(camp.id)}
@@ -234,6 +284,13 @@ function SurveyCampaigns() {
                                                         }}
                                                     >
                                                         {isCopied ? '✅ Copied!' : '🔗 Copy Link'}
+                                                    </button>
+                                                ) : camp.status === 'Completed' ? (
+                                                    <button 
+                                                        onClick={() => openCorrectionModal(camp.id)}
+                                                        style={{ backgroundColor: 'transparent', color: '#b45309', border: '1px solid #fcd34d', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        ✏️ Request Correction
                                                     </button>
                                                 ) : (
                                                     <button style={{ backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -249,6 +306,62 @@ function SurveyCampaigns() {
                     </table>
                 )}
             </div>
+
+            {/* ============================================
+                CORRECTION REQUEST MODAL
+            ============================================ */}
+            {correctionModalToken && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(17, 24, 39, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                    <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', width: '90%', maxWidth: '450px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+                        
+                        {correctionResult ? (
+                            <>
+                                <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#111827' }}>Correction Request Created</h3>
+                                <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '20px' }}>
+                                    The original submission has been preserved. Share this new link with the supplier so they can submit the corrected data.
+                                </p>
+                                <div style={{ backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', fontSize: '13px', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: '16px' }}>
+                                    {correctionResult.link}
+                                </div>
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <button onClick={handleCopyCorrectionLink} style={{ flex: 1, padding: '12px', backgroundColor: '#111827', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+                                        Copy Link
+                                    </button>
+                                    <button onClick={() => setCorrectionModalToken(null)} style={{ flex: 1, padding: '12px', backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+                                        Done
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#111827' }}>Request a Correction</h3>
+                                <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '20px' }}>
+                                    This creates a new submission link for the same supplier and metric. The original completed submission stays on record — it will not be changed or removed.
+                                </p>
+                                <form onSubmit={handleRequestCorrection} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div>
+                                        <label style={labelStyle}>New Deadline (optional — defaults to original)</label>
+                                        <input
+                                            type="date"
+                                            value={correctionDeadline}
+                                            onChange={(e) => setCorrectionDeadline(e.target.value)}
+                                            style={inputStyle}
+                                        />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                                        <button type="button" onClick={() => setCorrectionModalToken(null)} style={{ flex: 1, padding: '12px', backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+                                            Cancel
+                                        </button>
+                                        <button type="submit" disabled={requestingCorrection === correctionModalToken} style={{ flex: 1, padding: '12px', backgroundColor: '#111827', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: requestingCorrection === correctionModalToken ? 'wait' : 'pointer' }}>
+                                            {requestingCorrection === correctionModalToken ? 'Creating...' : 'Create Correction Link'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
