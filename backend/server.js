@@ -316,6 +316,7 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
     try {
         let { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
         const evidence_url = req.file ? req.file.key : null;
+        const quality_tier = req.file ? 'A' : 'C';
 
         if (!organization_id || organization_id === 'undefined' || organization_id === 'null' || organization_id === '') {
             return res.status(400).json({ error: "Please select an Organization from the dropdown." });
@@ -344,10 +345,10 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
 
         const result = await pool.query(`
             INSERT INTO ESG_Observation 
-            (unit_id, metric_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_url, "timestamp")
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            (unit_id, metric_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_url, quality_tier, "timestamp")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
             RETURNING *;
-        `, [organization_id, metric_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url]);
+        `, [organization_id, metric_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url, quality_tier]);
 
         res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
