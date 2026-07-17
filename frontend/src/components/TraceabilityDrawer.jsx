@@ -1,6 +1,30 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
 function TraceabilityDrawer({ isOpen, onClose, record }) {
+  const [evidenceViewUrl, setEvidenceViewUrl] = useState(null);
+  const [loadingEvidence, setLoadingEvidence] = useState(false);
+
+  // Fetch a fresh signed URL whenever a new record with evidence is shown
+  useEffect(() => {
+    if (isOpen && record?.evidence_file_url) {
+      setLoadingEvidence(true);
+      setEvidenceViewUrl(null);
+      const token = localStorage.getItem('token');
+      axios.get(`/api/evidence/${record.evidence_file_url}/view`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => {
+        setEvidenceViewUrl(res.data.url);
+      }).catch(err => {
+        console.error("Failed to load evidence:", err);
+      }).finally(() => {
+        setLoadingEvidence(false);
+      });
+    } else {
+      setEvidenceViewUrl(null);
+    }
+  }, [isOpen, record]);
+
   if (!isOpen || !record) return null;
 
   // NEW: Helper function to handle all three status states dynamically
@@ -117,13 +141,23 @@ function TraceabilityDrawer({ isOpen, onClose, record }) {
             </div>
 
             {record.evidence_file_url ? (
-              <a 
-                href={`https://esg-compliance-platform-production.up.railway.app${record.evidence_file_url}`} 
-                target="_blank" rel="noopener noreferrer"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#f1f5f9', color: '#0369a1', padding: '15px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', border: '1px solid #bae6fd', transition: 'background 0.2s' }}
-              >
-                📄 Inspect Original Evidence Source
-              </a>
+              loadingEvidence ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#f1f5f9', color: '#64748b', padding: '15px', borderRadius: '8px', fontWeight: 'bold', border: '1px solid #e2e8f0' }}>
+                  Loading evidence link...
+                </div>
+              ) : evidenceViewUrl ? (
+                <a 
+                  href={evidenceViewUrl} 
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#f1f5f9', color: '#0369a1', padding: '15px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', border: '1px solid #bae6fd', transition: 'background 0.2s' }}
+                >
+                  📄 Inspect Original Evidence Source
+                </a>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#fff1f2', color: '#be123c', padding: '15px', borderRadius: '8px', fontWeight: 'bold', border: '1px solid #fecdd3' }}>
+                  ⚠️ Failed to load evidence link
+                </div>
+              )
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#fff1f2', color: '#be123c', padding: '15px', borderRadius: '8px', fontWeight: 'bold', border: '1px solid #fecdd3' }}>
                 ⚠️ No Primary Evidence Attached

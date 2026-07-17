@@ -7,16 +7,20 @@ function AuditQueue() {
   const [emissions, setEmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
+  // Evidence viewer state (presigned URL fetched fresh for whichever log is selected)
+  const [evidenceViewUrl, setEvidenceViewUrl] = useState(null);
+  const [loadingEvidence, setLoadingEvidence] = useState(false);
+
   // UI State
   const [activeTab, setActiveTab] = useState('Pending');
   const [actionToast, setActionToast] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Drawer & Modal State
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerRecord, setDrawerRecord] = useState(null);
-  const [selectedLog, setSelectedLog] = useState(null); 
+  const [selectedLog, setSelectedLog] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
   // Get current user role to determine if they can approve
@@ -24,16 +28,35 @@ function AuditQueue() {
   const user = userStr ? JSON.parse(userStr) : null;
   const canApprove = user?.role === 'Admin' || user?.role === 'Manager';
 
+  // Load the queue once on mount
   useEffect(() => {
     fetchAuditQueue();
   }, []);
 
-  // --- UPDATED: Now calling the correct backend route! ---
+  // Fetches a fresh signed URL whenever a new log with evidence is selected
+  useEffect(() => {
+    if (selectedLog?.evidence_file_url) {
+      setLoadingEvidence(true);
+      setEvidenceViewUrl(null);
+      const token = localStorage.getItem('token');
+      axios.get(`/api/evidence/${selectedLog.evidence_file_url}/view`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => {
+        setEvidenceViewUrl(res.data.url);
+      }).catch(err => {
+        console.error("Failed to load evidence:", err);
+      }).finally(() => {
+        setLoadingEvidence(false);
+      });
+    } else {
+      setEvidenceViewUrl(null);
+    }
+  }, [selectedLog]);
+
   const fetchAuditQueue = async () => {
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      // This matches the new route we built in server.js
       const response = await axios.get('/api/audit/pending', config);
       setEmissions(response.data);
       setLoading(false);
@@ -64,13 +87,11 @@ function AuditQueue() {
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      
-      // Hit the live database
+
       await axios.put(`/api/emissions/${selectedLog.id}/status`, { status: newStatus }, config);
-      
-      // Update local state instantly for snappy UX
+
       setEmissions(emissions.map(e => e.id === selectedLog.id ? { ...e, status: newStatus } : e));
-      
+
       if (newStatus === 'Approved') {
         const mockHash = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
         showToast(`Record ${selectedLog.id} verified and locked to ledger.`, 'success', mockHash);
@@ -78,11 +99,9 @@ function AuditQueue() {
         showToast(`Record ${selectedLog.id} rejected. Alert routed to submitter.`, 'error');
       }
 
-      // Close modal and reset
       setSelectedLog(null);
       setRejectReason('');
-      
-      // Refresh the queue to ensure sync
+
       fetchAuditQueue();
     } catch (err) {
       console.error("Error updating status:", err);
@@ -95,16 +114,16 @@ function AuditQueue() {
   // --- BULK APPROVE ACTION (Hooked to Backend) ---
   const handleApproveAll = async () => {
     if (!window.confirm("Are you sure you want to approve ALL pending records? This will instantly populate your Dashboard charts.")) return;
-    
+
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.put('/api/emissions/bulk-approve', {}, { 
-        headers: { Authorization: `Bearer ${token}` } 
+      const response = await axios.put('/api/emissions/bulk-approve', {}, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       showToast(response.data.message || 'All pending records bulk-approved!', 'success');
-      fetchAuditQueue(); // Refresh the grid
+      fetchAuditQueue();
     } catch (err) {
       console.error("Error bulk approving:", err);
       setError("Failed to bulk approve records.");
@@ -131,7 +150,7 @@ function AuditQueue() {
 
   return (
     <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, sans-serif' }}>
-      
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', flexWrap: 'wrap', gap: '20px' }}>
         <div>
@@ -148,7 +167,7 @@ function AuditQueue() {
             {pendingCount} Logs Awaiting Audit
           </div>
           {canApprove && pendingCount > 0 && activeTab === 'Pending' && (
-            <button 
+            <button
               onClick={handleApproveAll} disabled={isSubmitting}
               style={{ background: '#10b981', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', fontSize: '1rem', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)' }}
             >
@@ -178,8 +197,8 @@ function AuditQueue() {
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #cbd5e1', marginBottom: '24px' }}>
         {['Pending', 'Approved', 'Rejected'].map((tab) => (
-          <button 
-            key={tab} onClick={() => setActiveTab(tab)} 
+          <button
+            key={tab} onClick={() => setActiveTab(tab)}
             style={{ padding: '12px 24px', cursor: 'pointer', fontSize: '15px', fontWeight: '700', border: 'none', outline: 'none', backgroundColor: 'transparent', transition: 'all 0.2s', color: activeTab === tab ? '#0f172a' : '#64748b', borderBottom: activeTab === tab ? '3px solid #2563eb' : '3px solid transparent' }}
           >
             {tab}
@@ -227,7 +246,7 @@ function AuditQueue() {
                   </td>
                   <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                     {canApprove && activeTab === 'Pending' && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); setSelectedLog(log); }}
                           style={{ backgroundColor: 'white', color: '#2563eb', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                           onMouseOver={(e) => { e.target.style.borderColor = '#2563eb'; e.target.style.backgroundColor = '#eff6ff'; }}
@@ -248,7 +267,7 @@ function AuditQueue() {
       {selectedLog && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '20px' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: '#f8fafc', borderRadius: '16px', width: '100%', maxWidth: '1100px', height: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
-            
+
             <div style={{ padding: '20px 32px', backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Reviewing Record ID: {selectedLog.id}</div>
@@ -261,7 +280,7 @@ function AuditQueue() {
               {/* Left Panel: The Data */}
               <div style={{ flex: '0 0 400px', backgroundColor: 'white', borderRight: '1px solid #e2e8f0', padding: '32px', overflowY: 'auto' }}>
                 <h3 style={{ margin: '0 0 24px 0', color: '#1e293b', fontSize: '16px' }}>Input Declaration</h3>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div>
                     <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', marginBottom: '4px' }}>Framework / Scope</div>
@@ -297,15 +316,17 @@ function AuditQueue() {
               <div style={{ flex: 1, padding: '32px', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3 style={{ margin: 0, color: '#1e293b', fontSize: '16px' }}>Evidence Locker: Attached File</h3>
-                  {selectedLog.evidence_file_url && (
-                    <a href={`https://esg-compliance-platform-production.up.railway.app${selectedLog.evidence_file_url}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>Open File in New Tab ↗</a>
+                  {evidenceViewUrl && (
+                    <a href={evidenceViewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>Open File in New Tab ↗</a>
                   )}
                 </div>
-                
+
                 <div style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: '8px', border: '2px solid #cbd5e1', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
-                  {selectedLog.evidence_file_url ? (
-                    <iframe 
-                      src={`https://esg-compliance-platform-production.up.railway.app${selectedLog.evidence_file_url}`} 
+                  {loadingEvidence ? (
+                    <div style={{ color: '#94a3b8', fontWeight: '600' }}>Loading evidence...</div>
+                  ) : evidenceViewUrl ? (
+                    <iframe
+                      src={evidenceViewUrl}
                       title="Evidence Viewer"
                       style={{ width: '100%', height: '100%', border: 'none' }}
                     />
@@ -321,20 +342,20 @@ function AuditQueue() {
 
             <div style={{ padding: '24px 32px', backgroundColor: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: '0 0 400px' }}>
-                <input 
-                  type="text" placeholder="Reason for rejection (if rejecting)..." 
+                <input
+                  type="text" placeholder="Reason for rejection (if rejecting)..."
                   value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
                 />
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button 
+                <button
                   onClick={() => executeAuditAction('Rejected')} disabled={isSubmitting}
                   style={{ backgroundColor: 'white', color: '#ef4444', border: '1px solid #ef4444', padding: '10px 24px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer' }}
                 >
                   Reject & Return
                 </button>
-                <button 
+                <button
                   onClick={() => executeAuditAction('Approved')} disabled={isSubmitting}
                   style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 32px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)' }}
                 >
@@ -347,10 +368,10 @@ function AuditQueue() {
       )}
 
       {/* --- TRACEABILITY DRAWER --- */}
-      <TraceabilityDrawer 
-        isOpen={drawerOpen} 
-        onClose={() => setDrawerOpen(false)} 
-        record={drawerRecord} 
+      <TraceabilityDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        record={drawerRecord}
       />
 
     </div>
