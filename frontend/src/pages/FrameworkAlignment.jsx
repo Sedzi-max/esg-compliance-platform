@@ -1,65 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import DelegateTaskModal from '../components/DelegateTaskModal'; // <-- IMPORTING YOUR EMAIL ENGINE
-
-// --- BoG 7 Principles Data ---
-const bogGapAnalysisData = [
-    { 
-        framework_code: 'BoG-P1', 
-        description: 'E&S Risk Management in Lending (Portfolio Screening)', 
-        activity_type: 'portfolio_risk', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P2', 
-        description: 'Internal Footprint (Energy, Paper, Waste Metrics)', 
-        activity_type: 'facility_emissions', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P3', 
-        description: 'Corporate Governance & Anti-Corruption Protocols', 
-        activity_type: 'governance_audit', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P4', 
-        description: 'Gender Equality (Board Diversity & Equal Pay Metrics)', 
-        activity_type: 'social_metrics', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P5', 
-        description: 'Financial Inclusion (Unbanked Demographic Reach)', 
-        activity_type: 'product_reach', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P6', 
-        description: 'Resource Efficiency & Green Product Offerings', 
-        activity_type: 'client_engagement', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    },
-    { 
-        framework_code: 'BoG-P7', 
-        description: 'Transparent Annual ESG Reporting & Disclosure', 
-        activity_type: 'reporting_publication', 
-        is_fulfilled: false, 
-        quality_tier: null 
-    }
-];
+import DelegateTaskModal from '../components/DelegateTaskModal';
 
 const FrameworkAlignment = () => {
     const navigate = useNavigate();
     const [readinessData, setReadinessData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [selectedYear, setSelectedYear] = useState('2026');
 
     // Gap Analysis Modal State
@@ -67,6 +15,7 @@ const FrameworkAlignment = () => {
     const [activeFramework, setActiveFramework] = useState(null);
     const [gapData, setGapData] = useState([]);
     const [loadingGap, setLoadingGap] = useState(false);
+    const [gapError, setGapError] = useState(null);
 
     // Delegation Modal State
     const [isDelegateOpen, setIsDelegateOpen] = useState(false);
@@ -78,24 +27,21 @@ const FrameworkAlignment = () => {
 
     const fetchReadiness = async () => {
         setLoading(true);
+        setError(null);
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(`/api/reports/readiness?year=${selectedYear}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
-            if (response.data.length === 0) {
-                // Added the BoG Framework to your mock data view
-                setReadinessData([
-                    { framework_name: 'Bank of Ghana Sustainable Banking Principles', fulfilled_requirements: 0, total_requirements: 7, readiness_score: 0 },
-                    { framework_name: 'GSE Mandatory Disclosures', fulfilled_requirements: 2, total_requirements: 3, readiness_score: 67 },
-                    { framework_name: 'IFRS S2 Climate Disclosures', fulfilled_requirements: 1, total_requirements: 3, readiness_score: 33 }
-                ]);
-            } else {
-                setReadinessData(response.data);
-            }
+
+            // An empty array is a legitimate result — no approved data yet for this
+            // year — not a reason to show fabricated scores. Show it as-is; the
+            // empty state below tells the user what that means.
+            setReadinessData(response.data);
         } catch (err) {
             console.error("Failed to fetch readiness:", err);
+            setReadinessData([]);
+            setError("Failed to load compliance readiness data. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -105,7 +51,9 @@ const FrameworkAlignment = () => {
         setActiveFramework(frameworkName);
         setIsModalOpen(true);
         setLoadingGap(true);
-        
+        setGapError(null);
+        setGapData([]);
+
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(`/api/reports/gap-analysis?framework=${encodeURIComponent(frameworkName)}&year=${selectedYear}`, {
@@ -114,17 +62,7 @@ const FrameworkAlignment = () => {
             setGapData(response.data);
         } catch (err) {
             console.error("Failed to load gap analysis", err);
-            
-            // Conditionally load the exact BoG principles if that card is clicked
-            if (frameworkName === 'Bank of Ghana Sustainable Banking Principles') {
-                setGapData(bogGapAnalysisData);
-            } else {
-                // Mock data for other frameworks
-                setGapData([
-                    { framework_code: 'GSE-E1', description: 'Total Scope 1 GHG Emissions', activity_type: 'mobile_diesel', is_fulfilled: true, quality_tier: 'A' },
-                    { framework_code: 'GSE-E2', description: 'Total Scope 2 Purchased Electricity', activity_type: 'electricity_grid_kwh', is_fulfilled: false, quality_tier: null }
-                ]);
-            }
+            setGapError("Failed to load the gap analysis for this framework. Please try again.");
         } finally {
             setLoadingGap(false);
         }
@@ -165,8 +103,18 @@ const FrameworkAlignment = () => {
                 </select>
             </div>
 
+            {error && (
+                <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca' }}>
+                    ⚠️ {error}
+                </div>
+            )}
+
             {loading ? (
                 <div style={{ textAlign: 'center', padding: '60px', color: '#6b7280', fontSize: '15px', fontWeight: '500' }}>Aggregating compliance logic...</div>
+            ) : readinessData.length === 0 && !error ? (
+                <div style={{ textAlign: 'center', padding: '60px', backgroundColor: 'white', borderRadius: '16px', border: '1px dashed #d1d5db', color: '#6b7280' }}>
+                    No readiness data available for {selectedYear} yet. Once emissions or metrics are logged and approved, your framework alignment will appear here.
+                </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '24px' }}>
                     {readinessData.map((framework, index) => {
@@ -231,6 +179,14 @@ const FrameworkAlignment = () => {
                         <div style={{ overflowY: 'auto', padding: '32px' }}>
                             {loadingGap ? (
                                 <div style={{ textAlign: 'center', color: '#6b7280' }}>Analyzing ledger...</div>
+                            ) : gapError ? (
+                                <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px 20px', borderRadius: '10px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', textAlign: 'center' }}>
+                                    ⚠️ {gapError}
+                                </div>
+                            ) : gapData.length === 0 ? (
+                                <div style={{ textAlign: 'center', color: '#6b7280', padding: '20px 0' }}>
+                                    No clause-level data available for this framework yet.
+                                </div>
                             ) : (
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                     <thead>
