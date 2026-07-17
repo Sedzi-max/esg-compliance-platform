@@ -21,7 +21,6 @@ const ACTIVITY_OPTIONS = {
   ]
 };
 
-// --- ENTERPRISE SMART MAPPER DICTIONARIES ---
 const SMART_MAPPER = {
   scopes: {
     'scope 1': 'scope_1',
@@ -73,7 +72,6 @@ const ACTIVITY_TO_SCOPE_MAP = {
   'waste_recycled_kg': 'scope_3'
 };
 
-// --- BANK OF GHANA (BoG) PRINCIPLES ---
 const BOG_PRINCIPLES = [
   { id: 'BoG-P1', label: 'P1: E&S Risk Management in Lending (Portfolio Screening)' },
   { id: 'BoG-P2', label: 'P2: Internal Footprint (Energy, Paper, Waste Metrics)' },
@@ -88,29 +86,26 @@ function DataEntry() {
   const [organizations, setOrganizations] = useState([]);
   const [emissionsData, setEmissionsData] = useState([]);
   const [metrics, setMetrics] = useState([]);
-  
+
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const fileInputRef = useRef(null);
 
-  // CSV Bulk Upload State
   const [uploadSuccess, setUploadSuccess] = useState('');
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  // Routing State
   const [userSector, setUserSector] = useState('Banking');
-  const [entryMode, setEntryMode] = useState('E'); 
-  const [envType, setEnvType] = useState('GHG'); 
+  const [entryMode, setEntryMode] = useState('E');
+  const [envType, setEnvType] = useState('GHG');
   const [filePreviewName, setFilePreviewName] = useState("");
 
-  // Form States
   const [envFormData, setEnvFormData] = useState({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
   const [genEnvFormData, setGenEnvFormData] = useState({ organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
   const [socFormData, setSocFormData] = useState({ organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
   const [govFormData, setGovFormData] = useState({ organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
-  
-  // New BoG Form State
+  const [finFormData, setFinFormData] = useState({ organization_id: '', pillar: 'F', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
+
   const [bogFormData, setBogFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null });
 
   useEffect(() => {
@@ -127,10 +122,10 @@ function DataEntry() {
         axios.get('/api/emissions', config).catch(() => ({ data: [] })),
         axios.get('/api/metrics', config).catch(() => ({ data: [] }))
       ]);
-      
+
       setOrganizations(orgRes.data);
       setEmissionsData(emissionsRes.data);
-      setMetrics(metricsRes.data); 
+      setMetrics(metricsRes.data);
     } catch (err) {
       setError("Failed to load data. Ensure you are logged in.");
     }
@@ -139,7 +134,7 @@ function DataEntry() {
   const handleEnvChange = (e) => {
     const { name, value } = e.target;
     setEnvFormData(prev => ({
-      ...prev, [name]: value, ...(name === 'scope_category' && { activity_type: '' }) 
+      ...prev, [name]: value, ...(name === 'scope_category' && { activity_type: '' })
     }));
   };
 
@@ -150,6 +145,7 @@ function DataEntry() {
       if (formType === 'genEnv') setGenEnvFormData({ ...genEnvFormData, evidence_file: file });
       if (formType === 'soc') setSocFormData({ ...socFormData, evidence_file: file });
       if (formType === 'gov') setGovFormData({ ...govFormData, evidence_file: file });
+      if (formType === 'fin') setFinFormData({ ...finFormData, evidence_file: file });
       if (formType === 'bog') setBogFormData({ ...bogFormData, evidence_file: file });
       setFilePreviewName(file.name);
     }
@@ -160,10 +156,8 @@ function DataEntry() {
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
-  // 1. Duplicate Check Helper Function
   const checkForDuplicates = (formData) => {
-    // Check against the recent emissions ledger state
-    const isDuplicate = emissionsData.some(log => 
+    const isDuplicate = emissionsData.some(log =>
         log.organization_name === organizations.find(o => o.unit_id == formData.organization_id)?.name &&
         log.raw_amount == formData.raw_amount &&
         log.activity_type === formData.activity_type
@@ -171,11 +165,9 @@ function DataEntry() {
     return isDuplicate;
   };
 
-  // 2. Wrapped Submit function with the validator
   const handleEnvSubmit = async (e) => {
     e.preventDefault();
-    
-    // Trigger Duplicate Check
+
     if (checkForDuplicates(envFormData)) {
         if (!window.confirm("⚠️ Warning: An identical log for this activity and value already exists in the ledger. Proceed anyway?")) {
             return;
@@ -188,17 +180,17 @@ function DataEntry() {
     try {
       const token = localStorage.getItem('token');
       const submitData = new FormData();
-      
+
       submitData.append('organization_id', envFormData.organization_id);
       submitData.append('scope_category', envFormData.scope_category);
       submitData.append('activity_type', envFormData.activity_type);
       submitData.append('raw_amount', envFormData.raw_amount);
       if (envFormData.evidence_file) submitData.append('evidence_file', envFormData.evidence_file);
 
-      await axios.post('/api/emissions', submitData, { 
-        headers: { Authorization: `Bearer ${token}` } 
+      await axios.post('/api/emissions', submitData, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       setEnvFormData({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
       setFilePreviewName('');
       fetchAllData();
@@ -221,17 +213,17 @@ function DataEntry() {
       submitData.append('pillar', formDataState.pillar || 'G');
       submitData.append('metric_name', formDataState.metric_name || formDataState.principle_id);
       submitData.append('unit_of_measure', formDataState.unit_of_measure || '');
-      
+
       if (formDataState.numeric_value) submitData.append('numeric_value', formDataState.numeric_value);
       if (formDataState.text_value) submitData.append('text_value', formDataState.text_value);
       if (formDataState.evidence_file) submitData.append('evidence_file', formDataState.evidence_file);
 
-      await axios.post('/api/observations', submitData, { 
-        headers: { Authorization: `Bearer ${token}` } 
+      await axios.post('/api/observations', submitData, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      
-      resetStateFn({ ...formDataState, numeric_value: '', text_value: '', evidence_file: null }); 
-      setFilePreviewName(''); 
+
+      resetStateFn({ ...formDataState, numeric_value: '', text_value: '', evidence_file: null });
+      setFilePreviewName('');
       fetchAllData();
       showSuccess(successMessage);
     } catch (err) {
@@ -244,6 +236,7 @@ function DataEntry() {
   const handleGenEnvSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(genEnvFormData, "General Environmental metric securely logged!", setGenEnvFormData); };
   const handleSocSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(socFormData, "Social metric securely logged!", setSocFormData); };
   const handleGovSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(govFormData, "Governance metric securely logged!", setGovFormData); };
+  const handleFinSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(finFormData, "Financial metric securely logged!", setFinFormData); };
   const handleBogSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(bogFormData, "Bank of Ghana Compliance Clause securely logged!", setBogFormData); };
 
   const handleFileUpload = async (e) => {
@@ -259,12 +252,12 @@ function DataEntry() {
 
       try {
           const token = localStorage.getItem('token');
-          const response = await axios.post('/api/upload-csv', formData, { 
-            headers: { 'Authorization': `Bearer ${token}` } 
+          const response = await axios.post('/api/upload-csv', formData, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
           setUploadSuccess(`✅ Successfully processed ${response.data.rows_processed} rows and inserted ${response.data.successful_inserts} records.`);
           if (response.data.errors && response.data.errors.length > 0) setUploadErrors(response.data.errors);
-          fetchAllData(); 
+          fetchAllData();
       } catch (err) {
           setUploadErrors([ err.response?.data?.error || "A critical error occurred while parsing the CSV." ]);
       } finally {
@@ -278,7 +271,6 @@ function DataEntry() {
     return map[scope] || scope;
   };
 
-  // --- AI DOCUMENT INTELLIGENCE UI ---
   const EvidenceAttachmentUI = ({ formType, onExtract }) => {
     const [isScanning, setIsScanning] = useState(false);
     const [scanComplete, setScanComplete] = useState(false);
@@ -294,7 +286,7 @@ function DataEntry() {
         setScanComplete(true);
         const simulatedExtraction = Math.floor(Math.random() * (5000 - 150 + 1)) + 150;
         if (onExtract) onExtract(simulatedExtraction);
-      }, 2500); 
+      }, 2500);
     };
 
     return (
@@ -302,15 +294,15 @@ function DataEntry() {
         <label style={{ display: 'block', fontWeight: 'bold', color: '#495057', marginBottom: '10px' }}>
           📎 Attach Audit Evidence (Optional)
         </label>
-        
-        <input 
+
+        <input
           type="file" id={`evidence_upload_${formType}`} onChange={(e) => handleFileChange(e, formType)}
           style={{ display: 'none' }} accept=".pdf,.jpg,.jpeg,.png,.csv"
         />
-        
+
         {!filePreviewName ? (
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={() => document.getElementById(`evidence_upload_${formType}`).click()}
             style={{ background: '#e9ecef', color: '#495057', border: '1px solid #ced4da', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
           >
@@ -321,13 +313,13 @@ function DataEntry() {
             <p style={{ margin: '0 0 15px 0', color: '#495057', fontWeight: 'bold', fontSize: '0.85rem' }}>
               📄 {filePreviewName} attached
             </p>
-            
+
             {!scanComplete ? (
-              <button 
+              <button
                 type="button" onClick={handleAIScan} disabled={isScanning}
-                style={{ 
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', border: 'none', 
-                  padding: '10px 16px', borderRadius: '4px', cursor: isScanning ? 'wait' : 'pointer', fontWeight: 'bold', 
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', border: 'none',
+                  padding: '10px 16px', borderRadius: '4px', cursor: isScanning ? 'wait' : 'pointer', fontWeight: 'bold',
                   fontSize: '0.85rem', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
                   boxShadow: '0 2px 4px rgba(118, 75, 162, 0.3)'
                 }}
@@ -345,14 +337,13 @@ function DataEntry() {
     );
   };
 
-  // --- ROUTING ENGINE: RENDER FORMS BASED ON SECTOR ---
   const renderSectorForm = () => {
     if (userSector === 'Banking') {
       return (
         <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
           <h2 style={{ marginTop: 0, fontSize: '1.4rem', color: '#0f172a', marginBottom: '8px' }}>🏦 Bank of Ghana Compliance Portal</h2>
           <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '24px' }}>Log required data directly against the 7 mandatory Sustainable Banking Principles.</p>
-          
+
           <form onSubmit={handleBogSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Organization Unit</label>
@@ -387,45 +378,50 @@ function DataEntry() {
       );
     }
 
-    // Default "Generic" multi-tab view for all other industries
     return (
         <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-          
+
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
-            <button 
+            <button
               onClick={() => { setEntryMode('E'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'E' ? '#198754' : '#e9ecef', color: entryMode === 'E' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🌱 Env.
             </button>
-            <button 
+            <button
               onClick={() => { setEntryMode('S'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'S' ? '#0d6efd' : '#e9ecef', color: entryMode === 'S' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🤝 Social
             </button>
-            <button 
+            <button
               onClick={() => { setEntryMode('G'); setFilePreviewName(''); }}
               style={{ background: entryMode === 'G' ? '#e65100' : '#e9ecef', color: entryMode === 'G' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
             >
               🏛️ Gov.
             </button>
+            <button
+              onClick={() => { setEntryMode('F'); setFilePreviewName(''); }}
+              style={{ background: entryMode === 'F' ? '#7c3aed' : '#e9ecef', color: entryMode === 'F' ? 'white' : '#495057', padding: '8px 10px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', flex: 1, fontSize: '0.85rem' }}
+            >
+              💰 Financial
+            </button>
           </div>
 
-          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: entryMode === 'E' ? '#198754' : entryMode === 'S' ? '#0d6efd' : '#e65100' }}>
+          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: entryMode === 'E' ? '#198754' : entryMode === 'S' ? '#0d6efd' : entryMode === 'G' ? '#e65100' : '#7c3aed' }}>
             Log Single {entryMode === 'E' ? 'Activity' : 'Metric'}
           </h2>
-          
+
           {entryMode === 'E' && (
             <>
               <div style={{ display: 'flex', background: '#e9ecef', borderRadius: '20px', padding: '4px', marginBottom: '20px' }}>
-                <button 
+                <button
                   onClick={() => { setEnvType('GHG'); setFilePreviewName(''); }}
                   style={{ flex: 1, background: envType === 'GHG' ? '#198754' : 'transparent', color: envType === 'GHG' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   Carbon Tracker (GHG)
                 </button>
-                <button 
+                <button
                   onClick={() => { setEnvType('GENERAL'); setFilePreviewName(''); }}
                   style={{ flex: 1, background: envType === 'GENERAL' ? '#198754' : 'transparent', color: envType === 'GENERAL' ? 'white' : '#495057', border: 'none', padding: '6px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
@@ -520,7 +516,6 @@ function DataEntry() {
             </>
           )}
 
-          {/* SOCIAL FORM */}
           {entryMode === 'S' && (
             <form onSubmit={handleSocSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -559,7 +554,6 @@ function DataEntry() {
             </form>
           )}
 
-          {/* GOVERNANCE FORM */}
           {entryMode === 'G' && (
             <form onSubmit={handleGovSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -605,14 +599,51 @@ function DataEntry() {
               </button>
             </form>
           )}
+
+          {entryMode === 'F' && (
+            <form onSubmit={handleFinSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
+                <select required value={finFormData.organization_id} onChange={(e) => setFinFormData({...finFormData, organization_id: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="">-- Select Organization --</option>
+                  {organizations.map(org => (<option key={org.unit_id} value={org.unit_id}>{org.name}</option>))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Financial Metric Focus</label>
+                <select required value={finFormData.metric_name} onChange={(e) => {
+                    const selectedMetric = metrics.find(m => m.name === e.target.value);
+                    setFinFormData({ ...finFormData, metric_name: selectedMetric?.name || '', unit_of_measure: selectedMetric?.unit_of_measure || '' });
+                  }} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="">-- Select Dynamic Metric --</option>
+                  {metrics.filter(metric => metric.pillar === 'F').map(metric => (
+                    <option key={metric.metric_id} value={metric.name}>{metric.name} {metric.unit_of_measure ? `(${metric.unit_of_measure})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              <EvidenceAttachmentUI formType="fin" onExtract={(extractedValue) => setFinFormData({ ...finFormData, numeric_value: extractedValue })} />
+
+              {finFormData.metric_name && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Result / Value {finFormData.unit_of_measure ? `(${finFormData.unit_of_measure})` : ''}</label>
+                  <input type="number" step="any" required min="0" placeholder="Enter value..." value={finFormData.numeric_value} onChange={(e) => setFinFormData({...finFormData, numeric_value: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                </div>
+              )}
+
+              <button type="submit" disabled={isSubmitting || !finFormData.metric_name} style={{ background: (isSubmitting || !finFormData.metric_name) ? '#6c757d' : '#7c3aed', color: 'white', padding: '12px 20px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: (isSubmitting || !finFormData.metric_name) ? 'not-allowed' : 'pointer', marginTop: '10px' }}>
+                {isSubmitting ? 'Logging Data...' : 'Submit Financial Log'}
+              </button>
+            </form>
+          )}
         </div>
     );
   };
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
-      
-      {/* SECTOR SIMULATOR TOGGLE */}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
         <div style={{ background: '#e2e8f0', padding: '6px', borderRadius: '8px', display: 'flex', gap: '4px' }}>
           <button onClick={() => setUserSector('Banking')} style={{ background: userSector === 'Banking' ? 'white' : 'transparent', color: userSector === 'Banking' ? '#0f172a' : '#64748b', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', boxShadow: userSector === 'Banking' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>
@@ -630,16 +661,14 @@ function DataEntry() {
             Your workspace is currently configured for the <strong style={{ color: '#2563eb' }}>{userSector}</strong> sector.
         </p>
       </div>
-      
+
       {error && <p style={{ color: '#dc3545', background: '#f8d7da', padding: '15px', borderRadius: '4px', fontWeight: 'bold' }}>{error}</p>}
       {successMsg && <p style={{ color: '#0f5132', background: '#d1e7dd', padding: '15px', borderRadius: '4px', fontWeight: 'bold' }}>{successMsg}</p>}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '40px' }}>
-        
-        {/* DYNAMIC ROUTING RENDERER */}
+
         {renderSectorForm()}
 
-        {/* Bulk CSV Upload Card */}
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: '1px solid #f3f4f6', display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b', margin: '0 0 8px 0' }}>Bulk CSV Upload</h3>
@@ -648,12 +677,11 @@ function DataEntry() {
                 </p>
             </div>
 
-            {/* Data Schema Guide */}
             <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
                 <h4 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#334155', margin: '0 0 8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     Required Columns:
-                    <a 
-                        href="/esg_data_template.csv" 
+                    <a
+                        href="/esg_data_template.csv"
                         download
                         style={{ fontSize: '0.75rem', color: '#2563eb', textDecoration: 'underline', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}
                     >
@@ -669,7 +697,6 @@ function DataEntry() {
                 </ul>
             </div>
 
-            {/* Upload Button Area */}
             <div style={{ marginTop: 'auto' }}>
                 <label style={{ display: 'flex', width: '100%', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', border: '2px dashed #93c5fd', background: '#eff6ff', padding: '24px', boxSizing: 'border-box', transition: 'all 0.2s' }}>
                     <div style={{ textAlign: 'center' }}>
@@ -683,8 +710,7 @@ function DataEntry() {
                     </div>
                     <input id="file-upload" type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileUpload} />
                 </label>
-                
-                {/* Upload Status Messages */}
+
                 {isSubmitting && <p style={{ fontSize: '0.875rem', color: '#2563eb', marginTop: '10px', textAlign: 'center', fontWeight: 'bold' }}>⏳ Processing CSV...</p>}
                 {uploadSuccess && <p style={{ fontSize: '0.85rem', color: '#0f5132', background: '#d1e7dd', padding: '10px', borderRadius: '4px', marginTop: '10px', textAlign: 'center' }}>{uploadSuccess}</p>}
                 {uploadErrors.length > 0 && (
@@ -698,12 +724,11 @@ function DataEntry() {
             </div>
         </div>
       </div>
-        
-      {/* --- IMMUTABLE LEDGER --- */}
+
       <h2 style={{ fontSize: '1.2rem', color: '#495057', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
         Recent Emissions Ledger (Global)
       </h2>
-      
+
       {emissionsData.length === 0 ? (
         <p style={{ color: '#6c757d' }}>No emissions data logged yet.</p>
       ) : (
