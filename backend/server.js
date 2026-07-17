@@ -67,6 +67,7 @@ app.get('/api/emissions', authorize, async (req, res) => {
             `SELECT e.*, u.name as organization_name
              FROM esg_observation e
              JOIN Organization_Unit u ON e.unit_id = u.unit_id
+             WHERE e.scope_category IS NOT NULL
              ORDER BY 
                 CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
                 created_at DESC`
