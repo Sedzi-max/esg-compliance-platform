@@ -124,7 +124,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 o.numeric_value as raw_amount,                
                 NULL::numeric as calculated_co2e,           
                 o.unit_of_measure,
-                'C'::varchar as quality_tier,   
+                o.quality_tier,
                 o.evidence_url as evidence_file_url,
                 o.status, 
                 COALESCE(o.timestamp, o.created_at) as created_at 
