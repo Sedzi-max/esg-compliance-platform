@@ -23,6 +23,8 @@ import SOPPage from './pages/SOPPage';
 import EvidenceLocker from './pages/EvidenceLocker'; 
 import FrameworkManager from './pages/FrameworkManager'; 
 import ScenarioAnalysis from './pages/ScenarioAnalysis';
+import BankingAnalytics from './pages/BankingAnalytics';
+import BankingDataEntry from './pages/BankingDataEntry';
 
 // Component Imports
 import ProtectedRoute from './components/ProtectedRoute';
@@ -80,6 +82,8 @@ function App() {
                     
                     {/* Climate Stress Testing & Scenario Analysis Route */}
                     <Route path="/scenarios" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><ScenarioAnalysis /></ProtectedRoute>} />
+                    <Route path="/banking-analytics" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><BankingAnalytics /></ProtectedRoute>} />
+                    <Route path="/banking-data-entry" element={<ProtectedRoute allowedRoles={['Admin']}><BankingDataEntry /></ProtectedRoute>} />
 
                     {/* Admin Only Routes */}
                     <Route path="/organizations" element={<ProtectedRoute allowedRoles={['Admin']}><Organizations /></ProtectedRoute>} />

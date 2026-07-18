@@ -99,6 +99,7 @@ function Sidebar() {
               {/* Climate Stress Testing */}
               <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>
               <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
+              <li><Link to="/banking-analytics" style={getLinkStyle('/banking-analytics')}>🏦 Banking ESG Analytics</Link></li>
             </>
           )}
 
@@ -109,6 +110,7 @@ function Sidebar() {
               <li><Link to="/entity-management" style={getLinkStyle('/entity-management')}>🌐 Boundaries</Link></li>
               <li><Link to="/metrics" style={getLinkStyle('/metrics')}>⚙️ Metrics Config</Link></li>
               <li><Link to="/admin/frameworks" style={getLinkStyle('/admin/frameworks')}>📐 Framework Maps</Link></li>
+              <li><Link to="/banking-data-entry" style={getLinkStyle('/banking-data-entry')}>🏦 Banking Data Entry</Link></li>
               <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
               <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
             </>
