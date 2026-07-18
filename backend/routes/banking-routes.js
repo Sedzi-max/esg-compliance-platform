@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db'); // your pg Pool instance
-const authenticateToken = require('../middleware/auth'); // your existing JWT middleware
+const authorize = require('../middleware/authorize'); // your existing JWT middleware
 
 // GET /api/banking/portfolio-screening?year=2026
-router.get('/portfolio-screening', authenticateToken, async (req, res) => {
+router.get('/portfolio-screening', authorize, async (req, res) => {
     const { year } = req.query;
     if (!year) return res.status(400).json({ error: 'year query parameter is required.' });
 
@@ -27,7 +27,7 @@ router.get('/portfolio-screening', authenticateToken, async (req, res) => {
 });
 
 // GET /api/banking/financial-inclusion?year=2026
-router.get('/financial-inclusion', authenticateToken, async (req, res) => {
+router.get('/financial-inclusion', authorize, async (req, res) => {
     const { year } = req.query;
     if (!year) return res.status(400).json({ error: 'year query parameter is required.' });
 
@@ -50,7 +50,7 @@ router.get('/financial-inclusion', authenticateToken, async (req, res) => {
 });
 
 // GET /api/banking/gender-equality?year=2026
-router.get('/gender-equality', authenticateToken, async (req, res) => {
+router.get('/gender-equality', authorize, async (req, res) => {
     const { year } = req.query;
     if (!year) return res.status(400).json({ error: 'year query parameter is required.' });
 
@@ -73,7 +73,7 @@ router.get('/gender-equality', authenticateToken, async (req, res) => {
 });
 
 // GET /api/banking/principle-maturity?year=2026
-router.get('/principle-maturity', authenticateToken, async (req, res) => {
+router.get('/principle-maturity', authorize, async (req, res) => {
     const { year } = req.query;
     if (!year) return res.status(400).json({ error: 'year query parameter is required.' });
 
