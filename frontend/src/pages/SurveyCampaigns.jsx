@@ -180,7 +180,7 @@ function SurveyCampaigns() {
                             <label style={labelStyle}>Target Metric</label>
                             <select required value={newCampaign.activity_type} onChange={e => setNewCampaign({...newCampaign, activity_type: e.target.value})} style={inputStyle}>
                                 <option value="">Select Metric...</option>
-                                {/* Values now match the actual metric_definition / CARBON_MULTIPLIERS keys used
+                                {/* Values match the actual metric_definition / CARBON_MULTIPLIERS keys used
                                     by the backend — previously these were mismatched (e.g. "mobile_diesel"
                                     instead of "mobile_diesel_liters"), so campaigns created here could never
                                     be matched to a real metric downstream. Labels/units corrected to match too. */}
@@ -191,6 +191,8 @@ function SurveyCampaigns() {
                                 <option value="electricity_grid_kwh">Facilities: Grid Electricity (kWh)</option>
                                 <option value="waste_landfill_kg">Operations: Landfill Waste (kg)</option>
                                 <option value="waste_recycled_kg">Operations: Recycled Waste (kg)</option>
+                                <option value="paper_consumption_kg">Facilities: Paper Consumption (kg)</option>
+                                <option value="water_consumption_liters">Facilities: Water Consumption (Liters)</option>
                             </select>
                         </div>
                         <div style={{ flex: '1 1 200px' }}>

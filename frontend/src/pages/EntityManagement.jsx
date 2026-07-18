@@ -13,8 +13,11 @@ function EntityManagement() {
         name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true
     });
 
-    // --- NEW: UI state for Editing ---
+    // UI state for Editing
     const [editingEntity, setEditingEntity] = useState(null);
+
+    // --- FIX 1: Prevents double-submits (the cause of the duplicates) ---
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
         fetchEntities();
@@ -26,7 +29,7 @@ function EntityManagement() {
             const response = await axios.get('/api/organizations', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             setRawEntities(response.data);
             const tree = buildEntityTree(response.data);
             setEntities(tree);
@@ -59,6 +62,19 @@ function EntityManagement() {
 
     const handleAddEntity = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return; // Ignore repeat clicks while the request is in flight
+
+        // --- FIX 2: Client-side duplicate check (same name under the same parent) ---
+        const duplicate = rawEntities.find(ent =>
+            ent.name.trim().toLowerCase() === newEntity.name.trim().toLowerCase() &&
+            String(ent.parent_unit_id || '') === String(newEntity.parent_unit_id || '')
+        );
+        if (duplicate) {
+            const proceed = window.confirm(`An entity named "${duplicate.name}" already exists under this parent. Create it anyway?`);
+            if (!proceed) return;
+        }
+
+        setIsSubmitting(true);
         try {
             const token = localStorage.getItem('token');
             await axios.post('/api/organizations', newEntity, {
@@ -66,25 +82,52 @@ function EntityManagement() {
             });
             setIsAdding(false);
             setNewEntity({ name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true });
-            fetchEntities();
+            await fetchEntities();
         } catch (err) {
             alert("Failed to create entity.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    // --- NEW: Submit the Edits to the Backend ---
     const handleUpdateEntity = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         try {
             const token = localStorage.getItem('token');
             await axios.put(`/api/organizations/${editingEntity.unit_id}`, editingEntity, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setEditingEntity(null); // Close the edit panel
-            fetchEntities(); // Refresh the tree
+            await fetchEntities(); // Refresh the tree
         } catch (err) {
             console.error(err);
             alert("Failed to update entity.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // --- FIX 3: Delete an entity (lets you clean up the existing duplicates) ---
+    const handleDeleteEntity = async (node) => {
+        if (node.children && node.children.length > 0) {
+            alert(`"${node.name}" has child entities. Reassign or delete its children first.`);
+            return;
+        }
+        const confirmed = window.confirm(`Delete "${node.name}"? This cannot be undone.`);
+        if (!confirmed) return;
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.delete(`/api/organizations/${node.unit_id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (editingEntity && editingEntity.unit_id === node.unit_id) setEditingEntity(null);
+            await fetchEntities();
+        } catch (err) {
+            console.error(err);
+            alert("Failed to delete entity.");
         }
     };
 
@@ -114,16 +157,23 @@ function EntityManagement() {
                             </div>
                         </div>
                     )}
-                    
-                    {/* --- NEW: Button triggers the editing state --- */}
-                    <button 
+
+                    <button
                         onClick={() => {
                             setEditingEntity(node);
                             setIsAdding(false); // Close the 'Add' form if it's open
-                        }} 
+                        }}
                         style={{ backgroundColor: 'transparent', color: level === 0 ? 'white' : '#4f46e5', border: `1px solid ${level === 0 ? '#374151' : '#c7d2fe'}`, padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
                     >
                         Edit
+                    </button>
+
+                    {/* --- NEW: Delete button --- */}
+                    <button
+                        onClick={() => handleDeleteEntity(node)}
+                        style={{ backgroundColor: 'transparent', color: level === 0 ? '#fca5a5' : '#dc2626', border: `1px solid ${level === 0 ? '#7f1d1d' : '#fecaca'}`, padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
+                    >
+                        Delete
                     </button>
                 </div>
             </div>
@@ -138,17 +188,17 @@ function EntityManagement() {
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px', fontFamily: 'system-ui, sans-serif' }}>
-            
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
                 <div>
                     <h1 style={{ fontSize: '32px', margin: '0 0 8px 0', fontWeight: '800', color: '#111827' }}>Organizational Boundaries</h1>
                     <p style={{ margin: 0, color: '#4b5563', fontSize: '16px' }}>Define how your global entities roll up into the corporate ledger.</p>
                 </div>
-                <button 
+                <button
                     onClick={() => {
                         setIsAdding(!isAdding);
                         setEditingEntity(null); // Close the 'Edit' form if it's open
-                    }} 
+                    }}
                     style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
                 >
                     {isAdding ? 'Cancel' : '+ Add Entity'}
@@ -163,10 +213,10 @@ function EntityManagement() {
                 </div>
                 <div style={{ display: 'flex', backgroundColor: '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
                     {['Operational Control', 'Financial Control', 'Equity Share'].map(method => (
-                        <button 
+                        <button
                             key={method}
                             onClick={() => setBoundary(method)}
-                            style={{ 
+                            style={{
                                 padding: '8px 16px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s',
                                 backgroundColor: boundary === method ? '#111827' : 'transparent',
                                 color: boundary === method ? 'white' : '#6b7280',
@@ -195,14 +245,14 @@ function EntityManagement() {
                                 {rawEntities.map(e => <option key={e.unit_id} value={e.unit_id}>{e.name}</option>)}
                             </select>
                         </div>
-                        
+
                         {boundary === 'Equity Share' && (
                             <div>
                                 <label style={labelStyle}>Equity Share (%)</label>
                                 <input type="number" max="100" min="0" required value={newEntity.equity_share_percentage} onChange={e => setNewEntity({...newEntity, equity_share_percentage: e.target.value})} style={inputStyle} />
                             </div>
                         )}
-                        
+
                         {(boundary === 'Operational Control' || boundary === 'Financial Control') && (
                             <div>
                                 <label style={labelStyle}>Do you have {boundary.toLowerCase()}?</label>
@@ -212,17 +262,17 @@ function EntityManagement() {
                                 </select>
                             </div>
                         )}
-                        
+
                         <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                            <button type="submit" style={{ backgroundColor: '#111827', color: 'white', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>
-                                Save Entity Structure
+                            <button type="submit" disabled={isSubmitting} style={{ backgroundColor: '#111827', color: 'white', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.6 : 1 }}>
+                                {isSubmitting ? 'Saving...' : 'Save Entity Structure'}
                             </button>
                         </div>
                     </form>
                 </div>
             )}
 
-            {/* --- NEW: Edit Entity Form --- */}
+            {/* Edit Entity Form */}
             {editingEntity && (
                 <div style={{ backgroundColor: '#eff6ff', padding: '24px', borderRadius: '12px', border: '1px solid #bfdbfe', marginBottom: '32px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -244,14 +294,14 @@ function EntityManagement() {
                                 ))}
                             </select>
                         </div>
-                        
+
                         {boundary === 'Equity Share' && (
                             <div>
                                 <label style={labelStyle}>Equity Share (%)</label>
                                 <input type="number" max="100" min="0" required value={editingEntity.equity_share_percentage || 100} onChange={e => setEditingEntity({...editingEntity, equity_share_percentage: e.target.value})} style={inputStyle} />
                             </div>
                         )}
-                        
+
                         {(boundary === 'Operational Control' || boundary === 'Financial Control') && (
                             <div>
                                 <label style={labelStyle}>Do you have {boundary.toLowerCase()}?</label>
@@ -261,10 +311,10 @@ function EntityManagement() {
                                 </select>
                             </div>
                         )}
-                        
+
                         <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                            <button type="submit" style={{ backgroundColor: '#4f46e5', color: 'white', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>
-                                Save Changes
+                            <button type="submit" disabled={isSubmitting} style={{ backgroundColor: '#4f46e5', color: 'white', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.6 : 1 }}>
+                                {isSubmitting ? 'Saving...' : 'Save Changes'}
                             </button>
                         </div>
                     </form>

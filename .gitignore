@@ -6,3 +6,4 @@ frontend/.env
 dist/
 .DS_Store
 backend/uploads/
+node_modules/
