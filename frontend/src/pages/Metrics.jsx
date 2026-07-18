@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// Set to true only for local/demo environments where you want a sample KPI
+// to illustrate the UI when no real metrics exist yet. Keep false in production
+// so an empty list or a failed API call is never mistaken for real configured data.
+const ENABLE_DEMO_FALLBACK = false;
+
 function Metrics() {
   const [metrics, setMetrics] = useState([]);
   const [activeKpi, setActiveKpi] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+  const [isLoading, setIsLoading] = useState(true);
+
   // State for the metric form
   const [formData, setFormData] = useState({
     pillar: 'E',
@@ -22,12 +28,17 @@ function Metrics() {
   }, []);
 
   const fetchMetrics = async () => {
+    setIsLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      
-      const response = await axios.get('/api/metrics', config).catch(() => ({ data: [] }));
-      
+
+      // FIX: no more .catch(() => ({ data: [] })) swallowing real failures.
+      // A failed request now throws and is handled below, so an outage is
+      // never silently displayed as "zero metrics defined."
+      const response = await axios.get('/api/metrics', config);
+
       // Augment existing basic DB data with the "Engine Room" aesthetic properties
       const augmentedMetrics = response.data.map((m, index) => ({
         ...m,
@@ -42,10 +53,14 @@ function Metrics() {
         ]
       }));
 
-      // Fallback data if DB is empty to show off the UI
-      if (augmentedMetrics.length === 0) {
+      // FIX: mock/demo data is now opt-in via ENABLE_DEMO_FALLBACK, and only
+      // ever shown for a genuinely empty (successfully loaded) list — never
+      // as a stand-in for a failed request, and never in production builds
+      // unless explicitly turned on. This prevents a fabricated metric from
+      // being mistaken for real configured data in an audit context.
+      if (augmentedMetrics.length === 0 && ENABLE_DEMO_FALLBACK) {
         augmentedMetrics.push({
-          id: 'mock_1', pillar: 'E', name: 'Scope 1 Diesel Combustion', data_type: 'Numeric', unit_of_measure: 'kgCO2e', aggregation_type: 'SUM',
+          id: 'mock_1', pillar: 'E', name: 'Scope 1 Diesel Combustion (DEMO)', data_type: 'Numeric', unit_of_measure: 'kgCO2e', aggregation_type: 'SUM',
           version: '3.2', approved_date: '2026-04-12',
           sql_transformation: `SELECT diesel_litres \n  * FACTOR('diesel.ncv') -- 35.86 MJ/L \n  * FACTOR('diesel.ef.co2e') -- 74.1 kgCO2e/MJ \nAS co2e_kg;`,
           computed_sample: '2,657.22 kgCO2e / Unit',
@@ -58,12 +73,20 @@ function Metrics() {
       }
 
       setMetrics(augmentedMetrics);
-      if (augmentedMetrics.length > 0 && !activeKpi) {
-        setActiveKpi(augmentedMetrics[0]);
+      if (augmentedMetrics.length > 0) {
+        setActiveKpi(prev => prev ?? augmentedMetrics[0]);
+      } else {
+        setActiveKpi(null);
       }
     } catch (err) {
       console.error("Connection error:", err);
-      setError("Failed to load metrics framework.");
+      // FIX: real errors now actually reach the user instead of being
+      // masked as an empty metrics list.
+      setError("Failed to load metrics framework. Please check your connection and try again.");
+      setMetrics([]);
+      setActiveKpi(null);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -73,19 +96,27 @@ function Metrics() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // FIX: guard against double-submit (Enter key + click, slow network double-click, etc.)
+    if (isSubmitting) return;
+
     setIsSubmitting(true);
+    setError('');
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      
-      await axios.post('/api/metrics', formData, config).catch(() => null);
-      
+
+      // FIX: removed .catch(() => null) — a failed POST now throws and is
+      // caught below, instead of silently being treated as a success.
+      await axios.post('/api/metrics', formData, config);
+
       setFormData({ pillar: 'E', name: '', data_type: 'Numeric', unit_of_measure: '', aggregation_type: 'SUM' });
       setIsCreating(false);
-      fetchMetrics(); 
+      await fetchMetrics();
     } catch (err) {
       console.error("Error creating metric:", err);
-      alert("Failed to save metric definition.");
+      // FIX: this alert can now actually fire, since the error is no longer
+      // swallowed earlier in the try block.
+      alert("Failed to save metric definition. Please check the fields and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -93,7 +124,7 @@ function Metrics() {
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', background: '#0a0a0a', color: '#e5e5e5', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      
+
       {/* HEADER */}
       <div style={{ padding: '30px 5%', borderBottom: '1px solid #262626', background: '#111111' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -105,8 +136,8 @@ function Metrics() {
               Calculations that survive scrutiny. Every value, traced to the source.
             </p>
           </div>
-          <button 
-            onClick={() => setIsCreating(true)}
+          <button
+            onClick={() => { setIsCreating(true); setError(''); }}
             style={{ background: '#3b82f6', color: '#ffffff', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: 'pointer', boxShadow: '0 4px 6px rgba(59, 130, 246, 0.2)' }}
           >
             + Define New KPI
@@ -116,45 +147,60 @@ function Metrics() {
 
       {/* MAIN WORKSPACE */}
       <div style={{ display: 'flex', flex: 1, maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
-        
+
         {/* LEFT PANEL: KPI Directory */}
         <div style={{ width: '350px', borderRight: '1px solid #262626', padding: '20px 0', background: '#111111', overflowY: 'auto' }}>
           <div style={{ padding: '0 20px', marginBottom: '15px', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: '#737373', fontWeight: 'bold' }}>
             Universal KPI Library
           </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {metrics.map(kpi => {
-              const isActive = activeKpi && activeKpi.id === kpi.id && !isCreating;
-              return (
-                <div 
-                  key={kpi.id} 
-                  onClick={() => { setActiveKpi(kpi); setIsCreating(false); }}
-                  style={{ 
-                    padding: '15px 20px', cursor: 'pointer', transition: 'background 0.2s',
-                    background: isActive ? '#1a1a1a' : 'transparent',
-                    borderLeft: isActive ? '3px solid #3b82f6' : '3px solid transparent'
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', background: kpi.pillar === 'E' ? 'rgba(16, 185, 129, 0.1)' : kpi.pillar === 'S' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: kpi.pillar === 'E' ? '#10b981' : kpi.pillar === 'S' ? '#3b82f6' : '#f59e0b' }}>
-                      {kpi.pillar === 'E' ? 'ENV' : kpi.pillar === 'S' ? 'SOC' : 'GOV'}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#737373', textTransform: 'uppercase' }}>{kpi.aggregation_type}</span>
+
+          {isLoading ? (
+            <div style={{ padding: '20px', color: '#737373', fontSize: '0.9rem' }}>Loading metrics...</div>
+          ) : metrics.length === 0 ? (
+            <div style={{ padding: '20px', color: '#737373', fontSize: '0.9rem' }}>
+              No metrics defined yet. Click "+ Define New KPI" to add one.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {metrics.map(kpi => {
+                const isActive = activeKpi && activeKpi.id === kpi.id && !isCreating;
+                return (
+                  <div
+                    key={kpi.id}
+                    onClick={() => { setActiveKpi(kpi); setIsCreating(false); }}
+                    style={{
+                      padding: '15px 20px', cursor: 'pointer', transition: 'background 0.2s',
+                      background: isActive ? '#1a1a1a' : 'transparent',
+                      borderLeft: isActive ? '3px solid #3b82f6' : '3px solid transparent'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', background: kpi.pillar === 'E' ? 'rgba(16, 185, 129, 0.1)' : kpi.pillar === 'S' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: kpi.pillar === 'E' ? '#10b981' : kpi.pillar === 'S' ? '#3b82f6' : '#f59e0b' }}>
+                        {kpi.pillar === 'E' ? 'ENV' : kpi.pillar === 'S' ? 'SOC' : 'GOV'}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#737373', textTransform: 'uppercase' }}>{kpi.aggregation_type}</span>
+                    </div>
+                    <div style={{ fontSize: '0.95rem', color: isActive ? '#ffffff' : '#d4d4d4', fontWeight: '500', fontFamily: 'monospace' }}>
+                      {kpi.name}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.95rem', color: isActive ? '#ffffff' : '#d4d4d4', fontWeight: '500', fontFamily: 'monospace' }}>
-                    {kpi.name}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* RIGHT PANEL: Inspector or Creation Form */}
         <div style={{ flex: 1, padding: '40px', overflowY: 'auto', background: '#0a0a0a' }}>
-          
-          {error && <div style={{ padding: '15px', marginBottom: '20px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px' }}>{error}</div>}
+
+          {error && (
+            <div style={{ padding: '15px', marginBottom: '20px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{error}</span>
+              <button onClick={fetchMetrics} style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                Retry
+              </button>
+            </div>
+          )}
 
           {isCreating ? (
             /* CREATE NEW METRIC FORM (DARK MODE) */
@@ -203,10 +249,10 @@ function Metrics() {
                 </div>
 
                 <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '15px', marginTop: '10px' }}>
-                  <button type="button" onClick={() => setIsCreating(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#e5e5e5', border: '1px solid #333', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#e5e5e5', border: '1px solid #333', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.6 : 1 }}>
                     Cancel
                   </button>
-                  <button type="submit" disabled={isSubmitting} style={{ flex: 2, padding: '12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer' }}>
+                  <button type="submit" disabled={isSubmitting} style={{ flex: 2, padding: '12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isSubmitting ? 'wait' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
                     {isSubmitting ? 'Registering...' : 'Compile to Ledger'}
                   </button>
                 </div>
@@ -246,7 +292,7 @@ function Metrics() {
                     <span style={{ color: '#3b82f6', fontSize: '0.85rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{activeKpi.computed_sample}</span>
                   </div>
                   <pre style={{ margin: 0, padding: '25px', color: '#d4d4d4', fontFamily: '"Fira Code", monospace', fontSize: '0.95rem', overflowX: 'auto', lineHeight: '1.6' }}>
-                    <code style={{ color: '#3b82f6' }}>SELECT</code> 
+                    <code style={{ color: '#3b82f6' }}>SELECT</code>
                     {activeKpi.sql_transformation.split('SELECT')[1]}
                   </pre>
                 </div>
@@ -293,6 +339,10 @@ function Metrics() {
                   </table>
                 </div>
               )}
+            </div>
+          ) : !isLoading ? (
+            <div style={{ color: '#737373', textAlign: 'center', paddingTop: '80px' }}>
+              Select a KPI from the library, or define a new one to get started.
             </div>
           ) : null}
         </div>
