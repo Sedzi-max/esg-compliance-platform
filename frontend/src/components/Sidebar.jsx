@@ -100,6 +100,7 @@ function Sidebar() {
               <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>
               <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
               <li><Link to="/banking-analytics" style={getLinkStyle('/banking-analytics')}>🏦 Banking ESG Analytics</Link></li>
+              <li><Link to="/insurance-analytics" style={getLinkStyle('/insurance-analytics')}>🛡️ Insurance ESG Analytics</Link></li>
             </>
           )}
 

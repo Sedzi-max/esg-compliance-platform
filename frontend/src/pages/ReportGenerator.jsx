@@ -189,6 +189,7 @@ function ReportGenerator() {
               <option value="GRI">GRI Standard</option>
               <option value="SEC Climate">SEC Climate Rules (US)</option>
               <option value="GSE_MANDATORY">Ghana Stock Exchange</option>
+              <option value="NIC_INSURANCE_ESG">NIC Insurance ESG Guidelines</option>
             </select>
           </div>
 
