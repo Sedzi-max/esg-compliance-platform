@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext'; // Ensure this path matches your folder structure
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 
 function Sidebar() {
   const location = useLocation();
@@ -13,6 +15,24 @@ function Sidebar() {
   const isAdmin = user?.role?.toLowerCase() === 'admin'; 
   const isManager = user?.role?.toLowerCase() === 'manager';
   const isAuditor = user?.role?.toLowerCase() === 'auditor'; 
+
+  const [sector, setSector] = useState('general');
+
+  useEffect(() => {
+    const fetchSector = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get('/api/organizations/my-sector', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSector(response.data.sector);
+      } catch (err) {
+        console.error('Failed to load organization sector:', err);
+        setSector('general'); // fail safe — shows shared links only
+      }
+    };
+    fetchSector();
+  }, []);
 
   const handleLogout = () => {
     logout(); // Use the global logout function
