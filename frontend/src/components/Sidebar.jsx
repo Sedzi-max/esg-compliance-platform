@@ -87,8 +87,13 @@ function Sidebar() {
           ESG Radar
         </h2>
         <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#10b981', fontWeight: '600' }}>
-          Compliance Engine
-        </p>
+  Compliance Engine
+</p>
+{sector !== 'general' && (
+  <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase' }}>
+    {sector} Module
+  </p>
+)}
       </div>
       
       {/* Navigation Links */}
@@ -119,8 +124,12 @@ function Sidebar() {
               {/* Climate Stress Testing */}
               <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>
               <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
+              {sector === 'banking' && (
               <li><Link to="/banking-analytics" style={getLinkStyle('/banking-analytics')}>🏦 Banking ESG Analytics</Link></li>
+)}
+{sector === 'insurance' && (
               <li><Link to="/insurance-analytics" style={getLinkStyle('/insurance-analytics')}>🛡️ Insurance ESG Analytics</Link></li>
+)}
             </>
           )}
 
@@ -131,7 +140,9 @@ function Sidebar() {
               <li><Link to="/entity-management" style={getLinkStyle('/entity-management')}>🌐 Boundaries</Link></li>
               <li><Link to="/metrics" style={getLinkStyle('/metrics')}>⚙️ Metrics Config</Link></li>
               <li><Link to="/admin/frameworks" style={getLinkStyle('/admin/frameworks')}>📐 Framework Maps</Link></li>
+              {sector === 'banking' && (
               <li><Link to="/banking-data-entry" style={getLinkStyle('/banking-data-entry')}>🏦 Banking Data Entry</Link></li>
+)}
               <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
               <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
             </>
