@@ -4,8 +4,10 @@ import axios from 'axios';
 function FrameworkManager() {
     const [mappings, setMappings] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    
+    const [deletingId, setDeletingId] = useState(null);
+
     const [formData, setFormData] = useState({
         framework_name: 'CSRD / ESRS',
         framework_code: '',
@@ -19,6 +21,7 @@ function FrameworkManager() {
 
     const fetchMappings = async () => {
         setLoading(true);
+        setLoadError('');
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get('/api/mappings', {
@@ -27,6 +30,11 @@ function FrameworkManager() {
             setMappings(response.data);
         } catch (err) {
             console.error("Failed to load mappings", err);
+            // FIX: a failed load is no longer indistinguishable from "no mappings
+            // exist yet" — a distinct error state is shown, with a retry option,
+            // so no one mistakes a network blip for an unmapped disclosure.
+            setMappings([]);
+            setLoadError("Failed to load framework mappings. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -34,16 +42,20 @@ function FrameworkManager() {
 
     const handleCreateMapping = async (e) => {
         e.preventDefault();
+        // FIX: guard against double-submit (Enter key + click, slow network
+        // double-click, etc.) creating duplicate mapping rules.
+        if (isSaving) return;
+
         setIsSaving(true);
         try {
             const token = localStorage.getItem('token');
             await axios.post('/api/mappings', formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             // Reset form but keep the framework name
             setFormData({ ...formData, framework_code: '', description: '' });
-            fetchMappings();
+            await fetchMappings();
         } catch (err) {
             alert(err.response?.data?.error || "Failed to create mapping.");
         } finally {
@@ -52,16 +64,23 @@ function FrameworkManager() {
     };
 
     const handleDelete = async (mappingId) => {
+        // FIX: prevent a rapid double-click firing two DELETE requests for
+        // the same mapping.
+        if (deletingId === mappingId) return;
+
         if (!window.confirm("Are you sure you want to delete this mapping rule? It will immediately affect generated reports.")) return;
-        
+
+        setDeletingId(mappingId);
         try {
             const token = localStorage.getItem('token');
             await axios.delete(`/api/mappings/${mappingId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            fetchMappings();
+            await fetchMappings();
         } catch (err) {
             alert("Failed to delete mapping.");
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -147,7 +166,7 @@ function FrameworkManager() {
                             </select>
                         </div>
                         
-                        <button type="submit" disabled={isSaving} style={{ backgroundColor: '#111827', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: isSaving ? 'wait' : 'pointer', marginTop: '8px', fontSize: '15px', transition: '0.2s' }}>
+                        <button type="submit" disabled={isSaving} style={{ backgroundColor: '#111827', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '700', border: 'none', cursor: isSaving ? 'wait' : 'pointer', marginTop: '8px', fontSize: '15px', transition: '0.2s', opacity: isSaving ? 0.7 : 1 }}>
                             {isSaving ? 'Saving...' : 'Link Metric to Framework'}
                         </button>
                     </form>
@@ -155,9 +174,24 @@ function FrameworkManager() {
 
                 {/* 2. ACTIVE MAPPINGS LEDGER */}
                 <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', gridColumn: 'span 2' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#111827', margin: '0 0 24px 0' }}>Active Disclosure Rules</h2>
-                    
-                    {loading ? <p>Loading system rules...</p> : mappings.length === 0 ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                        <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#111827', margin: 0 }}>Active Disclosure Rules</h2>
+                        {loadError && (
+                            <button onClick={fetchMappings} style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                                Retry
+                            </button>
+                        )}
+                    </div>
+
+                    {loadError && (
+                        <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px 20px', borderRadius: '10px', marginBottom: '20px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca' }}>
+                            ⚠️ {loadError}
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <p>Loading system rules...</p>
+                    ) : loadError ? null : mappings.length === 0 ? (
                         <p style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', padding: '40px 0' }}>No framework mappings found. Add one to get started.</p>
                     ) : (
                         <div style={{ overflowX: 'auto' }}>
@@ -181,8 +215,12 @@ function FrameworkManager() {
                                                 {rule.activity_type}
                                             </td>
                                             <td style={{ padding: '16px' }}>
-                                                <button onClick={() => handleDelete(rule.mapping_id)} style={{ color: '#ef4444', backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                                                    Remove
+                                                <button
+                                                    onClick={() => handleDelete(rule.mapping_id)}
+                                                    disabled={deletingId === rule.mapping_id}
+                                                    style={{ color: '#ef4444', backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: deletingId === rule.mapping_id ? 'not-allowed' : 'pointer', opacity: deletingId === rule.mapping_id ? 0.6 : 1 }}
+                                                >
+                                                    {deletingId === rule.mapping_id ? 'Removing...' : 'Remove'}
                                                 </button>
                                             </td>
                                         </tr>

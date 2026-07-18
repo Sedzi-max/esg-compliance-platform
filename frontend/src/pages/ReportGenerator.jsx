@@ -8,25 +8,29 @@ function ReportGenerator() {
   // Matched to the seeded database framework names
   const [framework, setFramework] = useState('CSRD / ESRS');
   const [year, setYear] = useState('2026');
-  
+
   const [isGeneratingCSV, setIsGeneratingCSV] = useState(false);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
-  
+
   const [reportData, setReportData] = useState(null);
   const [error, setError] = useState(null);
-  
+
   const printRef = useRef();
 
   const handleDownloadCSV = async () => {
+    if (isGeneratingCSV) return; // guard against double-click
     setIsGeneratingCSV(true);
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      // Exporting the mapped gap-analysis data as CSV
-      const response = await axios.get(`/api/reports/gap-analysis?framework=${framework}&year=${year}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // FIX: encode the framework name so values like "CSRD / ESRS" (space
+      // and slash) don't corrupt the query string or silently fail to match
+      // on the backend.
+      const response = await axios.get(
+        `/api/reports/gap-analysis?framework=${encodeURIComponent(framework)}&year=${encodeURIComponent(year)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
       const data = response.data;
       if (data.length === 0) {
@@ -45,7 +49,7 @@ function ReportGenerator() {
 
     } catch (err) {
       console.error("CSV Download failed:", err);
-      setError("Failed to generate raw CSV report.");
+      setError("Failed to generate raw CSV report. Please try again.");
     } finally {
       setIsGeneratingCSV(false);
     }
@@ -53,19 +57,28 @@ function ReportGenerator() {
 
   const generatePreview = async (e) => {
     e.preventDefault();
+    if (isGeneratingPreview) return; // FIX: guard against double-submit
     setIsGeneratingPreview(true);
     setError(null);
+    setReportData(null); // clear any previous report so a stale one is never shown alongside a fresh error
 
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
+      const encodedFramework = encodeURIComponent(framework);
+      const encodedYear = encodeURIComponent(year);
 
-      // 1. Fetch raw data for the document body AND mapped data for the gap analysis simultaneously
+      // FIX: no more .catch(() => ({ data: [] })) on any of these four calls.
+      // A failed request now propagates and aborts report generation instead
+      // of being silently treated as "this facility has zero data" — which
+      // previously could produce a fully formatted, "System Verified"
+      // compliance report built entirely from a network failure rather than
+      // real approved data.
       const [orgRes, emissionsRes, obsRes, gapRes] = await Promise.all([
-        axios.get('/api/organizations', config).catch(() => ({ data: [] })),
-        axios.get('/api/emissions', config).catch(() => ({ data: [] })),
-        axios.get('/api/observations', config).catch(() => ({ data: [] })),
-        axios.get(`/api/reports/gap-analysis?framework=${framework}&year=${year}`, config).catch(() => ({ data: [] }))
+        axios.get('/api/organizations', config),
+        axios.get('/api/emissions', config),
+        axios.get('/api/observations', config),
+        axios.get(`/api/reports/gap-analysis?framework=${encodedFramework}&year=${encodedYear}`, config)
       ]);
 
       const targetEmissions = emissionsRes.data.filter(e => {
@@ -99,7 +112,7 @@ function ReportGenerator() {
         if (o.pillar === 'G') esgMetrics.Governance.push(metricObj);
       });
 
-      // 2. Process Backend Dynamic Mapping (Gap Analysis)
+      // Process Backend Dynamic Mapping (Gap Analysis)
       const mappedResults = gapRes.data;
       const totalReqs = mappedResults.length;
       const fulfilledReqs = mappedResults.filter(r => r.is_fulfilled).length;
@@ -108,40 +121,44 @@ function ReportGenerator() {
       setReportData({
         year, framework, generatedAt: new Date().toLocaleDateString(),
         facilityCount: orgRes.data.length, totalCarbon, scopeData, esgMetrics,
-        mappedResults, complianceScore // Inject the dynamic mapping into state
+        mappedResults, complianceScore
       });
 
     } catch (err) {
       console.error("Preview Generation Error:", err);
-      setError("Failed to compile preview data.");
+      // FIX: this can now actually reflect a real failure, since none of the
+      // underlying requests silently resolve to empty data anymore.
+      setError("Failed to compile report data — one or more data sources could not be reached. Please try again before relying on this report.");
+      setReportData(null);
     } finally {
       setIsGeneratingPreview(false);
     }
   };
 
   const exportOfficialPDF = async () => {
+    if (isExportingPDF) return; // guard against double-click
     setIsExportingPDF(true);
     try {
       const element = printRef.current;
-      
+
       const originalBoxShadow = element.style.boxShadow;
       element.style.boxShadow = 'none';
       element.style.border = 'none';
-      
+
       const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
+
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`ESG_Radar_${framework.replace(/[/ ]/g, '_')}_Disclosure_${year}.pdf`);
-      
+
       element.style.boxShadow = originalBoxShadow;
       element.style.border = '1px solid #e5e7eb';
     } catch (err) {
       console.error("PDF Export failed", err);
-      alert("Failed to export document.");
+      alert("Failed to export document. Please try again.");
     } finally {
       setIsExportingPDF(false);
     }
@@ -149,7 +166,7 @@ function ReportGenerator() {
 
   return (
     <div style={{ width: '100%', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      
+
       <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)', border: '1px solid #e5e7eb', marginBottom: '40px' }}>
         <div style={{ marginBottom: '24px' }}>
             <h2 style={{ fontSize: '20px', color: '#111827', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700' }}>
@@ -163,9 +180,15 @@ function ReportGenerator() {
             <label style={labelStyle}>Regulatory Framework Matrix</label>
             <select value={framework} onChange={(e) => setFramework(e.target.value)} style={inputStyle}>
               {/* Connected to Database Mappings */}
+              {/* FIX: added the two frameworks that FrameworkManager.js allows
+                  mapping rules to be created for (SEC Climate, Ghana Stock
+                  Exchange) — previously mappings created for those two could
+                  never actually be reported on from this screen. */}
               <option value="CSRD / ESRS">CSRD (European Standard)</option>
               <option value="ISSB / IFRS S2">ISSB (Global)</option>
               <option value="GRI">GRI Standard</option>
+              <option value="SEC Climate">SEC Climate Rules (US)</option>
+              <option value="GSE_MANDATORY">Ghana Stock Exchange</option>
             </select>
           </div>
 
@@ -179,11 +202,11 @@ function ReportGenerator() {
           </div>
 
           <div style={{ display: 'flex', gap: '12px', flex: '1 1 300px' }}>
-            <button type="button" onClick={handleDownloadCSV} disabled={isGeneratingCSV} style={secondaryButtonStyle}>
+            <button type="button" onClick={handleDownloadCSV} disabled={isGeneratingCSV} style={{...secondaryButtonStyle, opacity: isGeneratingCSV ? 0.7 : 1, cursor: isGeneratingCSV ? 'not-allowed' : 'pointer'}}>
               {isGeneratingCSV ? 'Compiling...' : '📥 Raw CSV'}
             </button>
 
-            <button type="submit" disabled={isGeneratingPreview} style={primaryButtonStyle}>
+            <button type="submit" disabled={isGeneratingPreview} style={{...primaryButtonStyle, opacity: isGeneratingPreview ? 0.7 : 1, cursor: isGeneratingPreview ? 'not-allowed' : 'pointer'}}>
               {isGeneratingPreview ? 'Rendering...' : '📄 Build Visual Report'}
             </button>
           </div>
@@ -194,7 +217,7 @@ function ReportGenerator() {
       {reportData && (
         <div style={{ position: 'relative', padding: '20px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
-            <button onClick={exportOfficialPDF} disabled={isExportingPDF} style={{...primaryButtonStyle, backgroundColor: '#dc2626', padding: '10px 24px'}}>
+            <button onClick={exportOfficialPDF} disabled={isExportingPDF} style={{...primaryButtonStyle, backgroundColor: '#dc2626', padding: '10px 24px', opacity: isExportingPDF ? 0.7 : 1, cursor: isExportingPDF ? 'not-allowed' : 'pointer'}}>
               {isExportingPDF ? '⏳ Rendering PDF...' : '⬇️ Download Official PDF'}
             </button>
           </div>
@@ -225,7 +248,7 @@ function ReportGenerator() {
               </div>
             </div>
 
-            {/* --- UPGRADED: DYNAMIC COMPLIANCE GAP ANALYSIS SECTION --- */}
+            {/* --- DYNAMIC COMPLIANCE GAP ANALYSIS SECTION --- */}
             <div style={{ marginBottom: '48px', padding: '24px', backgroundColor: reportData.complianceScore === 100 ? '#ecfdf5' : '#fef2f2', border: `1px solid ${reportData.complianceScore === 100 ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', fontFamily: 'system-ui, sans-serif' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', color: '#111827', textTransform: 'uppercase', fontWeight: '700' }}>Automated Framework Mapping</h3>

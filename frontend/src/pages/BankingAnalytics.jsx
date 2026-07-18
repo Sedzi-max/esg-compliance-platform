@@ -1,58 +1,107 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-    BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
+    BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function BankingAnalytics() {
-    const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState('2026');
 
-    // --- MOCK DATA BUILT TO BoG PRINCIPLE REPORTING SPECIFICATIONS ---
-    // Principle 1: High-Risk Sector Portfolio Exposure & E&S Screening Rates
-    const portfolioScreeningData = [
-        { sector: 'Agriculture & Forestry', 'Total Loans': 450, 'E&S Screened': 410 },
-        { sector: 'Manufacturing', 'Total Loans': 600, 'E&S Screened': 580 },
-        { sector: 'Oil & Gas / Mining', 'Total Loans': 850, 'E&S Screened': 420 }, // High risk, lower screening coverage
-        { sector: 'Power & Energy', 'Total Loans': 700, 'E&S Screened': 690 },
-        { sector: 'Construction & Real Estate', 'Total Loans': 500, 'E&S Screened': 480 }
-    ];
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
-    // Principle 5: Financial Inclusion Growth (Accounts opened vs Tech Platform Mobile Money Transactions)
-    const inclusionGrowthData = [
-        { month: 'Jan', 'Basic Accounts Opened': 120, 'Mobile Money Trans (k)': 45 },
-        { month: 'Feb', 'Basic Accounts Opened': 150, 'Mobile Money Trans (k)': 58 },
-        { month: 'Mar', 'Basic Accounts Opened': 220, 'Mobile Money Trans (k)': 85 },
-        { month: 'Apr', 'Basic Accounts Opened': 310, 'Mobile Money Trans (k)': 120 },
-        { month: 'May', 'Basic Accounts Opened': 430, 'Mobile Money Trans (k)': 190 },
-        { month: 'Jun', 'Basic Accounts Opened': 580, 'Mobile Money Trans (k)': 240 }
-    ];
-
-    // Principle 4: Gender Equality Balance (FTE Recruitment vs Leadership Roles)
-    const genderEqualityData = [
-        { name: 'Board of Directors', 'Male': 65, 'Female': 35 },
-        { name: 'Senior Leadership', 'Male': 60, 'Female': 40 },
-        { name: 'Total Bank FTEs', 'Male': 48, 'Female': 52 }
-    ];
-
-    // Principle 2: Overall BoG Principle Maturity Score (Radar Evaluation)
-    const principleMaturityData = [
-        { subject: 'P1: Portfolio Screening', score: 85, fullMark: 100 },
-        { subject: 'P2: Internal Footprint', score: 90, fullMark: 100 },
-        { subject: 'P3: Governance & Ethics', score: 95, fullMark: 100 },
-        { subject: 'P4: Gender Equality', score: 75, fullMark: 100 },
-        { subject: 'P5: Financial Inclusion', score: 80, fullMark: 100 },
-        { subject: 'P6: Resource Efficiency', score: 60, fullMark: 100 },
-        { subject: 'P7: Transparency & Discl.', score: 70, fullMark: 100 }
-    ];
-
-    const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#7c3aed'];
+    const [portfolioScreeningData, setPortfolioScreeningData] = useState([]);
+    const [inclusionGrowthData, setInclusionGrowthData] = useState([]);
+    const [genderEqualityData, setGenderEqualityData] = useState([]);
+    const [principleMaturityData, setPrincipleMaturityData] = useState([]);
 
     useEffect(() => {
-        // Simulate backend metrics compilation delay
-        const timer = setTimeout(() => setLoading(false), 1000);
-        return () => clearTimeout(timer);
+        let isCurrent = true;
+        fetchAllBankingMetrics(isCurrent);
+        return () => { isCurrent = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedYear]);
+
+    const fetchAllBankingMetrics = async (isCurrent = true) => {
+        setLoading(true);
+        setError('');
+        try {
+            const token = localStorage.getItem('token');
+            const config = { headers: { Authorization: `Bearer ${token}` } };
+            const yearParam = encodeURIComponent(selectedYear);
+
+            // No .catch() swallowing here — a failed request throws and is
+            // handled below, so an outage is never mistaken for "no data yet."
+            const [portfolioRes, inclusionRes, genderRes, maturityRes] = await Promise.all([
+                axios.get(`/api/banking/portfolio-screening?year=${yearParam}`, config),
+                axios.get(`/api/banking/financial-inclusion?year=${yearParam}`, config),
+                axios.get(`/api/banking/gender-equality?year=${yearParam}`, config),
+                axios.get(`/api/banking/principle-maturity?year=${yearParam}`, config),
+            ]);
+
+            if (!isCurrent) return;
+
+            setPortfolioScreeningData(portfolioRes.data.map(row => ({
+                sector: row.sector,
+                'Total Loans': Number(row.total_loans),
+                'E&S Screened': Number(row.es_screened),
+            })));
+
+            setInclusionGrowthData(inclusionRes.data.map(row => ({
+                month: MONTH_NAMES[row.period_month - 1] || row.period_month,
+                'Basic Accounts Opened': Number(row.basic_accounts_opened),
+                'Mobile Money Trans (k)': Number(row.mobile_money_transactions_k),
+            })));
+
+            setGenderEqualityData(genderRes.data.map(row => ({
+                name: row.category,
+                Male: Number(row.male_count),
+                Female: Number(row.female_count),
+            })));
+
+            setPrincipleMaturityData(maturityRes.data.map(row => ({
+                subject: `${row.principle_code}: ${row.principle_name}`,
+                score: Number(row.score),
+                fullMark: 100,
+            })));
+
+        } catch (err) {
+            console.error("Failed to load banking analytics:", err);
+            if (isCurrent) {
+                setError("Failed to load Bank of Ghana ESG metrics. Please try again.");
+                setPortfolioScreeningData([]);
+                setInclusionGrowthData([]);
+                setGenderEqualityData([]);
+                setPrincipleMaturityData([]);
+            }
+        } finally {
+            if (isCurrent) setLoading(false);
+        }
+    };
+
+    // --- Derived summary figures, computed from real fetched data. Each
+    // guards against an empty dataset instead of showing a stale/fake number. ---
+    const avgScreeningRate = (() => {
+        const totalLoans = portfolioScreeningData.reduce((sum, s) => sum + s['Total Loans'], 0);
+        const totalScreened = portfolioScreeningData.reduce((sum, s) => sum + s['E&S Screened'], 0);
+        return totalLoans > 0 ? ((totalScreened / totalLoans) * 100).toFixed(1) : null;
+    })();
+
+    const totalTransactionsK = inclusionGrowthData.length > 0
+        ? inclusionGrowthData.reduce((sum, m) => sum + m['Mobile Money Trans (k)'], 0)
+        : null;
+
+    const femaleLeadershipRatio = (() => {
+        const leadership = genderEqualityData.find(g => g.name === 'Senior Leadership');
+        if (!leadership) return null;
+        const total = leadership.Male + leadership.Female;
+        return total > 0 ? ((leadership.Female / total) * 100).toFixed(1) : null;
+    })();
+
+    const hasAnyData = portfolioScreeningData.length > 0 || inclusionGrowthData.length > 0
+        || genderEqualityData.length > 0 || principleMaturityData.length > 0;
 
     if (loading) {
         return <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280' }}>Compiling Bank of Ghana ESG metrics...</div>;
@@ -60,7 +109,7 @@ function BankingAnalytics() {
 
     return (
         <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, sans-serif' }}>
-            
+
             {/* Dashboard Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', borderBottom: '1px solid #e2e8f0', paddingBottom: '24px' }}>
                 <div>
@@ -71,9 +120,9 @@ function BankingAnalytics() {
                         Phase 3 dynamic monitoring dashboard for the Sustainable Banking Principles and high-risk lending metrics.
                     </p>
                 </div>
-                
-                <select 
-                    value={selectedYear} 
+
+                <select
+                    value={selectedYear}
                     onChange={(e) => setSelectedYear(e.target.value)}
                     style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: '600', color: '#334155', outline: 'none', cursor: 'pointer', backgroundColor: 'white' }}
                 >
@@ -82,112 +131,138 @@ function BankingAnalytics() {
                 </select>
             </div>
 
-            {/* Quick Insights Cards Summary Block */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                <div style={cardSummaryStyle}>
-                    <span style={{ fontSize: '24px' }}>🛡️</span>
-                    <div>
-                        <div style={cardLabelStyle}>Avg Portfolio E&S Screening</div>
-                        <div style={cardValueStyle}>76.4%</div>
-                    </div>
+            {error && (
+                <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚠️ {error}</span>
+                    <button onClick={() => fetchAllBankingMetrics(true)} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>
+                        Retry
+                    </button>
                 </div>
-                <div style={cardSummaryStyle}>
-                    <span style={{ fontSize: '24px' }}>📱</span>
-                    <div>
-                        <div style={cardLabelStyle}>Tech inclusion volume</div>
-                        <div style={cardValueStyle}>738k trans</div>
-                    </div>
-                </div>
-                <div style={cardSummaryStyle}>
-                    <span style={{ fontSize: '24px' }}>⚖️</span>
-                    <div>
-                        <div style={cardLabelStyle}>Female Leadership Ratio</div>
-                        <div style={cardValueStyle}>40.0%</div>
-                    </div>
-                </div>
-                <div style={cardSummaryStyle}>
-                    <span style={{ fontSize: '24px' }}>🏢</span>
-                    <div>
-                        <div style={cardLabelStyle}>HQ Carbon Footprint Reduction</div>
-                        <div style={cardValueStyle}>-18.4%</div>
-                    </div>
-                </div>
-            </div>
+            )}
 
-            {/* Core Analytics Grid Layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '32px' }}>
-                
-                {/* Chart 1: Portfolio E&S Risk Screening Cover (Principle 1) */}
-                <div style={chartCardStyle}>
-                    <h3 style={chartHeaderStyle}>Principle 1: Portfolio E&S Screening in Mandatory Sectors (M GHC)</h3>
-                    <div style={{ width: '100%', height: '300px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={portfolioScreeningData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="sector" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                                <Tooltip />
-                                <Legend />
-                                <Bar dataKey="Total Loans" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="E&S Screened" fill="#10b981" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+            {!error && !hasAnyData ? (
+                <div style={{ textAlign: 'center', padding: '60px', backgroundColor: 'white', borderRadius: '16px', border: '1px dashed #cbd5e1', color: '#64748b' }}>
+                    No Bank of Ghana ESG data has been logged for {selectedYear} yet. Once portfolio screening, headcount, and transaction data are recorded, this dashboard will populate automatically.
                 </div>
-
-                {/* Chart 2: Financial Inclusion Growth Trends (Principle 5) */}
-                <div style={chartCardStyle}>
-                    <h3 style={chartHeaderStyle}>Principle 5: Financial Inclusion & Digital Penetration Reach</h3>
-                    <div style={{ width: '100%', height: '300px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={inclusionGrowthData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} />
-                                <Tooltip />
-                                <Legend />
-                                <Line type="monotone" dataKey="Basic Accounts Opened" stroke="#2563eb" strokeWidth={3} activeDot={{ r: 8 }} />
-                                <Line type="monotone" dataKey="Mobile Money Trans (k)" stroke="#7c3aed" strokeWidth={3} />
-                            </LineChart>
-                        </ResponsiveContainer>
+            ) : (
+                <>
+                    {/* Quick Insights Cards Summary Block */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+                        <div style={cardSummaryStyle}>
+                            <span style={{ fontSize: '24px' }}>🛡️</span>
+                            <div>
+                                <div style={cardLabelStyle}>Avg Portfolio E&S Screening</div>
+                                <div style={cardValueStyle}>{avgScreeningRate !== null ? `${avgScreeningRate}%` : '—'}</div>
+                            </div>
+                        </div>
+                        <div style={cardSummaryStyle}>
+                            <span style={{ fontSize: '24px' }}>📱</span>
+                            <div>
+                                <div style={cardLabelStyle}>Tech inclusion volume</div>
+                                <div style={cardValueStyle}>{totalTransactionsK !== null ? `${totalTransactionsK.toLocaleString()}k trans` : '—'}</div>
+                            </div>
+                        </div>
+                        <div style={cardSummaryStyle}>
+                            <span style={{ fontSize: '24px' }}>⚖️</span>
+                            <div>
+                                <div style={cardLabelStyle}>Female Leadership Ratio</div>
+                                <div style={cardValueStyle}>{femaleLeadershipRatio !== null ? `${femaleLeadershipRatio}%` : '—'}</div>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                {/* Chart 3: Gender Equality Balance Sheet (Principle 4) */}
-                <div style={chartCardStyle}>
-                    <h3 style={chartHeaderStyle}>Principle 4: Gender Equality Metrics Across Bank Structure</h3>
-                    <div style={{ width: '100%', height: '300px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={genderEqualityData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} />
-                                <Tooltip />
-                                <Legend />
-                                <Bar dataKey="Male" stackId="a" fill="#3b82f6" />
-                                <Bar dataKey="Female" stackId="a" fill="#ec4899" />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    {/* Core Analytics Grid Layout */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '32px' }}>
+
+                        {/* Chart 1: Portfolio E&S Risk Screening Cover (Principle 1) */}
+                        <div style={chartCardStyle}>
+                            <h3 style={chartHeaderStyle}>Principle 1: Portfolio E&S Screening in Mandatory Sectors (GHC)</h3>
+                            {portfolioScreeningData.length === 0 ? (
+                                <div style={emptyChartStyle}>No portfolio screening data logged for {selectedYear}.</div>
+                            ) : (
+                                <div style={{ width: '100%', height: '300px' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={portfolioScreeningData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                            <XAxis dataKey="sector" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} />
+                                            <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Bar dataKey="Total Loans" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="E&S Screened" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chart 2: Financial Inclusion Growth Trends (Principle 5) */}
+                        <div style={chartCardStyle}>
+                            <h3 style={chartHeaderStyle}>Principle 5: Financial Inclusion & Digital Penetration Reach</h3>
+                            {inclusionGrowthData.length === 0 ? (
+                                <div style={emptyChartStyle}>No financial inclusion data logged for {selectedYear}.</div>
+                            ) : (
+                                <div style={{ width: '100%', height: '300px' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={inclusionGrowthData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                            <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                            <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Line type="monotone" dataKey="Basic Accounts Opened" stroke="#2563eb" strokeWidth={3} activeDot={{ r: 8 }} />
+                                            <Line type="monotone" dataKey="Mobile Money Trans (k)" stroke="#7c3aed" strokeWidth={3} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chart 3: Gender Equality Balance Sheet (Principle 4) */}
+                        <div style={chartCardStyle}>
+                            <h3 style={chartHeaderStyle}>Principle 4: Gender Equality Metrics Across Bank Structure</h3>
+                            {genderEqualityData.length === 0 ? (
+                                <div style={emptyChartStyle}>No headcount data logged for {selectedYear}.</div>
+                            ) : (
+                                <div style={{ width: '100%', height: '300px' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={genderEqualityData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                            <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                            <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Bar dataKey="Male" stackId="a" fill="#3b82f6" />
+                                            <Bar dataKey="Female" stackId="a" fill="#ec4899" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chart 4: Overall Framework Principle Maturity */}
+                        <div style={chartCardStyle}>
+                            <h3 style={chartHeaderStyle}>General Principle Implementation Maturity Index</h3>
+                            {principleMaturityData.length === 0 ? (
+                                <div style={emptyChartStyle}>No principle maturity scores logged for {selectedYear}.</div>
+                            ) : (
+                                <div style={{ width: '100%', height: '300px', display: 'flex', justifyContent: 'center' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <RadarChart cx="50%" cy="50%" outerRadius="70%" data={principleMaturityData}>
+                                            <PolarGrid stroke="#e2e8f0" />
+                                            <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }} />
+                                            <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                                            <Radar name="Current Maturity" dataKey="score" stroke="#4f46e5" fill="#6366f1" fillOpacity={0.2} />
+                                            <Tooltip />
+                                        </RadarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+
                     </div>
-                </div>
-
-                {/* Chart 4: Overall Framework Principle Maturity (Principle 7 Auditing) */}
-                <div style={chartCardStyle}>
-                    <h3 style={chartHeaderStyle}>Principle 7: General Principle Implementation Maturity Index</h3>
-                    <div style={{ width: '100%', height: '300px', display: 'flex', justifyContent: 'center' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={principleMaturityData}>
-                                <PolarGrid stroke="#e2e8f0" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }} />
-                                <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                                <Radar name="Current Maturity" dataKey="score" stroke="#4f46e5" fill="#6366f1" fillOpacity={0.2} />
-                                <Tooltip />
-                            </RadarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-            </div>
+                </>
+            )}
         </div>
     );
 }
@@ -207,6 +282,13 @@ const chartHeaderStyle = {
     color: '#1e293b',
     margin: '0 0 20px 0',
     letterSpacing: '-0.01em'
+};
+
+const emptyChartStyle = {
+    padding: '60px 0',
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: '13px'
 };
 
 const cardSummaryStyle = {

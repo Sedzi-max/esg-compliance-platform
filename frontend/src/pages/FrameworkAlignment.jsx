@@ -21,11 +21,27 @@ const FrameworkAlignment = () => {
     const [isDelegateOpen, setIsDelegateOpen] = useState(false);
     const [selectedGapTask, setSelectedGapTask] = useState('');
 
+    // Refs mirror the latest activeFramework/selectedYear so the async
+    // callbacks below can check "is this still the request that matters"
+    // without becoming stale closures over old state.
+    const activeFrameworkRef = React.useRef(activeFramework);
+    const selectedYearRef = React.useRef(selectedYear);
+    useEffect(() => { activeFrameworkRef.current = activeFramework; }, [activeFramework]);
+    useEffect(() => { selectedYearRef.current = selectedYear; }, [selectedYear]);
+
+    // FIX: guard fetchReadiness against stale responses. If the year is
+    // switched again before an in-flight request resolves, the older
+    // request's result is discarded instead of overwriting the newer one.
     useEffect(() => {
-        fetchReadiness();
+        let isCurrent = true;
+        fetchReadiness(isCurrent);
+        return () => {
+            isCurrent = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedYear]);
 
-    const fetchReadiness = async () => {
+    const fetchReadiness = async (isCurrent = true) => {
         setLoading(true);
         setError(null);
         try {
@@ -37,16 +53,24 @@ const FrameworkAlignment = () => {
             // An empty array is a legitimate result — no approved data yet for this
             // year — not a reason to show fabricated scores. Show it as-is; the
             // empty state below tells the user what that means.
-            setReadinessData(response.data);
+            if (isCurrent) {
+                setReadinessData(response.data);
+            }
         } catch (err) {
             console.error("Failed to fetch readiness:", err);
-            setReadinessData([]);
-            setError("Failed to load compliance readiness data. Please try again.");
+            if (isCurrent) {
+                setReadinessData([]);
+                setError("Failed to load compliance readiness data. Please try again.");
+            }
         } finally {
-            setLoading(false);
+            if (isCurrent) {
+                setLoading(false);
+            }
         }
     };
 
+    // FIX: only apply a gap-analysis response if the user hasn't since
+    // switched to a different framework or year while it was in flight.
     const openGapAnalysis = async (frameworkName) => {
         setActiveFramework(frameworkName);
         setIsModalOpen(true);
@@ -54,17 +78,27 @@ const FrameworkAlignment = () => {
         setGapError(null);
         setGapData([]);
 
+        const requestedFramework = frameworkName;
+        const requestedYear = selectedYear;
+
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get(`/api/reports/gap-analysis?framework=${encodeURIComponent(frameworkName)}&year=${selectedYear}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setGapData(response.data);
+
+            if (requestedFramework === activeFrameworkRef.current && requestedYear === selectedYearRef.current) {
+                setGapData(response.data);
+            }
         } catch (err) {
             console.error("Failed to load gap analysis", err);
-            setGapError("Failed to load the gap analysis for this framework. Please try again.");
+            if (requestedFramework === activeFrameworkRef.current && requestedYear === selectedYearRef.current) {
+                setGapError("Failed to load the gap analysis for this framework. Please try again.");
+            }
         } finally {
-            setLoadingGap(false);
+            if (requestedFramework === activeFrameworkRef.current && requestedYear === selectedYearRef.current) {
+                setLoadingGap(false);
+            }
         }
     };
 
@@ -117,11 +151,11 @@ const FrameworkAlignment = () => {
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '24px' }}>
-                    {readinessData.map((framework, index) => {
+                    {readinessData.map((framework) => {
                         const status = getStatusColor(Number(framework.readiness_score));
                         
                         return (
-                            <div key={index} style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', display: 'flex', flexDirection: 'column' }}>
+                            <div key={framework.framework_name} style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', display: 'flex', flexDirection: 'column' }}>
                                 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
                                     <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#111827', margin: 0, lineHeight: '1.4', maxWidth: '70%' }}>
@@ -199,7 +233,7 @@ const FrameworkAlignment = () => {
                                     </thead>
                                     <tbody>
                                         {gapData.map((gap, idx) => (
-                                            <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                            <tr key={gap.framework_code || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                                 <td style={{ padding: '16px' }}>{gap.is_fulfilled ? '✅' : '❌'}</td>
                                                 <td style={{ padding: '16px' }}>
                                                     <div style={{ fontWeight: '600', fontSize: '14px' }}>{gap.framework_code}</div>

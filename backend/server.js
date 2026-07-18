@@ -11,6 +11,7 @@ const path = require('path');
 const auditorGuard = require('./middleware/auditorGuard');
 const uploadRoutes = require('./routes/uploadRoutes');
 const crypto = require('crypto');
+const bankingRoutes = require('./routes/banking-routes');
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use(cors({
 
 app.use(express.json());
 app.use('/api', uploadRoutes);
+app.use('/api/banking', bankingRoutes);
 
 // ==========================================
 // GET ALL EMISSIONS (For Dashboards)
