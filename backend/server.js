@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const bankingRoutes = require('./routes/banking-routes');
 const insuranceRoutes = require('./routes/insurance-routes');
 const sectorRoutes = require('./routes/sector-routes');
+const energyRoutes = require('./routes/energy-routes'); 
 
 const app = express();
 
@@ -63,6 +64,7 @@ app.use('/api', uploadRoutes);
 app.use('/api/banking', bankingRoutes);
 app.use('/api/insurance', insuranceRoutes);
 app.use('/api/organizations', sectorRoutes);
+app.use('/api/energy', energyRoutes);
 
 // ==========================================
 // GET ALL EMISSIONS (For Dashboards)
@@ -882,7 +884,7 @@ app.put('/api/admin/approve/:id', authorize, async (req, res) => {
       return res.status(400).json({ error: "A valid role must be provided to approve this account." });
     }
 
-    const validSectors = ['general', 'banking', 'insurance'];
+    const validSectors = ['general', 'banking', 'insurance', 'energy'];
     const finalSector = validSectors.includes(sector) ? sector : 'general';
 
     const client = await pool.connect();

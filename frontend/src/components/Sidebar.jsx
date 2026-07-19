@@ -127,10 +127,13 @@ function Sidebar() {
               <li><Link to="/scenarios" style={getLinkStyle('/scenarios')}>🌍 Climate Stress Testing</Link></li>
               {sector === 'banking' && (
               <li><Link to="/banking-analytics" style={getLinkStyle('/banking-analytics')}>🏦 Banking ESG Analytics</Link></li>
-)}
-{sector === 'insurance' && (
+                )}
+              {sector === 'insurance' && (
               <li><Link to="/insurance-analytics" style={getLinkStyle('/insurance-analytics')}>🛡️ Insurance ESG Analytics</Link></li>
-)}
+              )}
+              {sector === 'energy' && (
+              <li><Link to="/energy-analytics" style={getLinkStyle('/energy-analytics')}>⚡ Energy ESG Analytics</Link></li>
+              )}
             </>
           )}
 

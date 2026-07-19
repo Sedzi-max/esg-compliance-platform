@@ -219,6 +219,7 @@ function UserManagement() {
                         <option value="general">General</option>
                         <option value="banking">Banking</option>
                         <option value="insurance">Insurance</option>
+                        <option value="energy">Energy</option>
                       </select>
                       <button
                         onClick={() => handleApprove(user.user_id)}
