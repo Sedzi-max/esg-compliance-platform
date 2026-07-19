@@ -25,7 +25,42 @@ const industryTemplates = {
     { id: 106, name: 'Board ESG Oversight', x: 8, y: 5, color: '#7b1fa2' }, 
     { id: 107, name: 'Diversity & Inclusion', x: 4, y: 7, color: '#f57c00' },
     { id: 108, name: 'Ethical Conduct', x: 9, y: 6, color: '#5d4037' }
-  ]
+  ],
+  // Topics derived from the Bank of Ghana Sustainable Banking Principles
+  bog_banking: [
+    { id: 201, name: 'Portfolio E&S Screening', x: 8, y: 8, color: '#0288d1' },
+    { id: 202, name: 'Financial Inclusion', x: 7, y: 9, color: '#1976d2' },
+    { id: 203, name: 'Gender Equality', x: 6, y: 7, color: '#f57c00' },
+    { id: 204, name: 'Governance & Ethics', x: 9, y: 6, color: '#7b1fa2' },
+    { id: 205, name: 'Climate Risk Exposure', x: 8, y: 7, color: '#388e3c' },
+    { id: 206, name: 'Resource Efficiency', x: 5, y: 5, color: '#5d4037' },
+    { id: 207, name: 'Transparency & Disclosure', x: 7, y: 6, color: '#d32f2f' },
+  ],
+  // Topics derived from Ghana's Green Finance Taxonomy — Energy sector
+  green_taxonomy_energy: [
+    { id: 301, name: 'Renewable Generation Mix', x: 9, y: 8, color: '#388e3c' },
+    { id: 302, name: 'Grid Loss & Efficiency', x: 8, y: 6, color: '#0288d1' },
+    { id: 303, name: 'Community Health & Safety', x: 6, y: 8, color: '#f57c00' },
+    { id: 304, name: 'Emissions & Air Quality', x: 8, y: 9, color: '#d32f2f' },
+    { id: 305, name: 'Regulatory Compliance', x: 7, y: 6, color: '#7b1fa2' },
+    { id: 306, name: 'Renewable Investment', x: 7, y: 7, color: '#1976d2' },
+  ],
+};
+
+const TEMPLATE_LABELS = {
+  standard: 'Standard (Generic)',
+  nic_insurance: 'Ghana NIC - Insurance',
+  bog_banking: 'Bank of Ghana - Banking',
+  green_taxonomy_energy: 'Ghana Green Taxonomy - Energy',
+};
+
+// Maps an organization's sector (from /api/organizations/my-sector) to the
+// most relevant default template — the user can still switch manually.
+const SECTOR_TO_TEMPLATE = {
+  insurance: 'nic_insurance',
+  banking: 'bog_banking',
+  energy: 'green_taxonomy_energy',
+  general: 'standard',
 };
 
 function MaterialityMatrix() {
@@ -36,6 +71,27 @@ function MaterialityMatrix() {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const currentYear = new Date().getFullYear();
+
+  // On first load, default the template to whatever matches this company's
+  // actual sector — auditors/admins can still change it manually afterward.
+  useEffect(() => {
+    const fetchSectorDefault = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.get('/api/organizations/my-sector', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const defaultTemplate = SECTOR_TO_TEMPLATE[res.data.sector] || 'standard';
+        setSelectedTemplate(defaultTemplate);
+        setTopics(industryTemplates[defaultTemplate]);
+      } catch (err) {
+        console.error("Failed to load sector default, using Standard template:", err);
+        // Fail safe to the generic template — this is a UI default only,
+        // not saved data, so no risk of data loss here.
+      }
+    };
+    fetchSectorDefault();
+  }, []);
 
   useEffect(() => {
     const fetchOrgs = async () => {
@@ -109,7 +165,7 @@ function MaterialityMatrix() {
   };
 
   const handleSave = async () => {
-    if (isSaving) return; // FIX: explicit double-submit guard
+    if (isSaving) return; // explicit double-submit guard
     if (!selectedOrg) {
       alert("Please select an organization first.");
       return;
@@ -182,15 +238,16 @@ function MaterialityMatrix() {
             </select>
           </div>
 
-          <div style={{ minWidth: '200px' }}>
+          <div style={{ minWidth: '220px' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Industry Framework</label>
             <select 
               value={selectedTemplate} 
               onChange={handleTemplateChange}
               style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold', backgroundColor: '#f8f9fa' }}
             >
-              <option value="standard">Standard (Generic)</option>
-              <option value="nic_insurance">Ghana NIC - Insurance</option>
+              {Object.keys(TEMPLATE_LABELS).map(key => (
+                <option key={key} value={key}>{TEMPLATE_LABELS[key]}</option>
+              ))}
             </select>
           </div>
         </div>
