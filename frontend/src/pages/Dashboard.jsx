@@ -736,42 +736,58 @@ const handleSetTarget = async (e) => {
 
 // --- VARIANCE ENGINE HELPER & COMPONENT ---
 export const calculateVarianceAndAnomalies = (monthlyData) => {
-    // 0. IMPORTANT FIX: Postgres SUM() returns strings. We MUST cast them to JS Numbers first!
+    // 0. Postgres SUM() returns strings, and no-data months now arrive as
+    // null (not 0) from the backend — keep null as null so it's excluded
+    // from the statistics below, only casting real values to Number.
     const parsedData = monthlyData.map(d => ({
         ...d,
-        current_co2e: Number(d.current_co2e),
-        previous_co2e: Number(d.previous_co2e)
+        current_co2e: d.current_co2e !== null ? Number(d.current_co2e) : null,
+        previous_co2e: d.previous_co2e !== null ? Number(d.previous_co2e) : null,
+        hasCurrentData: d.current_co2e !== null,
     }));
 
-    // 1. Extract valid numbers from the cleaned data
-    const values = parsedData.map(d => d.current_co2e);
-    if (values.length === 0) return parsedData;
+    // 1. FIX: only include months that actually have submitted data in the
+    // mean/stdDev — a month with no records yet is not the same as a
+    // month with genuinely zero emissions, and including it dragged the
+    // baseline down, making early real months look artificially anomalous.
+    const valuesWithData = parsedData.filter(d => d.hasCurrentData).map(d => d.current_co2e);
+    if (valuesWithData.length === 0) return parsedData.map(d => ({ ...d, isAnomaly: false, momVariance: null, threshold: null }));
 
-    // 2. Calculate Mean
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const mean = valuesWithData.reduce((sum, val) => sum + val, 0) / valuesWithData.length;
 
-    // 3. Calculate Standard Deviation
-    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
-    // Prevent division by zero if all data is exactly the same
-    const stdDev = Math.sqrt(variance) || 1; 
+    const squaredDiffs = valuesWithData.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / valuesWithData.length;
+    const stdDev = Math.sqrt(variance) || 1;
 
-    // 4. Set Threshold 
     const upperThreshold = Math.max(mean + (1.5 * stdDev), 100);
 
-    // 5. Map over data and attach intelligence
     return parsedData.map((dataPoint, index) => {
-        const isAnomaly = dataPoint.current_co2e > upperThreshold && dataPoint.current_co2e > 0;
-        
-        // Calculate Month-over-Month (MoM) Variance Percentage
-        let momVariance = null; 
-        if (index > 0) {
-            const prevValue = parsedData[index - 1].current_co2e;
-            if (prevValue > 0) {
-                momVariance = ((dataPoint.current_co2e - prevValue) / prevValue) * 100;
+        if (!dataPoint.hasCurrentData) {
+            return { ...dataPoint, isAnomaly: false, momVariance: null, threshold: upperThreshold };
+        }
+
+        // FIX: anomaly is now flagged if EITHER the internal-year threshold
+        // is exceeded, OR the month deviates sharply from the same month
+        // last year — since the chart's whole framing is "current vs. last
+        // year's baseline," the anomaly check should account for that too.
+        const exceedsInternalThreshold = dataPoint.current_co2e > upperThreshold;
+
+        let exceedsYoyDeviation = false;
+        if (dataPoint.previous_co2e !== null && dataPoint.previous_co2e > 0) {
+            const yoyChangePct = Math.abs((dataPoint.current_co2e - dataPoint.previous_co2e) / dataPoint.previous_co2e) * 100;
+            exceedsYoyDeviation = yoyChangePct > 75; // more than 75% off last year's same month
+        }
+
+        const isAnomaly = (exceedsInternalThreshold || exceedsYoyDeviation) && dataPoint.current_co2e > 0;
+
+        let momVariance = null;
+        // Find the previous month THAT HAS DATA, not just the previous index
+        const priorWithData = [...parsedData.slice(0, index)].reverse().find(d => d.hasCurrentData);
+        if (priorWithData) {
+            if (priorWithData.current_co2e > 0) {
+                momVariance = ((dataPoint.current_co2e - priorWithData.current_co2e) / priorWithData.current_co2e) * 100;
             } else if (dataPoint.current_co2e > 0) {
-                // If previous month was 0 but this month is huge, manually flag a high variance for the UI
-                momVariance = 999; 
+                momVariance = 999;
             }
         }
 
@@ -779,7 +795,7 @@ export const calculateVarianceAndAnomalies = (monthlyData) => {
             ...dataPoint,
             isAnomaly,
             momVariance: momVariance !== null ? Number(momVariance.toFixed(1)) : null,
-            threshold: upperThreshold // For plotting the "danger line" on the chart
+            threshold: upperThreshold,
         };
     });
 };
@@ -788,6 +804,7 @@ function VarianceAnalytics() {
     const [trendData, setTrendData] = useState([]);
     const [anomalies, setAnomalies] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         fetchVarianceData();
@@ -795,6 +812,7 @@ function VarianceAnalytics() {
 
     const fetchVarianceData = async () => {
         setLoading(true);
+        setError('');
         try {
             const token = localStorage.getItem('token');
             const response = await axios.get('/api/analytics/variance', {
@@ -802,14 +820,15 @@ function VarianceAnalytics() {
             });
 
             const processedData = calculateVarianceAndAnomalies(response.data);
-            
-            // FIXED: We now trust the isAnomaly flag entirely, even if MoM variance is null (due to previous month being 0)
             const filteredAnomalies = processedData.filter(d => d.isAnomaly);
 
             setTrendData(processedData);
             setAnomalies(filteredAnomalies);
         } catch (err) {
             console.error("Failed to fetch variance analytics", err);
+            setError("Failed to load variance analytics. Please try again.");
+            setTrendData([]);
+            setAnomalies([]);
         } finally {
             setLoading(false);
         }
@@ -846,6 +865,19 @@ function VarianceAnalytics() {
 
     if (loading) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Calibrating variance engine...</div>;
+    }
+
+    if (error) {
+        return (
+            <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #fecaca', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '16px 20px', borderRadius: '10px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚠️ {error}</span>
+                    <button onClick={fetchVarianceData} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
     }
 
     return (

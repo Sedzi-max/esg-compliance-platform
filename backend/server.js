@@ -1498,6 +1498,8 @@ app.post('/api/campaigns/:token/request-correction', authorize, auditorGuard, as
 // ==========================================
 // ADVANCED ANALYTICS ENGINE
 // ==========================================
+// ==========================================
+
 app.get('/api/analytics/variance', authorize, async (req, res) => {
     try {
         const currentYear = new Date().getFullYear();
@@ -1514,8 +1516,9 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
             MonthlyData AS (
                 SELECT
                     EXTRACT(MONTH FROM COALESCE(e.timestamp, e.created_at)) as month_num,
-                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
-                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $2 THEN e.calculated_co2e ELSE NULL END) as current_co2e,
+                    SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $3 THEN e.calculated_co2e ELSE NULL END) as previous_co2e,
+                    COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $2) as current_record_count
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
@@ -1524,8 +1527,9 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
             )
             SELECT
                 m.month_abbr as month,
-                COALESCE(d.current_co2e, 0) as current_co2e,
-                COALESCE(d.previous_co2e, 0) as previous_co2e
+                d.current_co2e,
+                d.previous_co2e,
+                COALESCE(d.current_record_count, 0) as current_record_count
             FROM (
                 VALUES (1, 'Jan'), (2, 'Feb'), (3, 'Mar'), (4, 'Apr'), (5, 'May'), (6, 'Jun'),
                        (7, 'Jul'), (8, 'Aug'), (9, 'Sep'), (10, 'Oct'), (11, 'Nov'), (12, 'Dec')
