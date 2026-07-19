@@ -9,10 +9,12 @@ function UserManagement() {
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Tracks which role each pending row's dropdown currently has selected,
-  // keyed by user_id, so Approve sends a real, admin-chosen role instead
-  // of silently assuming one.
+  // Tracks which role/sector each pending row's dropdowns currently have
+  // selected, keyed by user_id, so Approve sends real, admin-chosen
+  // values instead of assuming defaults.
+  const [pendingRoleSelections, setPendingRoleSelections] = useState({});
   const [pendingSectorSelections, setPendingSectorSelections] = useState({});
+
   const userStr = localStorage.getItem('user');
   const currentUserRole = userStr ? JSON.parse(userStr).role : null;
   const isSuperAdmin = currentUserRole === 'Super Admin';
@@ -30,6 +32,7 @@ function UserManagement() {
 
   useEffect(() => {
     fetchDirectoryData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchDirectoryData = async () => {
@@ -38,12 +41,12 @@ function UserManagement() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
       const [usersRes, pendingRes, orgsRes] = await Promise.all([
-  axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
-  isSuperAdmin
-    ? axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] }))
-    : Promise.resolve({ data: [] }),
-  axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
-]);
+        axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
+        isSuperAdmin
+          ? axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] }),
+        axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
+      ]);
 
       setUsers(usersRes.data);
       setPendingUsers(pendingRes.data);
@@ -59,11 +62,12 @@ function UserManagement() {
 
   const handleApprove = async (userId) => {
     const chosenRole = pendingRoleSelections[userId] || 'Data Entry';
+    const chosenSector = pendingSectorSelections[userId] || 'general';
     try {
       const token = localStorage.getItem('token');
       const response = await axios.put(
         `${apiUrl}/api/admin/approve/${userId}`,
-        { role: chosenRole },
+        { role: chosenRole, sector: chosenSector },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -71,10 +75,9 @@ function UserManagement() {
       setPendingUsers(pendingUsers.filter(user => user.user_id !== userId));
 
       if (approvedUser) {
-        // Reflect the role the backend actually confirmed, not an assumption
         setUsers([...users, { ...approvedUser, role: response.data.user?.role || chosenRole, organization_name: approvedUser.company_name }]);
       }
-      showSuccess(`✅ Account approved as ${chosenRole}.`);
+      showSuccess(`✅ Account approved as ${chosenRole} (${chosenSector}).`);
     } catch (err) {
       console.error("Approval Error:", err);
       setError(err.response?.data?.error || "Failed to approve account. Check server connection.");
@@ -157,19 +160,21 @@ function UserManagement() {
             Provision accounts, assign security roles, and manage third-party auditor access.
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          style={{ backgroundColor: '#111827', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-        >
-          <span style={{ fontSize: '18px' }}>+</span> Provision Account
-        </button>
+        {!isSuperAdmin && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            style={{ backgroundColor: '#111827', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+          >
+            <span style={{ fontSize: '18px' }}>+</span> Provision Account
+          </button>
+        )}
       </div>
 
       {error && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', fontWeight: '600' }}>{error}</div>}
       {successMsg && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#065f46', fontWeight: '600' }}>{successMsg}</div>}
 
-      {/* PENDING APPROVAL QUEUE */}
-      {pendingUsers.length > 0 && (
+      {/* PENDING APPROVAL QUEUE — Super Admin only */}
+      {isSuperAdmin && pendingUsers.length > 0 && (
         <div style={{ marginBottom: '40px', backgroundColor: 'white', borderRadius: '12px', border: '1px solid #fde68a', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
           <div style={{ background: '#fffbeb', padding: '20px', borderBottom: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '20px' }}>⚠️</span>
@@ -207,13 +212,13 @@ function UserManagement() {
                         <option value="auditor">Auditor</option>
                       </select>
                       <select
-                       value={pendingSectorSelections[user.user_id] || 'general'}
-                       onChange={(e) => setPendingSectorSelections({ ...pendingSectorSelections, [user.user_id]: e.target.value })}
-                       style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: '600', fontSize: '13px' }}
+                        value={pendingSectorSelections[user.user_id] || 'general'}
+                        onChange={(e) => setPendingSectorSelections({ ...pendingSectorSelections, [user.user_id]: e.target.value })}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: '600', fontSize: '13px' }}
                       >
-                       <option value="general">General</option>
-                       <option value="banking">Banking</option>
-                       <option value="insurance">Insurance</option>
+                        <option value="general">General</option>
+                        <option value="banking">Banking</option>
+                        <option value="insurance">Insurance</option>
                       </select>
                       <button
                         onClick={() => handleApprove(user.user_id)}
@@ -230,62 +235,70 @@ function UserManagement() {
         </div>
       )}
 
-      {/* ACTIVE USER DIRECTORY */}
-      <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-        <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
-            <tr>
-              <th style={thStyle}>User Profile</th>
-              <th style={thStyle}>Facility Mapping</th>
-              <th style={thStyle}>Platform Role</th>
-              <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '20px' }}>
-                  <div style={{ fontWeight: '700', color: '#111827', fontSize: '15px' }}>{user.email}</div>
-                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Joined: {new Date(user.created_at).toLocaleDateString()}</div>
-                </td>
-                <td style={{ padding: '20px', color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>
-                  {user.organization_name || 'Global HQ'}
-                </td>
-                <td style={{ padding: '20px' }}>
-                  <select
-                    value={user.role}
-                    onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
-                    style={{
-                      padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', width: '160px', outline: 'none',
-                      border: `1px solid ${user.role === 'Admin' ? '#fca5a5' : user.role === 'Manager' ? '#c4b5fd' : user.role === 'auditor' ? '#6ee7b7' : '#93c5fd'}`,
-                      color: user.role === 'Admin' ? '#991b1b' : user.role === 'Manager' ? '#5b21b6' : user.role === 'auditor' ? '#065f46' : '#1e40af',
-                      background: user.role === 'Admin' ? '#fef2f2' : user.role === 'Manager' ? '#f5f3ff' : user.role === 'auditor' ? '#ecfdf5' : '#eff6ff'
-                    }}
-                  >
-                    <option value="Data Entry">Data Entry</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Admin">Admin</option>
-                    <option value="auditor">Auditor (Read-Only)</option>
-                  </select>
-                </td>
-                <td style={{ padding: '20px', textAlign: 'right' }}>
-                  <button
-                    onClick={() => handleSuspend(user.user_id)}
-                    style={{ background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}
-                    onMouseOver={(e) => { e.target.style.background = '#fef2f2'; }}
-                    onMouseOut={(e) => { e.target.style.background = 'transparent'; }}
-                  >
-                    Suspend
-                  </button>
-                </td>
+      {/* ACTIVE USER DIRECTORY — hidden for Super Admin, who has no company directory to manage */}
+      {!isSuperAdmin && (
+        <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+              <tr>
+                <th style={thStyle}>User Profile</th>
+                <th style={thStyle}>Facility Mapping</th>
+                <th style={thStyle}>Platform Role</th>
+                <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
               </tr>
-            ))}
-            {users.length === 0 && (
-              <tr><td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No users found in directory.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '20px' }}>
+                    <div style={{ fontWeight: '700', color: '#111827', fontSize: '15px' }}>{user.email}</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Joined: {new Date(user.created_at).toLocaleDateString()}</div>
+                  </td>
+                  <td style={{ padding: '20px', color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>
+                    {user.organization_name || 'Global HQ'}
+                  </td>
+                  <td style={{ padding: '20px' }}>
+                    <select
+                      value={user.role}
+                      onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
+                      style={{
+                        padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', width: '160px', outline: 'none',
+                        border: `1px solid ${user.role === 'Admin' ? '#fca5a5' : user.role === 'Manager' ? '#c4b5fd' : user.role === 'auditor' ? '#6ee7b7' : '#93c5fd'}`,
+                        color: user.role === 'Admin' ? '#991b1b' : user.role === 'Manager' ? '#5b21b6' : user.role === 'auditor' ? '#065f46' : '#1e40af',
+                        background: user.role === 'Admin' ? '#fef2f2' : user.role === 'Manager' ? '#f5f3ff' : user.role === 'auditor' ? '#ecfdf5' : '#eff6ff'
+                      }}
+                    >
+                      <option value="Data Entry">Data Entry</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Admin">Admin</option>
+                      <option value="auditor">Auditor (Read-Only)</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: '20px', textAlign: 'right' }}>
+                    <button
+                      onClick={() => handleSuspend(user.user_id)}
+                      style={{ background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}
+                      onMouseOver={(e) => { e.target.style.background = '#fef2f2'; }}
+                      onMouseOut={(e) => { e.target.style.background = 'transparent'; }}
+                    >
+                      Suspend
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr><td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No users found in directory.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {isSuperAdmin && pendingUsers.length === 0 && (
+        <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+          No pending company registrations right now.
+        </div>
+      )}
 
       {/* Invite User Modal Overlay */}
       {isModalOpen && (
