@@ -27,6 +27,7 @@ import BankingAnalytics from './pages/BankingAnalytics';
 import BankingDataEntry from './pages/BankingDataEntry';
 import InsuranceAnalytics from './pages/InsuranceAnalytics';
 import EnergyAnalytics from './pages/EnergyAnalytics';
+import PlatformOverview from './pages/PlatformOverview';
 
 // Component Imports
 import ProtectedRoute from './components/ProtectedRoute';
@@ -88,7 +89,8 @@ function App() {
                     <Route path="/banking-data-entry" element={<ProtectedRoute allowedRoles={['Admin']}><BankingDataEntry /></ProtectedRoute>} />
                     <Route path="/insurance-analytics" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><InsuranceAnalytics /></ProtectedRoute>} />
                     <Route path="/energy-analytics" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><EnergyAnalytics /></ProtectedRoute>} />
-
+                    <Route path="/platform-overview" element={<ProtectedRoute allowedRoles={['Super Admin']}><PlatformOverview /></ProtectedRoute>} />
+                    
                     {/* Admin Only Routes */}
                     <Route path="/organizations" element={<ProtectedRoute allowedRoles={['Admin']}><Organizations /></ProtectedRoute>} />
                     <Route path="/entity-management" element={<ProtectedRoute allowedRoles={['Admin']}><EntityManagement /></ProtectedRoute>} />

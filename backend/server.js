@@ -15,6 +15,7 @@ const bankingRoutes = require('./routes/banking-routes');
 const insuranceRoutes = require('./routes/insurance-routes');
 const sectorRoutes = require('./routes/sector-routes');
 const energyRoutes = require('./routes/energy-routes'); 
+const platformRoutes = require('./routes/platform-routes');
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use('/api/banking', bankingRoutes);
 app.use('/api/insurance', insuranceRoutes);
 app.use('/api/organizations', sectorRoutes);
 app.use('/api/energy', energyRoutes);
+app.use('/api/platform', platformRoutes);
 
 // ==========================================
 // GET ALL EMISSIONS (For Dashboards)

@@ -154,6 +154,7 @@ function Sidebar() {
           {isSuperAdmin && (
              <>
            <li style={getSectionHeaderStyle()}>Platform Admin</li>
+           <li><Link to="/platform-overview" style={getLinkStyle('/platform-overview')}>🌐 Platform Overview</Link></li>
             <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
             </>
             )}
