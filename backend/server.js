@@ -1056,8 +1056,12 @@ app.post('/api/users', authorize, async (req, res) => {
 
 app.get('/api/users', authorize, async (req, res) => {
     try {
-        if (req.user.role !== 'Admin') {
+        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') {
             return res.status(403).json({ error: "Access Denied: Admins only." });
+        }
+
+        if (req.user.role === 'Super Admin') {
+            return res.json([]);
         }
 
         const allUsers = await pool.query(
