@@ -8,7 +8,12 @@ function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
-  
+
+  // Tracks which role each pending row's dropdown currently has selected,
+  // keyed by user_id, so Approve sends a real, admin-chosen role instead
+  // of silently assuming one.
+  const [pendingRoleSelections, setPendingRoleSelections] = useState({});
+
   // Modal & Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -18,7 +23,6 @@ function UserManagement() {
     role: 'auditor'
   });
 
-  // 1. Global API URL for all requests
   const apiUrl = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
@@ -29,14 +33,13 @@ function UserManagement() {
     try {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      
+
       const [usersRes, pendingRes, orgsRes] = await Promise.all([
         axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
         axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] })),
         axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
       ]);
-      
-      // 2. Set the real data directly (No fake mock data!)
+
       setUsers(usersRes.data);
       setPendingUsers(pendingRes.data);
       setOrganizations(orgsRes.data);
@@ -50,20 +53,26 @@ function UserManagement() {
   };
 
   const handleApprove = async (userId) => {
+    const chosenRole = pendingRoleSelections[userId] || 'Data Entry';
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`${apiUrl}/api/admin/approve/${userId}`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      
+      const response = await axios.put(
+        `${apiUrl}/api/admin/approve/${userId}`,
+        { role: chosenRole },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
       const approvedUser = pendingUsers.find(u => u.user_id === userId);
       setPendingUsers(pendingUsers.filter(user => user.user_id !== userId));
-      
+
       if (approvedUser) {
-        setUsers([...users, { ...approvedUser, role: 'Data Entry', organization_name: approvedUser.company_name }]);
+        // Reflect the role the backend actually confirmed, not an assumption
+        setUsers([...users, { ...approvedUser, role: response.data.user?.role || chosenRole, organization_name: approvedUser.company_name }]);
       }
-      showSuccess("✅ Account successfully approved and provisioned.");
+      showSuccess(`✅ Account approved as ${chosenRole}.`);
     } catch (err) {
       console.error("Approval Error:", err);
-      setError("Failed to approve account. Check server connection.");
+      setError(err.response?.data?.error || "Failed to approve account. Check server connection.");
     }
   };
 
@@ -71,7 +80,7 @@ function UserManagement() {
     try {
       const token = localStorage.getItem('token');
       await axios.put(`${apiUrl}/api/users/${userId}/role`, { role: newRole }, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       setUsers(users.map(user => user.user_id === userId ? { ...user, role: newRole } : user));
       showSuccess("🔒 Security role successfully updated.");
     } catch (err) {
@@ -82,11 +91,11 @@ function UserManagement() {
 
   const handleSuspend = async (userId) => {
     if (!window.confirm("Are you sure you want to suspend this user? They will immediately lose platform access.")) return;
-    
+
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${apiUrl}/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       setUsers(users.filter(user => user.user_id !== userId));
       showSuccess("🚫 User access has been revoked.");
     } catch (err) {
@@ -98,11 +107,11 @@ function UserManagement() {
   const handleInviteSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(`${apiUrl}/api/users`, inviteForm, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       const newUser = {
         user_id: response.data.user_id,
         email: inviteForm.email,
@@ -132,7 +141,7 @@ function UserManagement() {
 
   return (
     <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
         <div>
@@ -143,14 +152,14 @@ function UserManagement() {
             Provision accounts, assign security roles, and manage third-party auditor access.
           </p>
         </div>
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           style={{ backgroundColor: '#111827', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
         >
           <span style={{ fontSize: '18px' }}>+</span> Provision Account
         </button>
       </div>
-      
+
       {error && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', fontWeight: '600' }}>{error}</div>}
       {successMsg && <div style={{ padding: '16px', marginBottom: '24px', borderRadius: '8px', background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#065f46', fontWeight: '600' }}>{successMsg}</div>}
 
@@ -161,7 +170,7 @@ function UserManagement() {
             <span style={{ fontSize: '20px' }}>⚠️</span>
             <h2 style={{ margin: 0, fontSize: '16px', color: '#92400e', fontWeight: '700' }}>Action Required: Pending Registrations</h2>
           </div>
-          
+
           <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr>
@@ -181,12 +190,24 @@ function UserManagement() {
                     {new Date(user.created_at).toLocaleDateString()}
                   </td>
                   <td style={{ padding: '20px', textAlign: 'right' }}>
-                    <button 
-                      onClick={() => handleApprove(user.user_id)}
-                      style={{ background: '#10b981', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
-                    >
-                      ✅ Approve Network Access
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <select
+                        value={pendingRoleSelections[user.user_id] || 'Data Entry'}
+                        onChange={(e) => setPendingRoleSelections({ ...pendingRoleSelections, [user.user_id]: e.target.value })}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: '600', fontSize: '13px' }}
+                      >
+                        <option value="Data Entry">Data Entry</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Admin">Admin</option>
+                        <option value="auditor">Auditor</option>
+                      </select>
+                      <button
+                        onClick={() => handleApprove(user.user_id)}
+                        style={{ background: '#10b981', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                      >
+                        ✅ Approve
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -217,13 +238,13 @@ function UserManagement() {
                   {user.organization_name || 'Global HQ'}
                 </td>
                 <td style={{ padding: '20px' }}>
-                  <select 
-                    value={user.role} 
+                  <select
+                    value={user.role}
                     onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
-                    style={{ 
+                    style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', width: '160px', outline: 'none',
                       border: `1px solid ${user.role === 'Admin' ? '#fca5a5' : user.role === 'Manager' ? '#c4b5fd' : user.role === 'auditor' ? '#6ee7b7' : '#93c5fd'}`,
-                      color: user.role === 'Admin' ? '#991b1b' : user.role === 'Manager' ? '#5b21b6' : user.role === 'auditor' ? '#065f46' : '#1e40af', 
+                      color: user.role === 'Admin' ? '#991b1b' : user.role === 'Manager' ? '#5b21b6' : user.role === 'auditor' ? '#065f46' : '#1e40af',
                       background: user.role === 'Admin' ? '#fef2f2' : user.role === 'Manager' ? '#f5f3ff' : user.role === 'auditor' ? '#ecfdf5' : '#eff6ff'
                     }}
                   >
@@ -234,7 +255,7 @@ function UserManagement() {
                   </select>
                 </td>
                 <td style={{ padding: '20px', textAlign: 'right' }}>
-                  <button 
+                  <button
                     onClick={() => handleSuspend(user.user_id)}
                     style={{ background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}
                     onMouseOver={(e) => { e.target.style.background = '#fef2f2'; }}
@@ -264,26 +285,26 @@ function UserManagement() {
             <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                 <label style={labelStyle}>User Email</label>
-                <input 
+                <input
                   type="email" required placeholder="auditor@kpmg.com"
                   value={inviteForm.email} onChange={(e) => setInviteForm({...inviteForm, email: e.target.value})}
-                  style={inputStyle} 
+                  style={inputStyle}
                 />
               </div>
-              
+
               <div>
                 <label style={labelStyle}>Temporary Password</label>
-                <input 
+                <input
                   type="text" required placeholder="Provide securely to user"
                   value={inviteForm.password} onChange={(e) => setInviteForm({...inviteForm, password: e.target.value})}
-                  style={inputStyle} 
+                  style={inputStyle}
                 />
                 <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#6b7280' }}>User will log in using this password.</p>
               </div>
 
               <div>
                 <label style={labelStyle}>Platform Security Role</label>
-                <select 
+                <select
                   value={inviteForm.role} onChange={(e) => setInviteForm({...inviteForm, role: e.target.value})}
                   style={inputStyle}
                 >

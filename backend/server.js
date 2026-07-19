@@ -796,8 +796,23 @@ app.get('/api/admin/pending', async (req, res) => {
 app.put('/api/admin/approve/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query("UPDATE users SET status = 'approved' WHERE user_id = $1", [id]);
-    res.json({ message: "Corporate account approved successfully." });
+    const { role } = req.body;
+
+    const validRoles = ['Admin', 'Manager', 'Data Entry', 'auditor'];
+    if (!role || !validRoles.includes(role)) {
+      return res.status(400).json({ error: "A valid role must be provided to approve this account." });
+    }
+
+    const result = await pool.query(
+      "UPDATE users SET status = 'approved', role = $1 WHERE user_id = $2 RETURNING user_id, email, role, unit_id",
+      [role, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    res.json({ message: "Corporate account approved successfully.", user: result.rows[0] });
   } catch (err) {
     console.error("Error approving account:", err);
     res.status(500).json({ error: "Failed to approve account." });
