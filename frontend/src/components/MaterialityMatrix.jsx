@@ -17,7 +17,6 @@ const industryTemplates = {
     { id: 8, name: 'Business Continuity', x: 5, y: 2, color: '#0288d1' }
   ],
   nic_insurance: [
-    // Topics derived directly from Ghana NIC Guidelines
     { id: 101, name: 'Climate Change Risks', x: 7, y: 8, color: '#388e3c' }, 
     { id: 102, name: 'Sustainable Underwriting', x: 8, y: 7, color: '#0288d1' }, 
     { id: 103, name: 'Financial Inclusion', x: 6, y: 9, color: '#1976d2' }, 
@@ -35,9 +34,9 @@ function MaterialityMatrix() {
   const [organizations, setOrganizations] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const currentYear = new Date().getFullYear();
 
-  // 1. Load the user's organizations
   useEffect(() => {
     const fetchOrgs = async () => {
       try {
@@ -54,47 +53,50 @@ function MaterialityMatrix() {
     fetchOrgs();
   }, []);
 
-  // 2. Automatically fetch scores when the organization changes
   useEffect(() => {
     if (!selectedOrg) return;
-
-    const fetchSavedScores = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await axios.get(`/api/materiality/${selectedOrg}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (res.data && res.data.length > 0) {
-          const colors = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#f57c00', '#7b1fa2'];
-          const loadedTopics = res.data.map((item, index) => ({
-            id: index + 1000, 
-            name: item.name,
-            x: item.x,
-            y: item.y,
-            color: colors[index % colors.length]
-          }));
-          setTopics(loadedTopics);
-        } else {
-          // Fallback to the currently selected template if no data exists
-          setTopics(industryTemplates[selectedTemplate]);
-        }
-      } catch (err) {
-        console.error("Failed to load saved profile", err);
-        setTopics(industryTemplates[selectedTemplate]);
-      }
-    };
-
-    fetchSavedScores();
+    fetchSavedScores(selectedOrg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrg]);
 
-  // 3. Handle Template Dropdown Change
+  const fetchSavedScores = async (orgId) => {
+    setLoadError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/materiality/${orgId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.data && res.data.length > 0) {
+        const colors = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#f57c00', '#7b1fa2'];
+        const loadedTopics = res.data.map((item, index) => ({
+          id: index + 1000, 
+          name: item.name,
+          x: item.x,
+          y: item.y,
+          color: colors[index % colors.length]
+        }));
+        setTopics(loadedTopics);
+      } else {
+        // Genuinely confirmed empty — no saved profile exists for this org yet.
+        setTopics(industryTemplates[selectedTemplate]);
+      }
+    } catch (err) {
+      console.error("Failed to load saved profile", err);
+      // FIX: a failed load no longer silently falls back to the generic
+      // template. Previously this was indistinguishable from "no saved
+      // profile exists," and since Save always uses overwrite_all: true,
+      // an unnoticed load failure followed by a save could permanently
+      // destroy a company's real materiality scores. Now Save is blocked
+      // until the load error is resolved.
+      setLoadError("Failed to load this organization's saved materiality profile. Saving now would overwrite any existing data — please retry before making changes.");
+    }
+  };
+
   const handleTemplateChange = (e) => {
     const templateKey = e.target.value;
     setSelectedTemplate(templateKey);
     
-    // Load those specific topics into the matrix
     if (templateKey && industryTemplates[templateKey]) {
       setTopics(industryTemplates[templateKey]);
     }
@@ -107,8 +109,13 @@ function MaterialityMatrix() {
   };
 
   const handleSave = async () => {
+    if (isSaving) return; // FIX: explicit double-submit guard
     if (!selectedOrg) {
       alert("Please select an organization first.");
+      return;
+    }
+    if (loadError) {
+      alert("Cannot save: the saved profile for this organization failed to load. Please retry loading it first, to avoid overwriting existing data.");
       return;
     }
     
@@ -127,7 +134,7 @@ function MaterialityMatrix() {
       alert("✅ Assessment Profile Saved Successfully!");
     } catch (error) {
       console.error("Save failed:", error);
-      alert("Failed to save profile. Check your console logs.");
+      alert(error.response?.data?.error || "Failed to save profile. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -161,7 +168,6 @@ function MaterialityMatrix() {
         </div>
         
         <div style={{ display: 'flex', gap: '20px' }}>
-          {/* Existing Organization Dropdown */}
           <div style={{ minWidth: '200px' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Reporting Organization</label>
             <select 
@@ -176,7 +182,6 @@ function MaterialityMatrix() {
             </select>
           </div>
 
-          {/* NEW Industry Template Dropdown */}
           <div style={{ minWidth: '200px' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '5px', color: '#495057' }}>Industry Framework</label>
             <select 
@@ -191,9 +196,17 @@ function MaterialityMatrix() {
         </div>
       </div>
 
+      {loadError && (
+        <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '14px 18px', borderRadius: '8px', marginBottom: '20px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+          <span>⚠️ {loadError}</span>
+          <button onClick={() => fetchSavedScores(selectedOrg)} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px' }}>
         
-        {/* LEFT COLUMN: The Sliders */}
         <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #e9ecef', maxHeight: '500px', overflowY: 'auto' }}>
           <h4 style={{ marginTop: 0, marginBottom: '20px', color: '#495057' }}>Adjust Topic Scores</h4>
           {topics.map(topic => (
@@ -227,7 +240,6 @@ function MaterialityMatrix() {
           ))}
         </div>
 
-        {/* RIGHT COLUMN: The Scatter Plot Matrix */}
         <div style={{ height: '500px', position: 'relative' }}>
           <div style={{ position: 'absolute', top: '10%', left: '10%', color: '#adb5bd', fontWeight: 'bold', zIndex: 0 }}>MANAGE</div>
           <div style={{ position: 'absolute', top: '10%', right: '10%', color: '#198754', fontWeight: 'bold', zIndex: 0 }}>PRIORITIZE</div>
@@ -270,8 +282,8 @@ function MaterialityMatrix() {
       <div style={{ marginTop: '20px', textAlign: 'right', borderTop: '1px solid #dee2e6', paddingTop: '20px' }}>
         <button 
           onClick={handleSave}
-          disabled={isSaving}
-          style={{ background: isSaving ? '#6c757d' : '#0d6efd', color: 'white', padding: '12px 25px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: isSaving ? 'wait' : 'pointer', fontSize: '1rem', transition: 'background 0.2s' }}
+          disabled={isSaving || !!loadError}
+          style={{ background: (isSaving || loadError) ? '#6c757d' : '#0d6efd', color: 'white', padding: '12px 25px', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: (isSaving || loadError) ? 'not-allowed' : 'pointer', fontSize: '1rem', transition: 'background 0.2s' }}
         >
           {isSaving ? '⏳ Saving to Database...' : '💾 Save Assessment Profile'}
         </button>
