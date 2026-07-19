@@ -146,7 +146,10 @@ function Sidebar() {
               <li><Link to="/admin/frameworks" style={getLinkStyle('/admin/frameworks')}>📐 Framework Maps</Link></li>
               {sector === 'banking' && (
               <li><Link to="/banking-data-entry" style={getLinkStyle('/banking-data-entry')}>🏦 Banking Data Entry</Link></li>
-)}
+          )}
+              {sector === 'energy' && (
+              <li><Link to="/energy-data-entry" style={getLinkStyle('/energy-data-entry')}>⚡ Energy Data Entry</Link></li>
+          )}
               <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
               <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
           </>
