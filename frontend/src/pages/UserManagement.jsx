@@ -206,6 +206,15 @@ function UserManagement() {
                         <option value="Admin">Admin</option>
                         <option value="auditor">Auditor</option>
                       </select>
+                      <select
+                       value={pendingSectorSelections[user.user_id] || 'general'}
+                       onChange={(e) => setPendingSectorSelections({ ...pendingSectorSelections, [user.user_id]: e.target.value })}
+                       style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontWeight: '600', fontSize: '13px' }}
+                      >
+                       <option value="general">General</option>
+                       <option value="banking">Banking</option>
+                       <option value="insurance">Insurance</option>
+                      </select>
                       <button
                         onClick={() => handleApprove(user.user_id)}
                         style={{ background: '#10b981', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
