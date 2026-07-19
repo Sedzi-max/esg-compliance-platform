@@ -171,12 +171,12 @@ app.get('/api/health', async (req, res) => {
 // CREATE a new Organization Unit
 app.post('/api/organizations', authorize, auditorGuard, async (req, res) => {
     try {
-        const { name, unit_type, jurisdiction, parent_unit_id } = req.body;
+        const { name, unit_type, jurisdiction, parent_unit_id, sector } = req.body;
         const finalParentId = parent_unit_id === "" || !parent_unit_id ? null : parent_unit_id;
 
         const newOrg = await pool.query(
-            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, parent_unit_id) VALUES ($1, $2, $3, $4) RETURNING *",
-            [name, unit_type, jurisdiction, finalParentId]
+            "INSERT INTO Organization_Unit (name, unit_type, jurisdiction, parent_unit_id, sector) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+            [name, unit_type, jurisdiction, finalParentId, sector || 'general']
         );
         
         res.json(newOrg.rows[0]);
@@ -194,15 +194,15 @@ app.put('/api/organizations/:id', authorize, auditorGuard, async (req, res) => {
         }
 
         const { id } = req.params;
-        const { name, parent_unit_id, equity_share_percentage, has_operational_control } = req.body;
+        const { name, parent_unit_id, equity_share_percentage, has_operational_control, sector } = req.body;
 
         const safeParentId = parent_unit_id === "" ? null : parent_unit_id;
 
         const updatedOrg = await pool.query(
             `UPDATE Organization_Unit 
-             SET name = $1, parent_unit_id = $2, equity_share_percentage = $3, has_operational_control = $4 
-             WHERE unit_id = $5 RETURNING *`,
-            [name, safeParentId, equity_share_percentage, has_operational_control, id]
+             SET name = $1, parent_unit_id = $2, equity_share_percentage = $3, has_operational_control = $4, sector = $5
+             WHERE unit_id = $6 RETURNING *`,
+            [name, safeParentId, equity_share_percentage, has_operational_control, sector || 'general', id]
         );
 
         if (updatedOrg.rows.length === 0) {

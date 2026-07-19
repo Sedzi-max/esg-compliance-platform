@@ -10,13 +10,12 @@ function EntityManagement() {
     // UI state for Adding
     const [isAdding, setIsAdding] = useState(false);
     const [newEntity, setNewEntity] = useState({
-        name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true
+        name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true, sector: 'general'
     });
 
     // UI state for Editing
     const [editingEntity, setEditingEntity] = useState(null);
 
-    // --- FIX 1: Prevents double-submits (the cause of the duplicates) ---
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
@@ -62,9 +61,8 @@ function EntityManagement() {
 
     const handleAddEntity = async (e) => {
         e.preventDefault();
-        if (isSubmitting) return; // Ignore repeat clicks while the request is in flight
+        if (isSubmitting) return;
 
-        // --- FIX 2: Client-side duplicate check (same name under the same parent) ---
         const duplicate = rawEntities.find(ent =>
             ent.name.trim().toLowerCase() === newEntity.name.trim().toLowerCase() &&
             String(ent.parent_unit_id || '') === String(newEntity.parent_unit_id || '')
@@ -81,7 +79,7 @@ function EntityManagement() {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setIsAdding(false);
-            setNewEntity({ name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true });
+            setNewEntity({ name: '', parent_unit_id: '', unit_type: 'Facility', equity_share_percentage: 100, has_operational_control: true, sector: 'general' });
             await fetchEntities();
         } catch (err) {
             alert("Failed to create entity.");
@@ -99,8 +97,8 @@ function EntityManagement() {
             await axios.put(`/api/organizations/${editingEntity.unit_id}`, editingEntity, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setEditingEntity(null); // Close the edit panel
-            await fetchEntities(); // Refresh the tree
+            setEditingEntity(null);
+            await fetchEntities();
         } catch (err) {
             console.error(err);
             alert("Failed to update entity.");
@@ -109,7 +107,6 @@ function EntityManagement() {
         }
     };
 
-    // --- FIX 3: Delete an entity (lets you clean up the existing duplicates) ---
     const handleDeleteEntity = async (node) => {
         if (node.children && node.children.length > 0) {
             alert(`"${node.name}" has child entities. Reassign or delete its children first.`);
@@ -138,7 +135,10 @@ function EntityManagement() {
                     <div style={{ fontSize: '18px' }}>{level === 0 ? '🏢' : level === 1 ? '🏭' : '📍'}</div>
                     <div>
                         <div style={{ fontWeight: '700', fontSize: '15px' }}>{node.name}</div>
-                        <div style={{ fontSize: '12px', color: level === 0 ? '#9ca3af' : '#6b7280', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{node.unit_type || 'Facility'}</div>
+                        <div style={{ fontSize: '12px', color: level === 0 ? '#9ca3af' : '#6b7280', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {node.unit_type || 'Facility'}
+                            {level === 0 && node.sector && node.sector !== 'general' && ` · ${node.sector}`}
+                        </div>
                     </div>
                 </div>
 
@@ -161,14 +161,13 @@ function EntityManagement() {
                     <button
                         onClick={() => {
                             setEditingEntity(node);
-                            setIsAdding(false); // Close the 'Add' form if it's open
+                            setIsAdding(false);
                         }}
                         style={{ backgroundColor: 'transparent', color: level === 0 ? 'white' : '#4f46e5', border: `1px solid ${level === 0 ? '#374151' : '#c7d2fe'}`, padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
                     >
                         Edit
                     </button>
 
-                    {/* --- NEW: Delete button --- */}
                     <button
                         onClick={() => handleDeleteEntity(node)}
                         style={{ backgroundColor: 'transparent', color: level === 0 ? '#fca5a5' : '#dc2626', border: `1px solid ${level === 0 ? '#7f1d1d' : '#fecaca'}`, padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
@@ -197,7 +196,7 @@ function EntityManagement() {
                 <button
                     onClick={() => {
                         setIsAdding(!isAdding);
-                        setEditingEntity(null); // Close the 'Edit' form if it's open
+                        setEditingEntity(null);
                     }}
                     style={{ backgroundColor: '#10b981', color: 'white', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
                 >
@@ -205,7 +204,6 @@ function EntityManagement() {
                 </button>
             </div>
 
-            {/* Consolidation Method Toggle */}
             <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e5e7eb', marginBottom: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                     <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', color: '#111827' }}>Consolidation Approach</h3>
@@ -229,7 +227,6 @@ function EntityManagement() {
                 </div>
             </div>
 
-            {/* Add Entity Form */}
             {isAdding && (
                 <div style={{ backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '32px' }}>
                     <h3 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>Define New Entity</h3>
@@ -245,6 +242,17 @@ function EntityManagement() {
                                 {rawEntities.map(e => <option key={e.unit_id} value={e.unit_id}>{e.name}</option>)}
                             </select>
                         </div>
+
+                        {!newEntity.parent_unit_id && (
+                            <div>
+                                <label style={labelStyle}>Sector</label>
+                                <select value={newEntity.sector || 'general'} onChange={e => setNewEntity({...newEntity, sector: e.target.value})} style={inputStyle}>
+                                    <option value="general">General</option>
+                                    <option value="banking">Banking</option>
+                                    <option value="insurance">Insurance</option>
+                                </select>
+                            </div>
+                        )}
 
                         {boundary === 'Equity Share' && (
                             <div>
@@ -272,7 +280,6 @@ function EntityManagement() {
                 </div>
             )}
 
-            {/* Edit Entity Form */}
             {editingEntity && (
                 <div style={{ backgroundColor: '#eff6ff', padding: '24px', borderRadius: '12px', border: '1px solid #bfdbfe', marginBottom: '32px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -288,12 +295,22 @@ function EntityManagement() {
                             <label style={labelStyle}>Parent Company (Rolls up to)</label>
                             <select value={editingEntity.parent_unit_id || ''} onChange={e => setEditingEntity({...editingEntity, parent_unit_id: e.target.value})} style={inputStyle}>
                                 <option value="">-- Set as Root Corporate Entity --</option>
-                                {/* Prevent an entity from selecting itself as a parent! */}
                                 {rawEntities.filter(e => e.unit_id !== editingEntity.unit_id).map(e => (
                                     <option key={e.unit_id} value={e.unit_id}>{e.name}</option>
                                 ))}
                             </select>
                         </div>
+
+                        {!editingEntity.parent_unit_id && (
+                            <div>
+                                <label style={labelStyle}>Sector</label>
+                                <select value={editingEntity.sector || 'general'} onChange={e => setEditingEntity({...editingEntity, sector: e.target.value})} style={inputStyle}>
+                                    <option value="general">General</option>
+                                    <option value="banking">Banking</option>
+                                    <option value="insurance">Insurance</option>
+                                </select>
+                            </div>
+                        )}
 
                         {boundary === 'Equity Share' && (
                             <div>
@@ -321,7 +338,6 @@ function EntityManagement() {
                 </div>
             )}
 
-            {/* Hierarchical Tree Render */}
             <div>
                 <h3 style={{ marginBottom: '16px', color: '#111827', fontSize: '18px' }}>Corporate Structure</h3>
                 {loading ? (
