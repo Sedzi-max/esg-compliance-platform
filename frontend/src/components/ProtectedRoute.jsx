@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom';
 
 // Recognized platform roles. Kept in one place so it's easy to update if a
 // new role is ever added.
-const VALID_ROLES = ['Admin', 'Manager', 'Data Entry', 'auditor'];
+const VALID_ROLES = ['Admin', 'Manager', 'Data Entry', 'auditor', 'Super Admin'];
 
 function ProtectedRoute({ children, allowedRoles }) {
   const token = localStorage.getItem('token');

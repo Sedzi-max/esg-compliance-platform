@@ -12,7 +12,10 @@ function UserManagement() {
   // Tracks which role each pending row's dropdown currently has selected,
   // keyed by user_id, so Approve sends a real, admin-chosen role instead
   // of silently assuming one.
-  const [pendingRoleSelections, setPendingRoleSelections] = useState({});
+  const [pendingSectorSelections, setPendingSectorSelections] = useState({});
+  const userStr = localStorage.getItem('user');
+  const currentUserRole = userStr ? JSON.parse(userStr).role : null;
+  const isSuperAdmin = currentUserRole === 'Super Admin';
 
   // Modal & Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,10 +38,12 @@ function UserManagement() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
       const [usersRes, pendingRes, orgsRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
-        axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] })),
-        axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
-      ]);
+  axios.get(`${apiUrl}/api/users`, config).catch(() => ({ data: [] })),
+  isSuperAdmin
+    ? axios.get(`${apiUrl}/api/admin/pending`, config).catch(() => ({ data: [] }))
+    : Promise.resolve({ data: [] }),
+  axios.get(`${apiUrl}/api/organizations`, config).catch(() => ({ data: [] }))
+]);
 
       setUsers(usersRes.data);
       setPendingUsers(pendingRes.data);

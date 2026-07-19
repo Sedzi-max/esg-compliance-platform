@@ -846,8 +846,8 @@ app.get('/api/targets', authorize, async (req, res) => {
 
 app.get('/api/admin/pending', authorize, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') {
-      return res.status(403).json({ error: "Access Denied: Admins only." });
+    if (req.user.role !== 'Super Admin') {
+      return res.status(403).json({ error: "Access Denied: Platform Super Admin only." });
     }
 
     const result = await pool.query(`
@@ -868,37 +868,59 @@ app.get('/api/admin/pending', authorize, async (req, res) => {
   }
 });
 
-
 app.put('/api/admin/approve/:id', authorize, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') {
-      return res.status(403).json({ error: "Access Denied: Admins only." });
+    if (req.user.role !== 'Super Admin') {
+      return res.status(403).json({ error: "Access Denied: Platform Super Admin only." });
     }
 
     const { id } = req.params;
-    const { role } = req.body;
+    const { role, sector } = req.body;
 
     const validRoles = ['Admin', 'Manager', 'Data Entry', 'auditor'];
     if (!role || !validRoles.includes(role)) {
       return res.status(400).json({ error: "A valid role must be provided to approve this account." });
     }
 
-    const result = await pool.query(
-      "UPDATE users SET status = 'approved', role = $1 WHERE user_id = $2 RETURNING user_id, email, role, unit_id",
-      [role, id]
-    );
+    const validSectors = ['general', 'banking', 'insurance'];
+    const finalSector = validSectors.includes(sector) ? sector : 'general';
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "User not found." });
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const userResult = await client.query(
+            "UPDATE users SET status = 'approved', role = $1 WHERE user_id = $2 RETURNING user_id, email, role, unit_id",
+            [role, id]
+        );
+
+        if (userResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        const unitId = userResult.rows[0].unit_id;
+        if (unitId) {
+            await client.query(
+                "UPDATE organization_unit SET sector = $1 WHERE unit_id = $2 AND parent_unit_id IS NULL",
+                [finalSector, unitId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: "Corporate account approved successfully.", user: userResult.rows[0], sector: finalSector });
+    } catch (innerErr) {
+        await client.query('ROLLBACK');
+        throw innerErr;
+    } finally {
+        client.release();
     }
 
-    res.json({ message: "Corporate account approved successfully.", user: result.rows[0] });
   } catch (err) {
     console.error("Error approving account:", err);
     res.status(500).json({ error: "Failed to approve account." });
   }
 });
-
 
 // ==========================================
 // AUTHENTICATION ROUTES
