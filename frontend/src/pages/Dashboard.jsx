@@ -29,6 +29,7 @@ function Dashboard() {
   const [timeFilter, setTimeFilter] = useState('ALL'); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isSettingTarget, setIsSettingTarget] = useState(false);
 
   const reportRef = useRef();
   const [isExporting, setIsExporting] = useState(false);
@@ -57,11 +58,11 @@ function Dashboard() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
       const [orgRes, obsRes, emissionsRes, targetsRes] = await Promise.all([
-        axios.get('/api/organizations', config),
-        axios.get('/api/observations', config),
-        axios.get('/api/emissions', config).catch(() => ({ data: [] })),
-        axios.get('/api/targets', config).catch(() => ({ data: [] }))
-      ]);
+    axios.get('/api/organizations', config),
+    axios.get('/api/observations', config),
+    axios.get('/api/emissions', config),
+    axios.get('/api/targets', config)
+    ]);
       
       setOrganizations(orgRes.data);
       setOrgCount(orgRes.data.length);
@@ -84,8 +85,8 @@ function Dashboard() {
       const dateObj = new Date(e.recorded_date || e.created_at);
       return [
         dateObj.toLocaleDateString(),
-        `"${e.organization_name || 'Unknown'}"`, 
-        `"${e.scope_category}: ${e.activity_type}"`,
+        `"${(e.organization_name || 'Unknown').replace(/"/g, '""')}"`,
+        `"${String(e.scope_category).replace(/"/g, '""')}: ${String(e.activity_type).replace(/"/g, '""')}"`,
         e.raw_amount,
         e.calculated_co2e,
         `Carbon Emission (${e.status})`
@@ -96,8 +97,8 @@ function Dashboard() {
       const dateObj = new Date(obs.timestamp);
       return [
         dateObj.toLocaleDateString(),
-        `"${obs.organization_name || 'Unknown'}"`, 
-        `"${obs.pillar} Pillar: ${obs.metric_name}"`,
+        `"${(obs.organization_name || 'Unknown').replace(/"/g, '""')}"`,
+        `"${String(obs.pillar)} Pillar: ${String(obs.metric_name).replace(/"/g, '""')}"`,
         obs.numeric_value !== null ? obs.numeric_value : `"${obs.text_value}"`,
         "N/A", 
         "General Observation"
@@ -155,15 +156,20 @@ function Dashboard() {
     }
   };
 
-  const handleSetTarget = async (e) => {
+
+const handleSetTarget = async (e) => {
     e.preventDefault();
+    if (isSettingTarget) return;
+    setIsSettingTarget(true);
     try {
       const token = localStorage.getItem('token');
       await axios.post('/api/targets', targetForm, { headers: { Authorization: `Bearer ${token}` } });
       alert("Target set successfully!");
-      fetchAllData(); 
+      await fetchAllData();
     } catch (err) {
-      alert("Failed to set target.");
+      alert(err.response?.data?.error || "Failed to set target.");
+    } finally {
+      setIsSettingTarget(false);
     }
   };
 
@@ -388,7 +394,7 @@ function Dashboard() {
                   <img src={myLogo} alt="ESG Platform Logo" style={{ height: '40px', width: 'auto' }} />
               </div>
               <h1 style={{ fontSize: '36px', margin: 0, fontWeight: '800', color: '#111827', letterSpacing: '-0.02em' }}>
-                  Platform Overview
+                Executive Dashboard
               </h1>
           </div>
 
@@ -611,8 +617,8 @@ function Dashboard() {
                     <label style={formLabelStyle}>Reduction % Goal</label>
                     <input type="number" value={targetForm.reduction_percentage} onChange={e => setTargetForm({...targetForm, reduction_percentage: e.target.value})} style={formInputStyle} />
                   </div>
-                  <button type="submit" style={{ background: '#111827', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', marginTop: '10px' }}>
-                    Lock In Target
+                  <button type="submit" disabled={isSettingTarget} style={{ background: '#111827', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: isSettingTarget ? 'not-allowed' : 'pointer', marginTop: '10px', opacity: isSettingTarget ? 0.7 : 1 }}>
+                    {isSettingTarget ? 'Saving...' : 'Lock In Target'}
                   </button>
                 </form>
               </div>

@@ -817,6 +817,57 @@ app.delete('/api/mappings/:id', authorize, async (req, res) => {
     }
 });
 
+
+// ==========================================
+// NET-ZERO TARGET ROUTES — CREATE
+// FIX: this route never existed. The Dashboard's "Set Reduction Goal"
+// form was posting to /api/targets, hitting a 404 every time, and
+// silently showing a generic "Failed to set target." error with no
+// real explanation. Add this alongside the existing GET /api/targets.
+// ==========================================
+app.post('/api/targets', authorize, async (req, res) => {
+    try {
+        const { organization_id, scope_category, baseline_year, target_year, reduction_percentage } = req.body;
+
+        if (!organization_id || !baseline_year || !target_year || reduction_percentage == null) {
+            return res.status(400).json({ error: "organization_id, baseline_year, target_year, and reduction_percentage are all required." });
+        }
+        if (Number(target_year) <= Number(baseline_year)) {
+            return res.status(400).json({ error: "target_year must be after baseline_year." });
+        }
+        if (Number(reduction_percentage) < 0 || Number(reduction_percentage) > 100) {
+            return res.status(400).json({ error: "reduction_percentage must be between 0 and 100." });
+        }
+
+        // Verify the target unit belongs to the caller's own org tree.
+        const ownershipCheck = await pool.query(
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+             SELECT 1 FROM org_tree WHERE unit_id = $2`,
+            [req.user.company_id, organization_id]
+        );
+        if (ownershipCheck.rows.length === 0) {
+            return res.status(403).json({ error: "Access Denied: That organization unit does not belong to your company." });
+        }
+
+        const result = await pool.query(
+            `INSERT INTO reduction_targets (unit_id, scope_category, baseline_year, target_year, reduction_percentage)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING *`,
+            [organization_id, scope_category || 'All', baseline_year, target_year, reduction_percentage]
+        );
+
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error("Error creating target:", err.message);
+        res.status(500).json({ error: "Failed to save reduction target." });
+    }
+});
 // ==========================================
 // NET-ZERO TARGET ROUTES (RESTORED — was missing)
 // ==========================================
