@@ -70,13 +70,22 @@ app.use('/api/organizations', sectorRoutes);
 app.get('/api/emissions', authorize, async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT e.*, u.name as organization_name
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+             SELECT e.*, u.name as organization_name
              FROM esg_observation e
              JOIN Organization_Unit u ON e.unit_id = u.unit_id
              WHERE e.scope_category IS NOT NULL
-             ORDER BY 
-                CASE WHEN status = 'Pending' THEN 1 ELSE 2 END, 
-                created_at DESC`
+               AND e.unit_id IN (SELECT unit_id FROM org_tree)
+             ORDER BY
+                CASE WHEN status = 'Pending' THEN 1 ELSE 2 END,
+                created_at DESC`,
+            [req.user.company_id]
         );
         res.json(result.rows);
     } catch (err) {
@@ -85,68 +94,79 @@ app.get('/api/emissions', authorize, async (req, res) => {
     }
 });
 
+
 // ==========================================
 // AUDIT QUEUE ROUTE (UNIFIED & PATCHED)
 // ==========================================
 app.get('/api/audit/pending', authorize, async (req, res) => {
     try {
         const query = `
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM organization_unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM organization_unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
             -- 1. FETCH CARBON DATA
-            SELECT 
+            SELECT
                 e.observation_id as id,
-                'GHG' as type, 
+                'GHG' as type,
                 u.name as organization_name,
                 e.scope_category,
-                e.activity_type as metric, 
-                e.activity_type,             
-                e.raw_amount::text as value, 
-                e.raw_amount,                
-                e.calculated_co2e,           
+                e.activity_type as metric,
+                e.activity_type,
+                e.raw_amount::text as value,
+                e.raw_amount,
+                e.calculated_co2e,
                 'units' as unit_of_measure,
                 e.quality_tier,
                 e.evidence_url as evidence_file_url,
-                e.status, 
-                COALESCE(e.created_at, e.timestamp) as created_at 
+                e.status,
+                COALESCE(e.created_at, e.timestamp) as created_at
             FROM esg_observation e
             JOIN organization_unit u ON e.unit_id = u.unit_id
             WHERE e.scope_category IS NOT NULL
-            
+              AND e.unit_id IN (SELECT unit_id FROM org_tree)
+
             UNION ALL
-            
+
             -- 2. FETCH GENERAL, SOCIAL, & GOV DATA
-            SELECT 
-                o.observation_id as id, 
-                CASE 
+            SELECT
+                o.observation_id as id,
+                CASE
                     WHEN o.pillar = 'E' THEN 'Environment'
                     WHEN o.pillar = 'S' THEN 'Social'
                     WHEN o.pillar = 'G' THEN 'Governance'
-                    ELSE 'General' 
-                END as type, 
+                    ELSE 'General'
+                END as type,
                 u.name as organization_name,
                 'N/A' as scope_category,
-                o.metric_name as metric, 
-                o.metric_name as activity_type,             
-                COALESCE(o.numeric_value::text, o.text_value) as value, 
-                o.numeric_value as raw_amount,                
-                NULL::numeric as calculated_co2e,           
+                o.metric_name as metric,
+                o.metric_name as activity_type,
+                COALESCE(o.numeric_value::text, o.text_value) as value,
+                o.numeric_value as raw_amount,
+                NULL::numeric as calculated_co2e,
                 o.unit_of_measure,
                 o.quality_tier,
                 o.evidence_url as evidence_file_url,
-                o.status, 
-                COALESCE(o.timestamp, o.created_at) as created_at 
+                o.status,
+                COALESCE(o.timestamp, o.created_at) as created_at
             FROM esg_observation o
             JOIN organization_unit u ON o.unit_id = u.unit_id
             WHERE o.pillar IS NOT NULL
-            
+              AND o.unit_id IN (SELECT unit_id FROM org_tree)
+
             ORDER BY created_at DESC;
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, [req.user.company_id]);
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching audit queue:", err.message);
         res.status(500).json({ error: "Failed to fetch audit queue." });
     }
 });
+
 
 // Setup memory storage specifically for reading CSV text directly into the pipeline
 const memoryUpload = multer({ storage: multer.memoryStorage() });
@@ -366,10 +386,17 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
 app.get('/api/observations', authorize, async (req, res) => {
     try {
         const query = `
-            SELECT 
-                o.observation_id, 
-                o.numeric_value, 
-                o.text_value, 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT
+                o.observation_id,
+                o.numeric_value,
+                o.text_value,
                 o.timestamp,
                 u.name AS organization_name,
                 COALESCE(o.metric_name, m.name) AS metric_name,
@@ -378,7 +405,7 @@ app.get('/api/observations', authorize, async (req, res) => {
             FROM ESG_Observation o
             JOIN Organization_Unit u ON o.unit_id = u.unit_id
             LEFT JOIN Metric_Definition m ON o.metric_id = m.metric_id
-            WHERE u.unit_id = $1
+            WHERE o.unit_id IN (SELECT unit_id FROM org_tree)
             ORDER BY o.timestamp DESC
         `;
         const allObs = await pool.query(query, [req.user.company_id]);
@@ -388,6 +415,7 @@ app.get('/api/observations', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to fetch observations" });
     }
 });
+
 
 // ==========================================
 // GHG EMISSIONS (CARBON TRACKER) ROUTE
@@ -568,17 +596,29 @@ app.post('/api/tasks/assign', authorize, async (req, res) => {
 app.get('/api/tasks', authorize, async (req, res) => {
     try {
         const result = await pool.query(`
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM organization_unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM organization_unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
             SELECT ta.*, ou.name AS facility_name
             FROM compliance_task_assignment ta
             LEFT JOIN organization_unit ou ON ta.assigned_unit_id = ou.unit_id
+            LEFT JOIN users creator ON ta.assigned_by = creator.user_id
+            WHERE ta.assigned_unit_id IN (SELECT unit_id FROM org_tree)
+               OR (ta.assigned_unit_id IS NULL AND creator.unit_id IN (SELECT unit_id FROM org_tree))
             ORDER BY ta.created_at DESC
-        `);
+        `, [req.user.company_id]);
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching task assignments:", err.message);
         res.status(500).json({ error: "Failed to fetch task assignments." });
     }
 });
+
+
 
 // ==========================================
 // AUTOMATED FRAMEWORK REPORTING (PATCHED)
@@ -589,7 +629,14 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
         if (!framework || !year) return res.status(400).json({ error: "Missing parameters." });
 
         const query = `
-            SELECT 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT
                 fm.framework_code,
                 fm.description as disclosure_requirement,
                 SUM(e.calculated_co2e) as total_tco2e,
@@ -597,10 +644,10 @@ app.get('/api/reports/framework', authorize, async (req, res) => {
             FROM esg_observation e
             JOIN Organization_Unit u ON e.unit_id = u.unit_id
             JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-            WHERE u.unit_id = $1
+            WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
               AND e.status = 'Approved'
               AND fm.framework_name = $2
-              AND EXTRACT(YEAR FROM e.created_at) = $3 
+              AND EXTRACT(YEAR FROM e.created_at) = $3
             GROUP BY fm.framework_code, fm.description
             ORDER BY fm.framework_code;
         `;
@@ -616,16 +663,23 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
     try {
         const year = req.query.year || new Date().getFullYear().toString();
         const query = `
-            WITH CompanyFulfilled AS (
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            ),
+            CompanyFulfilled AS (
                 SELECT DISTINCT fm.framework_code
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.unit_id = $1
-                  AND e.status = 'Approved' 
+                WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
+                  AND e.status = 'Approved'
                   AND EXTRACT(YEAR FROM e.created_at) = $2
             )
-            SELECT 
+            SELECT
                 f.framework_name,
                 COUNT(f.framework_code) AS total_requirements,
                 COUNT(c.framework_code) AS fulfilled_requirements,
@@ -643,26 +697,34 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
     }
 });
 
+
 app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
     try {
         const { framework, year } = req.query;
         if (!framework || !year) return res.status(400).json({ error: "Missing parameters." });
 
         const query = `
-            WITH CompanyFulfilled AS (
-                SELECT 
-                    fm.framework_code, 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            ),
+            CompanyFulfilled AS (
+                SELECT
+                    fm.framework_code,
                     SUM(e.calculated_co2e) as total_co2e,
                     MIN(e.quality_tier) as quality_tier
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
                 JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
-                WHERE u.unit_id = $1
-                  AND e.status = 'Approved' 
+                WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
+                  AND e.status = 'Approved'
                   AND EXTRACT(YEAR FROM e.created_at) = $2
                 GROUP BY fm.framework_code
             )
-            SELECT 
+            SELECT
                 f.framework_code,
                 f.description,
                 f.activity_type,
@@ -681,6 +743,7 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to compile gap analysis." });
     }
 });
+
 
 // ==========================================
 // ADMIN FRAMEWORK MAPPING ROUTES
@@ -756,10 +819,17 @@ app.delete('/api/mappings/:id', authorize, async (req, res) => {
 app.get('/api/targets', authorize, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT t.*, o.name as organization_name 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT t.*, o.name as organization_name
             FROM reduction_targets t
             JOIN Organization_Unit o ON t.unit_id = o.unit_id
-            WHERE o.unit_id = $1
+            WHERE t.unit_id IN (SELECT unit_id FROM org_tree)
             ORDER BY created_at DESC
         `, [req.user.company_id]);
         res.json(result.rows);
@@ -769,18 +839,23 @@ app.get('/api/targets', authorize, async (req, res) => {
     }
 });
 
+
 // ==========================================
 // SUPER ADMIN: APPROVAL WORKFLOW
 // ==========================================
 
-app.get('/api/admin/pending', async (req, res) => {
+app.get('/api/admin/pending', authorize, async (req, res) => {
   try {
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: "Access Denied: Admins only." });
+    }
+
     const result = await pool.query(`
-      SELECT 
-        u.user_id, 
-        u.email, 
-        u.created_at, 
-        o.name AS company_name 
+      SELECT
+        u.user_id,
+        u.email,
+        u.created_at,
+        o.name AS company_name
       FROM users u
       LEFT JOIN organization_unit o ON u.unit_id = o.unit_id
       WHERE u.role = 'Pending'
@@ -793,8 +868,13 @@ app.get('/api/admin/pending', async (req, res) => {
   }
 });
 
-app.put('/api/admin/approve/:id', async (req, res) => {
+
+app.put('/api/admin/approve/:id', authorize, async (req, res) => {
   try {
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: "Access Denied: Admins only." });
+    }
+
     const { id } = req.params;
     const { role } = req.body;
 
@@ -818,6 +898,7 @@ app.put('/api/admin/approve/:id', async (req, res) => {
     res.status(500).json({ error: "Failed to approve account." });
   }
 });
+
 
 // ==========================================
 // AUTHENTICATION ROUTES
@@ -994,12 +1075,30 @@ app.put('/api/users/:id/role', authorize, auditorGuard, async (req, res) => {
 // ==========================================
 app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
     const client = await pool.connect();
-    
+
     try {
         const { unit_id, assessment_year, topics, overwrite_all } = req.body;
 
         if (!unit_id) {
             return res.status(400).json({ error: "Organization ID is required." });
+        }
+
+        // Verify the target unit actually belongs to the caller's org tree
+        // before writing anything.
+        const ownershipCheck = await client.query(
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+             SELECT 1 FROM org_tree WHERE unit_id = $2`,
+            [req.user.company_id, unit_id]
+        );
+
+        if (ownershipCheck.rows.length === 0) {
+            return res.status(403).json({ error: "Access Denied: That organization unit does not belong to your company." });
         }
 
         await client.query('BEGIN');
@@ -1035,16 +1134,25 @@ app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
     }
 });
 
+
 app.get('/api/materiality/:orgId', authorize, async (req, res) => {
     try {
         const { orgId } = req.params;
         const currentYear = new Date().getFullYear();
-        
+
         const result = await pool.query(`
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
             SELECT topic_name as name, stakeholder_importance_score as y, business_impact_score as x
             FROM Materiality_Scores
-            WHERE unit_id = $1 AND assessment_year = $2
-        `, [orgId, currentYear]);
+            WHERE unit_id = $2 AND assessment_year = $3
+              AND unit_id IN (SELECT unit_id FROM org_tree)
+        `, [req.user.company_id, orgId, currentYear]);
 
         res.json(result.rows);
     } catch (err) {
@@ -1052,6 +1160,7 @@ app.get('/api/materiality/:orgId', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to fetch scores." });
     }
 });
+
 
 // ==========================================
 // CLIMATE SCENARIO ANALYSIS (STRESS TESTING)
@@ -1107,10 +1216,17 @@ app.get('/api/scenarios', authorize, async (req, res) => {
     try {
         const { year } = req.query;
         let query = `
-            SELECT s.*, u.name as organization_name 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT s.*, u.name as organization_name
             FROM Climate_Scenario_Analysis s
             JOIN Organization_Unit u ON s.unit_id = u.unit_id
-            WHERE u.unit_id = $1
+            WHERE s.unit_id IN (SELECT unit_id FROM org_tree)
         `;
         const values = [req.user.company_id];
 
@@ -1153,10 +1269,17 @@ app.post('/api/campaigns', authorize, async (req, res) => {
 app.get('/api/campaigns', authorize, async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT token as id, supplier_name as supplier, activity_type as metric, 
-                    deadline, status, evidence_url, created_at 
-             FROM Supplier_Campaigns 
-             WHERE unit_id = $1 
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+             SELECT token as id, supplier_name as supplier, activity_type as metric,
+                    deadline, status, evidence_url, created_at
+             FROM Supplier_Campaigns
+             WHERE unit_id IN (SELECT unit_id FROM org_tree)
              ORDER BY created_at DESC`,
             [req.user.company_id]
         );
@@ -1166,6 +1289,7 @@ app.get('/api/campaigns', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to fetch campaigns" });
     }
 });
+
 
 app.get('/api/public/campaigns/:token', async (req, res) => {
     try {
@@ -1299,18 +1423,25 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
         const previousYear = currentYear - 1;
 
         const query = `
-            WITH MonthlyData AS (
-                SELECT 
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            ),
+            MonthlyData AS (
+                SELECT
                     EXTRACT(MONTH FROM COALESCE(e.timestamp, e.created_at)) as month_num,
                     SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $2 THEN e.calculated_co2e ELSE 0 END) as current_co2e,
                     SUM(CASE WHEN EXTRACT(YEAR FROM COALESCE(e.timestamp, e.created_at)) = $3 THEN e.calculated_co2e ELSE 0 END) as previous_co2e
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
-                WHERE u.unit_id = $1
+                WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
                   AND e.status = 'Approved'
                 GROUP BY month_num
             )
-            SELECT 
+            SELECT
                 m.month_abbr as month,
                 COALESCE(d.current_co2e, 0) as current_co2e,
                 COALESCE(d.previous_co2e, 0) as previous_co2e
@@ -1330,6 +1461,7 @@ app.get('/api/analytics/variance', authorize, async (req, res) => {
         res.status(500).json({ error: "Failed to compile variance analytics." });
     }
 });
+
 
 // ==========================================
 // DECARBONIZATION INITIATIVES ENGINE

@@ -30,6 +30,7 @@ import InsuranceAnalytics from './pages/InsuranceAnalytics';
 // Component Imports
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar'; 
+import RequireValidRole from './components/RequireValidRole';
 
 // Tells React to use the live URL if it exists, otherwise fallback to localhost
 axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'https://esg-compliance-platform-production.up.railway.app';
@@ -71,7 +72,7 @@ function App() {
                   <Routes>
                     
                     {/* 2. Utilize the DashboardRouter helper component */}
-                    <Route path="/dashboard" element={<DashboardRouter />} />
+                    <Route path="/dashboard" element={<RequireValidRole><DashboardRouter /></RequireValidRole>} />
                     
                     <Route path="/data-entry" element={<DataEntry />} />
                     
