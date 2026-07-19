@@ -91,7 +91,7 @@ function App() {
                     <Route path="/organizations" element={<ProtectedRoute allowedRoles={['Admin']}><Organizations /></ProtectedRoute>} />
                     <Route path="/entity-management" element={<ProtectedRoute allowedRoles={['Admin']}><EntityManagement /></ProtectedRoute>} />
                     <Route path="/metrics" element={<ProtectedRoute allowedRoles={['Admin']}><Metrics /></ProtectedRoute>} />
-                    <Route path="/users" element={<ProtectedRoute allowedRoles={['Admin']}><UserManagement /></ProtectedRoute>} />
+                    <Route path="/users" element={<ProtectedRoute allowedRoles={['Admin', 'Super Admin']}><UserManagement /></ProtectedRoute>} />
                     <Route path="/sop" element={<ProtectedRoute allowedRoles={['Admin']}><SOPPage /></ProtectedRoute>} />
                     <Route path="/admin/frameworks" element={<ProtectedRoute allowedRoles={['Admin']}><FrameworkManager /></ProtectedRoute>} />
                     
