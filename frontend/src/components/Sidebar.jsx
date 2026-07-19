@@ -13,6 +13,7 @@ function Sidebar() {
   
   // Standardize the casing check so 'Auditor' or 'auditor' both work
   const isAdmin = user?.role?.toLowerCase() === 'admin'; 
+  const isSuperAdmin = user?.role === 'Super Admin';
   const isManager = user?.role?.toLowerCase() === 'manager';
   const isAuditor = user?.role?.toLowerCase() === 'auditor'; 
 
@@ -145,8 +146,14 @@ function Sidebar() {
 )}
               <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
               <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
-            </>
+          </>
           )}
+          {isSuperAdmin && (
+             <>
+           <li style={getSectionHeaderStyle()}>Platform Admin</li>
+            <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
+            </>
+            )}
         </ul>
       </div>
 
