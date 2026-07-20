@@ -16,6 +16,7 @@ const insuranceRoutes = require('./routes/insurance-routes');
 const sectorRoutes = require('./routes/sector-routes');
 const energyRoutes = require('./routes/energy-routes'); 
 const platformRoutes = require('./routes/platform-routes');
+const benchmarkingRoutes = require('./routes/benchmarking-routes');
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/insurance', insuranceRoutes);
 app.use('/api/organizations', sectorRoutes);
 app.use('/api/energy', energyRoutes);
 app.use('/api/platform', platformRoutes);
+app.use('/api/benchmarking', benchmarkingRoutes);
 
 // ==========================================
 // GET ALL EMISSIONS (For Dashboards)
