@@ -4,17 +4,76 @@ import {
     ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
+const SECTOR_LABELS = {
+    general: 'Sector: General',
+    banking: 'Sector: Banking',
+    insurance: 'Sector: Insurance',
+    energy: 'Sector: Energy',
+};
+
 function DecarbonizationForecaster() {
-    // Defaulting to empty so the user must actively select their industry
-    const [sector, setSector] = useState(''); 
+    const [sector, setSector] = useState('');
     const [availableInitiatives, setAvailableInitiatives] = useState([]);
     const [activeInitiatives, setActiveInitiatives] = useState({});
     const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
 
-    // Fetch dynamic levers when the sector changes
+    // FIX: the forecast used to be built from a hardcoded 500,000 kg CO2e
+    // baseline for every company on the platform — the chart looked
+    // company-specific but was identical regardless of anyone's real
+    // emissions. Now it's computed from the company's own approved
+    // emissions total, the same figure Dashboard.jsx's "Total Approved
+    // Carbon" card shows.
+    const [baselineEmissions, setBaselineEmissions] = useState(null);
+    const [baselineLoading, setBaselineLoading] = useState(true);
+    const [baselineError, setBaselineError] = useState('');
+
+    useEffect(() => {
+        fetchBaseline();
+    }, []);
+
+    const fetchBaseline = async () => {
+        setBaselineLoading(true);
+        setBaselineError('');
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get('/api/emissions', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const approvedTotal = response.data
+                .filter(e => e.status === 'Approved')
+                .reduce((sum, e) => sum + Number(e.calculated_co2e), 0);
+            setBaselineEmissions(approvedTotal);
+        } catch (err) {
+            console.error("Failed to load emissions baseline:", err);
+            setBaselineError("Failed to load your company's emissions baseline. The forecast can't be shown until this loads.");
+            setBaselineEmissions(null);
+        } finally {
+            setBaselineLoading(false);
+        }
+    };
+
+    // FIX: auto-detect the company's real sector as the default, instead
+    // of leaving it as a disconnected manual pick — same pattern used in
+    // MaterialityMatrix.jsx. The dropdown is still fully overridable.
+    useEffect(() => {
+        const fetchSectorDefault = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get('/api/organizations/my-sector', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.data.sector) setSector(res.data.sector);
+            } catch (err) {
+                console.error("Failed to load sector default:", err);
+                // Fail safe to the blank/manual-select state — not a data-loss risk.
+            }
+        };
+        fetchSectorDefault();
+    }, []);
+
     useEffect(() => {
         const fetchInitiatives = async () => {
-            // If no sector is selected, clear the board and do not call the API
             if (!sector) {
                 setAvailableInitiatives([]);
                 setActiveInitiatives({});
@@ -22,20 +81,25 @@ function DecarbonizationForecaster() {
             }
 
             setLoading(true);
+            setLoadError('');
             try {
                 const token = localStorage.getItem('token');
-                const response = await axios.get(`/api/initiatives?sector=${sector}`, {
+                const response = await axios.get(`/api/initiatives?sector=${encodeURIComponent(sector)}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                
+
                 setAvailableInitiatives(response.data);
-                
-                // Reset all toggles to "off" when switching sectors
+
                 const resetToggles = {};
                 response.data.forEach(init => resetToggles[init.id] = false);
                 setActiveInitiatives(resetToggles);
             } catch (err) {
                 console.error("Error fetching initiatives:", err);
+                // FIX: a failed request no longer looks identical to "this
+                // sector genuinely has no initiatives configured yet."
+                setAvailableInitiatives([]);
+                setActiveInitiatives({});
+                setLoadError("Failed to load decarbonization levers for this sector. Please try again.");
             } finally {
                 setLoading(false);
             }
@@ -50,34 +114,28 @@ function DecarbonizationForecaster() {
 
     // --- DYNAMIC FORECASTING MATH ENGINE ---
     const chartData = useMemo(() => {
+        if (baselineEmissions === null || baselineEmissions <= 0) return [];
+
         const baseYear = new Date().getFullYear();
-        const targetYear = baseYear + 10; 
-        const baselineEmissions = 500000; // e.g., 500k kg CO2e
+        const targetYear = baseYear + 10;
 
         // SBTi Target: 90% absolute reduction over 10 years
-        const sbtiTargetEmissions = baselineEmissions * 0.10; 
+        const sbtiTargetEmissions = baselineEmissions * 0.10;
         const annualTargetDrop = (baselineEmissions - sbtiTargetEmissions) / (targetYear - baseYear);
 
         let data = [];
 
         for (let year = baseYear; year <= targetYear; year++) {
             const step = year - baseYear;
-            
-            // 1. Business As Usual (BAU) - 2% natural growth
-            const bau = baselineEmissions * Math.pow(1.02, step);
 
-            // 2. The Science-Based Target Trajectory
+            const bau = baselineEmissions * Math.pow(1.02, step);
             const target = baselineEmissions - (annualTargetDrop * step);
 
-            // 3. Projected Reality (Dynamically calculated from API data)
             let projectedReduction = 0;
-
-            // Loop through all active toggles and apply their specific database math
             Object.keys(activeInitiatives).forEach(id => {
                 if (activeInitiatives[id]) {
                     const initiativeData = availableInitiatives.find(i => i.id === parseInt(id));
                     if (initiativeData && step > 0) {
-                        // Calculate how much of the initiative has "phased in"
                         const phaseInRatio = Math.min(step / initiativeData.phase_in_years, 1);
                         projectedReduction += (baselineEmissions * Number(initiativeData.impact_percentage)) * phaseInRatio;
                     }
@@ -94,7 +152,7 @@ function DecarbonizationForecaster() {
             });
         }
         return data;
-    }, [activeInitiatives, availableInitiatives]);
+    }, [activeInitiatives, availableInitiatives, baselineEmissions]);
 
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
@@ -121,7 +179,7 @@ function DecarbonizationForecaster() {
                         🔭 Net-Zero Scenario Modeler
                     </h2>
                     <p style={{ margin: 0, color: '#6b7280', fontSize: '15px', maxWidth: '600px' }}>
-                        Toggle strategic operational initiatives below to forecast their impact on your Science-Based Target (SBTi) trajectory.
+                        Toggle strategic operational initiatives below to forecast their impact on your Science-Based Target (SBTi) trajectory, based on your own approved emissions baseline.
                     </p>
                 </div>
 
@@ -131,63 +189,84 @@ function DecarbonizationForecaster() {
                     style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', fontSize: '14px', fontWeight: '600', color: '#374151', cursor: 'pointer', outline: 'none' }}
                 >
                     <option value="" disabled>Select Industry Sector...</option>
-                    <option value="insurance">Sector: Insurance</option>
-                    <option value="manufacturing">Sector: Manufacturing</option>
-                    <option value="logistics">Sector: Logistics</option>
-                    <option value="real_estate">Sector: Real Estate</option>
-                    <option value="banking">Sector: Banking & Finance</option>
+                    {Object.keys(SECTOR_LABELS).map(key => (
+                        <option key={key} value={key}>{SECTOR_LABELS[key]}</option>
+                    ))}
                 </select>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', alignItems: 'start' }}>
-                
-                {/* Left Side: The Interactive Chart */}
-                <div style={{ width: '100%', height: '400px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                            <XAxis dataKey="year" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#d1d5db'}} tickLine={false} />
-                            <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000}k`} />
-                            <Tooltip content={<CustomTooltip />} />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-
-                            <Line type="monotone" name="Business as Usual" dataKey="Business as Usual" stroke="#d1d5db" strokeWidth={3} strokeDasharray="5 5" dot={false} />
-                            <Line type="monotone" name="Target Trajectory" dataKey="Target Trajectory" stroke="#10b981" strokeWidth={3} dot={false} />
-                            <Area type="monotone" name="Projected Emissions" dataKey="Projected Emissions" fill="#3b82f6" fillOpacity={0.1} stroke="#3b82f6" strokeWidth={4} />
-                        </ComposedChart>
-                    </ResponsiveContainer>
+            {baselineError && (
+                <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '14px 18px', borderRadius: '8px', marginBottom: '24px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+                    <span>⚠️ {baselineError}</span>
+                    <button onClick={fetchBaseline} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        Retry
+                    </button>
                 </div>
+            )}
 
-                {/* Right Side: Dynamic API Controls */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', textTransform: 'uppercase', color: '#9ca3af', fontWeight: '700', letterSpacing: '0.05em' }}>
-                        Industry Specific Levers
-                    </h3>
-
-                    {sector === '' ? (
-                        <p style={{ color: '#6b7280', fontSize: '14px', fontStyle: 'italic' }}>Please select a sector to view decarbonization levers.</p>
-                    ) : loading ? (
-                        <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading sector logic...</p>
-                    ) : availableInitiatives.length === 0 ? (
-                        <p style={{ color: '#6b7280', fontSize: '14px' }}>No initiatives found for this sector yet.</p>
-                    ) : (
-                        availableInitiatives.map((init) => (
-                            <ToggleCard 
-                                key={init.id}
-                                title={init.title} 
-                                description={init.description} 
-                                isActive={!!activeInitiatives[init.id]} 
-                                onClick={() => handleToggle(init.id)} 
-                            />
-                        ))
-                    )}
+            {baselineLoading ? (
+                <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280' }}>Loading your emissions baseline...</div>
+            ) : baselineError ? null : baselineEmissions === 0 ? (
+                <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280', backgroundColor: '#f9fafb', borderRadius: '12px', border: '1px dashed #d1d5db' }}>
+                    No approved emissions data found yet. Once emissions are logged and approved, this forecast will be built from your real baseline.
                 </div>
-            </div>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', alignItems: 'start' }}>
+                    
+                    <div style={{ width: '100%', height: '400px' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                <XAxis dataKey="year" tick={{fill: '#6b7280', fontSize: 12}} axisLine={{stroke: '#d1d5db'}} tickLine={false} />
+                                <YAxis tick={{fill: '#6b7280', fontSize: 12}} axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000}k`} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
+                                <Line type="monotone" name="Business as Usual" dataKey="Business as Usual" stroke="#d1d5db" strokeWidth={3} strokeDasharray="5 5" dot={false} />
+                                <Line type="monotone" name="Target Trajectory" dataKey="Target Trajectory" stroke="#10b981" strokeWidth={3} dot={false} />
+                                <Area type="monotone" name="Projected Emissions" dataKey="Projected Emissions" fill="#3b82f6" fillOpacity={0.1} stroke="#3b82f6" strokeWidth={4} />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', textTransform: 'uppercase', color: '#9ca3af', fontWeight: '700', letterSpacing: '0.05em' }}>
+                            Industry Specific Levers
+                        </h3>
+
+                        {loadError && (
+                            <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px 16px', borderRadius: '8px', fontWeight: '600', fontSize: '13px', border: '1px solid #fecaca' }}>
+                                <div style={{ marginBottom: '8px' }}>⚠️ {loadError}</div>
+                                <button onClick={() => setSector(s => s)} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+                                    Retry
+                                </button>
+                            </div>
+                        )}
+
+                        {sector === '' ? (
+                            <p style={{ color: '#6b7280', fontSize: '14px', fontStyle: 'italic' }}>Please select a sector to view decarbonization levers.</p>
+                        ) : loading ? (
+                            <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading sector logic...</p>
+                        ) : loadError ? null : availableInitiatives.length === 0 ? (
+                            <p style={{ color: '#6b7280', fontSize: '14px' }}>No initiatives found for this sector yet.</p>
+                        ) : (
+                            availableInitiatives.map((init) => (
+                                <ToggleCard 
+                                    key={init.id}
+                                    title={init.title} 
+                                    description={init.description} 
+                                    isActive={!!activeInitiatives[init.id]} 
+                                    onClick={() => handleToggle(init.id)} 
+                                />
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
-// Helper Component for the styled toggle buttons
 function ToggleCard({ title, description, isActive, onClick }) {
     return (
         <div 
