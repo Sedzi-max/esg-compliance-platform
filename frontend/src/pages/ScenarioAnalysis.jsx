@@ -4,6 +4,7 @@ import axios from 'axios';
 function ScenarioAnalysis() {
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -18,9 +19,9 @@ function ScenarioAnalysis() {
     mitigation_strategy: ''
   });
 
-  // 1. Fetch existing scenarios on load
   const fetchScenarios = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get('/api/scenarios', {
@@ -29,6 +30,12 @@ function ScenarioAnalysis() {
       setScenarios(res.data);
     } catch (error) {
       console.error("Failed to fetch scenarios:", error);
+      // FIX: a failed load no longer looks identical to "no stress tests
+      // logged yet." Since this page exists specifically to demonstrate
+      // NIC stress-testing compliance, that distinction matters — an
+      // empty table should mean "nothing logged," not "the request failed."
+      setScenarios([]);
+      setLoadError("Failed to load scenario analyses. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -38,15 +45,14 @@ function ScenarioAnalysis() {
     fetchScenarios();
   }, []);
 
-  // 2. Handle Form Input Changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 3. Submit New Scenario
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return; // FIX: explicit double-submit guard
     setIsSubmitting(true);
     
     try {
@@ -58,7 +64,6 @@ function ScenarioAnalysis() {
       alert("✅ Scenario Analysis Logged Successfully!");
       setShowModal(false);
       
-      // Reset form
       setFormData({
         assessment_year: new Date().getFullYear(),
         scenario_name: '',
@@ -69,8 +74,7 @@ function ScenarioAnalysis() {
         mitigation_strategy: ''
       });
       
-      // Refresh the table
-      fetchScenarios();
+      await fetchScenarios();
       
     } catch (error) {
       console.error("Submit error:", error);
@@ -101,6 +105,25 @@ function ScenarioAnalysis() {
         </button>
       </div>
 
+      {/* SECTOR SCOPE NOTICE — this page's requirement language is specific
+          to the NIC (Insurance) guidelines; make that explicit so Banking,
+          Energy, and General companies don't assume it applies to them. */}
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '14px 18px', marginBottom: '25px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+        <span style={{ fontSize: '18px' }}>ℹ️</span>
+        <p style={{ margin: 0, fontSize: '14px', color: '#1e40af' }}>
+          This module reflects the <strong>National Insurance Commission (NIC)</strong> stress-testing requirement (Ghana ESG Guidelines for the Insurance Industry, §7.4–7.5) and is primarily relevant to <strong>Insurance-sector</strong> companies. Other sectors are not required to complete this — check your sector-specific ESG dashboard for your applicable regulatory framework.
+        </p>
+      </div>
+
+      {loadError && (
+        <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '14px 18px', borderRadius: '8px', marginBottom: '20px', fontWeight: '600', fontSize: '14px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+          <span>⚠️ {loadError}</span>
+          <button onClick={fetchScenarios} style={{ background: 'transparent', border: '1px solid #991b1b', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* DATA TABLE SECTION */}
       <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -116,7 +139,7 @@ function ScenarioAnalysis() {
           <tbody>
             {isLoading ? (
               <tr><td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#6c757d' }}>Loading forecasts...</td></tr>
-            ) : scenarios.length === 0 ? (
+            ) : loadError ? null : scenarios.length === 0 ? (
               <tr><td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#6c757d' }}>No scenario analyses found. Click "Log New Stress Test" to begin.</td></tr>
             ) : (
               scenarios.map((scenario) => (
