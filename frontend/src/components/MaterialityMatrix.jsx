@@ -179,7 +179,7 @@ function MaterialityMatrix() {
     try {
       const token = localStorage.getItem('token');
       await axios.post('/api/materiality', {
-        organization_id: selectedOrg,
+        unit_id: selectedOrg,
         assessment_year: currentYear,
         topics: topics,
         overwrite_all: true

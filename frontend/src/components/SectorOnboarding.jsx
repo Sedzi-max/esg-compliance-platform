@@ -107,11 +107,11 @@ function SectorOnboarding() {
       const kitToDeploy = SECTOR_KITS[selectedSector];
 
       await axios.post('/api/materiality', {
-        organization_id: selectedOrg,
-        assessment_year: currentYear,
-        topics: kitToDeploy,
-        overwrite_all: true
-      }, config);
+    unit_id: selectedOrg,
+    assessment_year: currentYear,
+    topics: kitToDeploy,
+    overwrite_all: true
+}, config);
 
       alert(`✅ ${selectedSector} Starter Kit successfully deployed!`);
       window.location.reload();
