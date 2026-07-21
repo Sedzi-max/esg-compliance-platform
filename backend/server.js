@@ -823,7 +823,9 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
                     MIN(e.quality_tier) as quality_tier
                 FROM esg_observation e
                 JOIN Organization_Unit u ON e.unit_id = u.unit_id
-                JOIN Framework_Mappings fm ON e.activity_type = fm.activity_type
+                JOIN Framework_Mappings fm
+                    ON e.activity_type = fm.activity_type
+                    OR e.metric_name = fm.framework_code
                 WHERE e.unit_id IN (SELECT unit_id FROM org_tree)
                   AND e.status = 'Approved'
                   AND EXTRACT(YEAR FROM e.created_at) = $2

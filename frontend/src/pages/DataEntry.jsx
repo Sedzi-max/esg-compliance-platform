@@ -72,14 +72,98 @@ const ACTIVITY_TO_SCOPE_MAP = {
   'waste_recycled_kg': 'scope_3'
 };
 
+// FIX: these now use the real granular framework_code values from
+// Framework_Mappings (the same codes the Gap Analysis Matrix tracks),
+// grouped by principle for the dropdown. The old list only had 7 broad
+// codes (BoG-P1..P7) that never matched any Gap Analysis clause, so
+// logging data through this form never actually closed a compliance gap.
 const BOG_PRINCIPLES = [
-  { id: 'BoG-P1', label: 'P1: E&S Risk Management in Lending (Portfolio Screening)' },
-  { id: 'BoG-P2', label: 'P2: Internal Footprint (Energy, Paper, Waste Metrics)' },
-  { id: 'BoG-P3', label: 'P3: Corporate Governance & Anti-Corruption Protocols' },
-  { id: 'BoG-P4', label: 'P4: Gender Equality (Board Diversity & Equal Pay Metrics)' },
-  { id: 'BoG-P5', label: 'P5: Financial Inclusion (Unbanked Demographic Reach)' },
-  { id: 'BoG-P6', label: 'P6: Resource Efficiency & Green Product Offerings' },
-  { id: 'BoG-P7', label: 'P7: Transparent Annual ESG Reporting & Disclosure' }
+  { group: 'Principle 1: E&S Risk Management in Lending', options: [
+    { id: 'BoG-P1-products', label: 'New products/services introduced to encourage good E&S performance' },
+    { id: 'BoG-P1-screening', label: 'Percentage of loan portfolio screened for E&S risk' },
+    { id: 'BoG-P1-training-hours', label: 'Staff training hours on E&S risk management policy' },
+    { id: 'BoG-P1-training-pct', label: 'Percentage of staff trained on E&S risk policy' }
+  ]},
+  { group: 'Principle 2: Internal Footprint', options: [
+    { id: 'BoG-P2-community', label: 'Community engagement (volunteering, investment, initiatives)' },
+    { id: 'BoG-P2-diversity', label: 'Workplace diversity percentage' },
+    { id: 'BoG-P2-electricity', label: 'Electricity consumption per square meter of office space' },
+    { id: 'BoG-P2-ghg', label: 'GHG emissions per square meter of office space' },
+    { id: 'BoG-P2-paper', label: 'Paper consumption per employee' },
+    { id: 'BoG-P2-safety', label: 'Number of employee health and safety incidents per employee' },
+    { id: 'BoG-P2-sickdays', label: 'Number of employee sick days per employee' },
+    { id: 'BoG-P2-training', label: 'Employee training hours per employee' },
+    { id: 'BoG-P2-waste', label: 'Waste production per employee' },
+    { id: 'BoG-P2-water', label: 'Water consumption per employee' }
+  ]},
+  { group: 'Principle 3: Corporate Governance & Anti-Corruption', options: [
+    { id: 'BoG-P3-bribery', label: 'Percentage of employees trained on bribery and corruption' },
+    { id: 'BoG-P3-lawsuits', label: 'Number of ongoing lawsuits related to governance issues' },
+    { id: 'BoG-P3-training', label: 'Training hours on good governance and ethical standards' }
+  ]},
+  { group: 'Principle 4: Gender Equality', options: [
+    { id: 'BoG-P4-paygap', label: 'Gender pay gap' },
+    { id: 'BoG-P4-women-fte', label: 'Percentage of FTEs who are women' },
+    { id: 'BoG-P4-women-leaders', label: 'Percentage of women in senior leadership roles' },
+    { id: 'BoG-P4-women-recruited', label: 'Percentage of women FTEs recruited in the last 12 months' }
+  ]},
+  { group: 'Principle 5: Financial Inclusion', options: [
+    { id: 'BoG-P5-accounts', label: 'New basic bank accounts opened over tech platforms' },
+    { id: 'BoG-P5-products', label: 'New financial products/services targeted at the financially underserved' },
+    { id: 'BoG-P5-transactions', label: 'Number of transactions conducted over tech platforms' }
+  ]},
+  { group: 'Principle 6: Resource Efficiency & Green Products', options: [
+    { id: 'BoG-P6-lending', label: 'Amount lent targeted at improving resource efficiency' },
+    { id: 'BoG-P6-products', label: 'New products/services introduced to encourage resource efficiency' }
+  ]}
+];
+
+// NIC Insurance Guidelines — built from the Framework_Mappings rows inserted
+// for 'NIC Insurance Guidelines', mirroring Banking's granularity.
+const NIC_PRINCIPLES = [
+  { group: '7.1 ESG Governance', options: [
+    { id: 'NIC-Gov-board-oversight', label: 'Board oversight of ESG-related risks and opportunities in business strategy' },
+    { id: 'NIC-Gov-esg-strategy', label: 'Formal ESG strategy developed and overseen by senior management' },
+    { id: 'NIC-Gov-roles-responsibilities', label: 'Defined roles and responsibilities for ESG risk management' },
+    { id: 'NIC-Gov-policy-framework', label: 'Board-approved ESG risk management framework and internal policies' },
+    { id: 'NIC-Gov-training', label: 'ESG training provided to Board and staff' }
+  ]},
+  { group: '7.2 ESG Management System', options: [
+    { id: 'NIC-Mgmt-policy-framework', label: 'Documented ESG governance policy framework (roles, responsibilities, processes)' },
+    { id: 'NIC-Mgmt-integration', label: 'ESG integrated into risk management, investment strategy, and corporate strategy' },
+    { id: 'NIC-Mgmt-controls', label: 'Controls confirming ESG strategies/policies are followed and attaining objectives' }
+  ]},
+  { group: '7.3 ESG Risk Management', options: [
+    { id: 'NIC-Risk-annual-assessment', label: 'Annual assessment of ESG-related risks and opportunities' },
+    { id: 'NIC-Risk-client-screening', label: 'Screening and ESG risk profiling of higher-risk clients' },
+    { id: 'NIC-Risk-board-reporting', label: 'Regular ESG risk reporting to Board and senior management' },
+    { id: 'NIC-Risk-new-business-screening', label: 'Pre-underwriting ESG risk assessment for new business' },
+    { id: 'NIC-Risk-compliance-monitoring', label: 'Compliance monitoring of applicable ESG rules and regulations' },
+    { id: 'NIC-Risk-internal-audit', label: 'Internal audit review of ESG risk management framework' }
+  ]},
+  { group: '7.4 Stress Testing & Scenario Analysis', options: [
+    { id: 'NIC-Stress-scenario-annual', label: 'Annual ESG scenario analysis and stress-testing outcomes submitted to NIC' },
+    { id: 'NIC-Stress-physical-transition', label: 'Scenario analysis covering physical and transition climate risks' }
+  ]},
+  { group: '8. Reporting — Environmental', options: [
+    { id: 'NIC-Report-emissions', label: 'Scope 1, 2, and material Scope 3 GHG emissions, incl. reduction targets' },
+    { id: 'NIC-Report-resource-use', label: 'Water usage, waste generation, and energy consumption metrics' },
+    { id: 'NIC-Report-biodiversity', label: 'Efforts to protect biodiversity and natural habitats' }
+  ]},
+  { group: '8. Reporting — Governance', options: [
+    { id: 'NIC-Report-board-esg-committee', label: 'Board oversight roles and any dedicated ESG committee' },
+    { id: 'NIC-Report-risk-integration', label: 'How ESG risks are integrated into overall risk management' },
+    { id: 'NIC-Report-ethics-compliance', label: 'Ethical conduct, regulatory compliance, and anti-corruption measures' }
+  ]},
+  { group: '8. Reporting — Social', options: [
+    { id: 'NIC-Report-diversity', label: 'Diversity and inclusion metrics across workforce and management' },
+    { id: 'NIC-Report-employee-welfare', label: 'Employee engagement, turnover rates, and training programmes' },
+    { id: 'NIC-Report-community', label: 'Community engagement initiatives and local impact' },
+    { id: 'NIC-Report-customer', label: 'Product responsibility, customer satisfaction, complaint resolution' }
+  ]},
+  { group: 'Materiality', options: [
+    { id: 'NIC-Materiality-assessment', label: 'Materiality assessment conducted and disclosed' }
+  ]}
 ];
 
 function DataEntry() {
@@ -95,7 +179,11 @@ function DataEntry() {
   const [uploadSuccess, setUploadSuccess] = useState('');
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  const [userSector, setUserSector] = useState('Banking');
+  // FIX: no longer defaults to a hardcoded sector with a manual toggle.
+  // The real sector is fetched from the same endpoint Sidebar.jsx already
+  // uses, so the form shown here always matches the company's actual sector.
+  const [userSector, setUserSector] = useState(null);
+  const [sectorLoading, setSectorLoading] = useState(true);
   const [entryMode, setEntryMode] = useState('E');
   const [envType, setEnvType] = useState('GHG');
   const [filePreviewName, setFilePreviewName] = useState("");
@@ -107,10 +195,32 @@ function DataEntry() {
   const [finFormData, setFinFormData] = useState({ organization_id: '', pillar: 'F', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
 
   const [bogFormData, setBogFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null });
+  const [nicFormData, setNicFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null });
 
   useEffect(() => {
     fetchAllData();
+    fetchSector();
   }, []);
+
+  const fetchSector = async () => {
+    setSectorLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('/api/organizations/my-sector', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Normalize whatever casing the backend returns ('banking' / 'Banking')
+      // to the Title Case values this component's form-switch expects.
+      const raw = (response.data?.sector || 'general').toLowerCase();
+      const normalized = raw.charAt(0).toUpperCase() + raw.slice(1);
+      setUserSector(normalized);
+    } catch (err) {
+      console.error("Failed to fetch sector:", err);
+      setUserSector('General');
+    } finally {
+      setSectorLoading(false);
+    }
+  };
 
   const fetchAllData = async () => {
     try {
@@ -147,6 +257,7 @@ function DataEntry() {
       if (formType === 'gov') setGovFormData({ ...govFormData, evidence_file: file });
       if (formType === 'fin') setFinFormData({ ...finFormData, evidence_file: file });
       if (formType === 'bog') setBogFormData({ ...bogFormData, evidence_file: file });
+      if (formType === 'nic') setNicFormData({ ...nicFormData, evidence_file: file });
       setFilePreviewName(file.name);
     }
   };
@@ -238,6 +349,7 @@ function DataEntry() {
   const handleGovSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(govFormData, "Governance metric securely logged!", setGovFormData); };
   const handleFinSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(finFormData, "Financial metric securely logged!", setFinFormData); };
   const handleBogSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(bogFormData, "Bank of Ghana Compliance Clause securely logged!", setBogFormData); };
+  const handleNicSubmit = (e) => { e.preventDefault(); submitObservationWithEvidence(nicFormData, "NIC ESG Guideline Clause securely logged!", setNicFormData); };
 
   const handleFileUpload = async (e) => {
       const file = e.target.files[0];
@@ -337,49 +449,105 @@ function DataEntry() {
     );
   };
 
+  // Shared renderer for a principle-based sector form (Banking / Insurance).
+  // Both sectors submit through the same submitObservationWithEvidence path,
+  // just with a different clause list, color, icon, and copy.
+  const renderPrincipleForm = ({ icon, title, subtitle, principleGroups, principleLabel, formData, setFormData, onSubmit, formType, accentColor, successVerb }) => (
+    <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+      <h2 style={{ marginTop: 0, fontSize: '1.4rem', color: '#0f172a', marginBottom: '8px' }}>{icon} {title}</h2>
+      <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '24px' }}>{subtitle}</p>
+
+      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Organization Unit</label>
+          <select required value={formData.organization_id} onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}>
+            <option value="">-- Select Organization --</option>
+            {organizations.map(org => <option key={org.unit_id} value={org.unit_id}>{org.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{principleLabel}</label>
+          <select required value={formData.principle_id} onChange={(e) => setFormData({ ...formData, principle_id: e.target.value })} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: '#f1f5f9' }}>
+            <option value="">-- Select Clause --</option>
+            {principleGroups.map(group => (
+              <optgroup key={group.group} label={group.group}>
+                {group.options.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        <EvidenceAttachmentUI formType={formType} onExtract={(extractedValue) => setFormData({ ...formData, numeric_value: extractedValue })} />
+
+        {formData.principle_id && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Verified Result / Value</label>
+            <input type="number" step="any" required min="0" placeholder="Enter calculated result..." value={formData.numeric_value} onChange={(e) => setFormData({ ...formData, numeric_value: e.target.value })} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
+          </div>
+        )}
+
+        <button type="submit" disabled={isSubmitting || !formData.principle_id} style={{ background: (isSubmitting || !formData.principle_id) ? '#94a3b8' : accentColor, color: 'white', padding: '14px 20px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: (isSubmitting || !formData.principle_id) ? 'not-allowed' : 'pointer', transition: 'background 0.2s', marginTop: '10px' }}>
+          {isSubmitting ? 'Logging to Ledger...' : `Submit ${successVerb} Log`}
+        </button>
+      </form>
+    </div>
+  );
+
   const renderSectorForm = () => {
-    if (userSector === 'Banking') {
+    if (sectorLoading) {
       return (
-        <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-          <h2 style={{ marginTop: 0, fontSize: '1.4rem', color: '#0f172a', marginBottom: '8px' }}>🏦 Bank of Ghana Compliance Portal</h2>
-          <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '24px' }}>Log required data directly against the 7 mandatory Sustainable Banking Principles.</p>
-
-          <form onSubmit={handleBogSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Organization Unit</label>
-              <select required value={bogFormData.organization_id} onChange={(e) => setBogFormData({...bogFormData, organization_id: e.target.value})} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}>
-                <option value="">-- Select Organization --</option>
-                {organizations.map(org => <option key={org.unit_id} value={org.unit_id}>{org.name}</option>)}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Mandatory Principle</label>
-              <select required value={bogFormData.principle_id} onChange={(e) => setBogFormData({...bogFormData, principle_id: e.target.value})} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', background: '#f1f5f9' }}>
-                <option value="">-- Select BoG Principle --</option>
-                {BOG_PRINCIPLES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-            </div>
-
-            <EvidenceAttachmentUI formType="bog" onExtract={(extractedValue) => setBogFormData({ ...bogFormData, numeric_value: extractedValue })} />
-
-            {bogFormData.principle_id && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Verified Result / Financial Value</label>
-                <input type="number" step="any" required min="0" placeholder="Enter calculated result..." value={bogFormData.numeric_value} onChange={(e) => setBogFormData({...bogFormData, numeric_value: e.target.value})} style={{ padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
-              </div>
-            )}
-
-            <button type="submit" disabled={isSubmitting || !bogFormData.principle_id} style={{ background: (isSubmitting || !bogFormData.principle_id) ? '#94a3b8' : '#2563eb', color: 'white', padding: '14px 20px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: (isSubmitting || !bogFormData.principle_id) ? 'not-allowed' : 'pointer', transition: 'background 0.2s', marginTop: '10px' }}>
-              {isSubmitting ? 'Logging to Ledger...' : 'Submit Compliance Log'}
-            </button>
-          </form>
+        <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6', textAlign: 'center', color: '#64748b' }}>
+          Loading your sector configuration...
         </div>
       );
     }
 
+    if (userSector === 'Banking') {
+      return renderPrincipleForm({
+        icon: '🏦',
+        title: 'Bank of Ghana Compliance Portal',
+        subtitle: 'Log required data directly against the Bank of Ghana Sustainable Banking Principles.',
+        principleGroups: BOG_PRINCIPLES,
+        principleLabel: 'Mandatory Principle Clause',
+        formData: bogFormData,
+        setFormData: setBogFormData,
+        onSubmit: handleBogSubmit,
+        formType: 'bog',
+        accentColor: '#2563eb',
+        successVerb: 'Compliance'
+      });
+    }
+
+    if (userSector === 'Insurance') {
+      return renderPrincipleForm({
+        icon: '🛡️',
+        title: 'NIC ESG Compliance Portal',
+        subtitle: 'Log required data directly against the NIC ESG Guidelines for the Insurance Industry.',
+        principleGroups: NIC_PRINCIPLES,
+        principleLabel: 'Mandatory ESG Clause',
+        formData: nicFormData,
+        setFormData: setNicFormData,
+        onSubmit: handleNicSubmit,
+        formType: 'nic',
+        accentColor: '#7c3aed',
+        successVerb: 'NIC ESG'
+      });
+    }
+
+    // Energy (and any other sector) doesn't have a granular clause list in
+    // Framework_Mappings yet, so it falls back to the Generic E/S/G/F form
+    // rather than inventing regulatory clauses. Swap this for a dedicated
+    // renderPrincipleForm() call once the Green Finance Taxonomy clauses
+    // are seeded, the same way Banking and Insurance are handled above.
     return (
         <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+
+          {userSector === 'Energy' && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '12px 16px', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '20px' }}>
+              A dedicated Energy sector clause list is not yet configured. Use the general E/S/G/F metrics below in the meantime.
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #dee2e6', paddingBottom: '10px' }}>
             <button
@@ -644,21 +812,10 @@ function DataEntry() {
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-        <div style={{ background: '#e2e8f0', padding: '6px', borderRadius: '8px', display: 'flex', gap: '4px' }}>
-          <button onClick={() => setUserSector('Banking')} style={{ background: userSector === 'Banking' ? 'white' : 'transparent', color: userSector === 'Banking' ? '#0f172a' : '#64748b', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', boxShadow: userSector === 'Banking' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>
-            🏦 Banking View
-          </button>
-          <button onClick={() => setUserSector('Generic')} style={{ background: userSector === 'Generic' ? 'white' : 'transparent', color: userSector === 'Generic' ? '#0f172a' : '#64748b', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', boxShadow: userSector === 'Generic' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>
-            🏭 Generic View
-          </button>
-        </div>
-      </div>
-
       <div style={{ marginBottom: '30px' }}>
         <h1 style={{ color: '#212529', margin: '0 0 8px 0' }}>Data Ingestion Portal</h1>
         <p style={{ margin: 0, color: '#6b7280' }}>
-            Your workspace is currently configured for the <strong style={{ color: '#2563eb' }}>{userSector}</strong> sector.
+            Your workspace is currently configured for the <strong style={{ color: '#2563eb' }}>{sectorLoading ? '...' : userSector}</strong> sector.
         </p>
       </div>
 
