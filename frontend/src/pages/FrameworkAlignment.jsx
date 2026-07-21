@@ -20,6 +20,7 @@ const FrameworkAlignment = () => {
     // Delegation Modal State
     const [isDelegateOpen, setIsDelegateOpen] = useState(false);
     const [selectedGapTask, setSelectedGapTask] = useState('');
+    const [selectedGapFrameworkCode, setSelectedGapFrameworkCode] = useState(null);
 
     // Refs mirror the latest activeFramework/selectedYear so the async
     // callbacks below can check "is this still the request that matters"
@@ -102,8 +103,18 @@ const FrameworkAlignment = () => {
         }
     };
 
-    const handleOpenDelegate = (gapDescription) => {
-        setSelectedGapTask(`Missing Data: ${gapDescription}`);
+    // Re-run the gap analysis for whatever framework is currently open, so a
+    // successful delegation is reflected immediately instead of requiring the
+    // user to close and reopen the modal.
+    const refreshGapAnalysis = () => {
+        if (activeFramework) {
+            openGapAnalysis(activeFramework);
+        }
+    };
+
+    const handleOpenDelegate = (gap) => {
+        setSelectedGapTask(`Missing Data: ${gap.description}`);
+        setSelectedGapFrameworkCode(gap.framework_code);
         setIsDelegateOpen(true);
     };
 
@@ -115,7 +126,7 @@ const FrameworkAlignment = () => {
 
     return (
         <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            
+
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>
                 <div>
@@ -126,9 +137,9 @@ const FrameworkAlignment = () => {
                         Track your operational data readiness against global regulatory reporting frameworks.
                     </p>
                 </div>
-                
-                <select 
-                    value={selectedYear} 
+
+                <select
+                    value={selectedYear}
                     onChange={(e) => setSelectedYear(e.target.value)}
                     style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '15px', fontWeight: '600', color: '#111827', outline: 'none', cursor: 'pointer', backgroundColor: 'white', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                 >
@@ -153,10 +164,10 @@ const FrameworkAlignment = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '24px' }}>
                     {readinessData.map((framework) => {
                         const status = getStatusColor(Number(framework.readiness_score));
-                        
+
                         return (
                             <div key={framework.framework_name} style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', display: 'flex', flexDirection: 'column' }}>
-                                
+
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
                                     <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#111827', margin: 0, lineHeight: '1.4', maxWidth: '70%' }}>
                                         {framework.framework_name}
@@ -175,14 +186,14 @@ const FrameworkAlignment = () => {
                                             {framework.fulfilled_requirements} of {framework.total_requirements} Clauses Met
                                         </span>
                                     </div>
-                                    
+
                                     <div style={{ width: '100%', height: '10px', backgroundColor: '#f3f4f6', borderRadius: '50px', overflow: 'hidden' }}>
                                         <div style={{ height: '100%', width: `${framework.readiness_score}%`, backgroundColor: framework.readiness_score === 100 ? '#10b981' : '#111827', borderRadius: '50px', transition: 'width 1s ease-in-out' }} />
                                     </div>
                                 </div>
 
                                 <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '20px' }}>
-                                    <button 
+                                    <button
                                         onClick={() => openGapAnalysis(framework.framework_name)}
                                         style={{ width: '100%', backgroundColor: 'transparent', border: '1px solid #d1d5db', padding: '10px', borderRadius: '8px', color: '#374151', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: '0.2s' }}
                                         onMouseOver={(e) => e.target.style.backgroundColor = '#f9fafb'}
@@ -201,7 +212,7 @@ const FrameworkAlignment = () => {
             {isModalOpen && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17, 24, 39, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 999, padding: '20px' }}>
                     <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
-                        
+
                         <div style={{ padding: '24px 32px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                                 <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Gap Analysis Report</div>
@@ -232,34 +243,49 @@ const FrameworkAlignment = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {gapData.map((gap, idx) => (
-                                            <tr key={gap.framework_code || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                <td style={{ padding: '16px' }}>{gap.is_fulfilled ? '✅' : '❌'}</td>
-                                                <td style={{ padding: '16px' }}>
-                                                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{gap.framework_code}</div>
-                                                    <div style={{ color: '#6b7280', fontSize: '13px' }}>{gap.description}</div>
-                                                </td>
-                                                <td style={{ padding: '16px' }}>
-                                                    {gap.quality_tier ? (
-                                                        <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', fontSize: '12px' }}>
-                                                            Tier {gap.quality_tier}
-                                                        </span>
-                                                    ) : <span style={{ color: '#9ca3af', fontSize: '13px' }}>N/A</span>}
-                                                </td>
-                                                <td style={{ padding: '16px' }}>
-                                                    {!gap.is_fulfilled && (
-                                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                                            <button onClick={() => navigate('/data-entry')} style={{ color: '#4b5563', border: '1px solid #d1d5db', background: 'white', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                                                Self Log
-                                                            </button>
-                                                            <button onClick={() => handleOpenDelegate(gap.description)} style={{ color: 'white', border: 'none', background: '#2563eb', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                                                Delegate 📤
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {gapData.map((gap, idx) => {
+                                            const isPending = !gap.is_fulfilled && gap.delegation_status === 'pending';
+                                            return (
+                                                <tr key={gap.framework_code || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                    <td style={{ padding: '16px' }}>
+                                                        {gap.is_fulfilled ? '✅' : isPending ? (
+                                                            <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#92400e', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                                                📤 Pending
+                                                            </span>
+                                                        ) : '❌'}
+                                                    </td>
+                                                    <td style={{ padding: '16px' }}>
+                                                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{gap.framework_code}</div>
+                                                        <div style={{ color: '#6b7280', fontSize: '13px' }}>{gap.description}</div>
+                                                        {isPending && (
+                                                            <div style={{ color: '#92400e', fontSize: '12px', marginTop: '4px' }}>
+                                                                Delegated to {gap.delegated_to}
+                                                                {gap.delegation_due_date ? ` · due ${new Date(gap.delegation_due_date).toLocaleDateString('en-GH', { year: 'numeric', month: 'short', day: 'numeric' })}` : ''}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ padding: '16px' }}>
+                                                        {gap.quality_tier ? (
+                                                            <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', fontSize: '12px' }}>
+                                                                Tier {gap.quality_tier}
+                                                            </span>
+                                                        ) : <span style={{ color: '#9ca3af', fontSize: '13px' }}>N/A</span>}
+                                                    </td>
+                                                    <td style={{ padding: '16px' }}>
+                                                        {!gap.is_fulfilled && (
+                                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                                <button onClick={() => navigate('/data-entry')} style={{ color: '#4b5563', border: '1px solid #d1d5db', background: 'white', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                                    Self Log
+                                                                </button>
+                                                                <button onClick={() => handleOpenDelegate(gap)} style={{ color: 'white', border: 'none', background: isPending ? '#d97706' : '#2563eb', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                                    {isPending ? 'Remind ↻' : 'Delegate 📤'}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
@@ -269,11 +295,14 @@ const FrameworkAlignment = () => {
             )}
 
             {/* Email Delegation Sub-Modal */}
-            <DelegateTaskModal 
-                isOpen={isDelegateOpen} 
-                onClose={() => setIsDelegateOpen(false)} 
+            <DelegateTaskModal
+                isOpen={isDelegateOpen}
+                onClose={() => setIsDelegateOpen(false)}
                 defaultTaskName={selectedGapTask}
                 defaultFacility="Corporate HQ"
+                frameworkCode={selectedGapFrameworkCode}
+                frameworkName={activeFramework}
+                onSuccess={refreshGapAnalysis}
             />
 
         </div>

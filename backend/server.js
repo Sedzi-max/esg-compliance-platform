@@ -345,13 +345,15 @@ app.get('/api/metrics', authorize, async (req, res) => {
 // TASK DELEGATION EMAIL NOTIFICATION
 // ==========================================
 
-
 app.post('/api/notify/delegate', authorize, async (req, res) => {
     try {
-        const { assignee_email, task_name, facility_name, due_date, custom_message } = req.body;
+        const { assignee_email, task_name, facility_name, due_date, custom_message, framework_code, framework_name } = req.body;
 
         if (!assignee_email || !task_name || !due_date) {
             return res.status(400).json({ error: "assignee_email, task_name, and due_date are all required." });
+        }
+        if (!framework_code || !framework_name) {
+            return res.status(400).json({ error: "framework_code and framework_name are required." });
         }
 
         const formattedDueDate = new Date(due_date).toLocaleDateString('en-GH', {
@@ -403,7 +405,33 @@ app.post('/api/notify/delegate', authorize, async (req, res) => {
             return res.status(502).json({ error: "Email service rejected the notification. Please try again." });
         }
 
-        res.status(200).json({ message: "Notification dispatched successfully.", id: emailResult.data?.id });
+        // Persist the delegation so the UI can reflect it. If a pending
+        // delegation already exists for this exact clause (i.e. this is a
+        // "Remind" resend), update it instead of creating a duplicate row.
+        const existing = await pool.query(
+            `SELECT id FROM delegated_tasks
+             WHERE org_unit_id = $1 AND framework_code = $2 AND description = $3 AND status = 'pending'`,
+            [req.user.company_id, framework_code, task_name]
+        );
+
+        let delegationId;
+        if (existing.rows.length > 0) {
+            delegationId = existing.rows[0].id;
+            await pool.query(
+                `UPDATE delegated_tasks SET assignee_email = $1, due_date = $2, updated_at = NOW() WHERE id = $3`,
+                [assignee_email, due_date, delegationId]
+            );
+        } else {
+            const inserted = await pool.query(
+                `INSERT INTO delegated_tasks (org_unit_id, framework_name, framework_code, description, assignee_email, due_date, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+                 RETURNING id`,
+                [req.user.company_id, framework_name, framework_code, task_name, assignee_email, due_date]
+            );
+            delegationId = inserted.rows[0].id;
+        }
+
+        res.status(200).json({ message: "Notification dispatched successfully.", id: emailResult.data?.id, delegation_id: delegationId });
 
     } catch (err) {
         console.error("Error dispatching delegation email:", err.message);
@@ -800,6 +828,13 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
                   AND e.status = 'Approved'
                   AND EXTRACT(YEAR FROM e.created_at) = $2
                 GROUP BY fm.framework_code
+            ),
+            PendingDelegations AS (
+                SELECT DISTINCT ON (framework_code)
+                    framework_code, status, assignee_email, due_date
+                FROM delegated_tasks
+                WHERE org_unit_id = $1 AND status = 'pending'
+                ORDER BY framework_code, created_at DESC
             )
             SELECT
                 f.framework_code,
@@ -807,9 +842,13 @@ app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
                 f.activity_type,
                 CASE WHEN c.framework_code IS NOT NULL THEN true ELSE false END as is_fulfilled,
                 c.total_co2e,
-                c.quality_tier
+                c.quality_tier,
+                d.status as delegation_status,
+                d.assignee_email as delegated_to,
+                d.due_date as delegation_due_date
             FROM Framework_Mappings f
             LEFT JOIN CompanyFulfilled c ON f.framework_code = c.framework_code
+            LEFT JOIN PendingDelegations d ON f.framework_code = d.framework_code
             WHERE f.framework_name = $3
             ORDER BY is_fulfilled ASC, f.framework_code ASC;
         `;
