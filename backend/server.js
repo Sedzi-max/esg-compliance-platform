@@ -17,7 +17,8 @@ const sectorRoutes = require('./routes/sector-routes');
 const energyRoutes = require('./routes/energy-routes'); 
 const platformRoutes = require('./routes/platform-routes');
 const benchmarkingRoutes = require('./routes/benchmarking-routes');
-
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 const app = express();
 
 // ==========================================
@@ -337,6 +338,76 @@ app.get('/api/metrics', authorize, async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: "Failed to fetch metrics" });
+    }
+});
+
+// ==========================================
+// TASK DELEGATION EMAIL NOTIFICATION
+// ==========================================
+
+
+app.post('/api/notify/delegate', authorize, async (req, res) => {
+    try {
+        const { assignee_email, task_name, facility_name, due_date, custom_message } = req.body;
+
+        if (!assignee_email || !task_name || !due_date) {
+            return res.status(400).json({ error: "assignee_email, task_name, and due_date are all required." });
+        }
+
+        const formattedDueDate = new Date(due_date).toLocaleDateString('en-GH', {
+            year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        const emailResult = await resend.emails.send({
+            from: 'ESG Radar <notifications@esgradarcompliance.com>',
+            to: assignee_email,
+            subject: `Compliance Task Delegated: ${task_name}`,
+            html: `
+                <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <div style="background: #1e293b; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+                        <h2 style="margin: 0; font-size: 18px;">📤 Compliance Task Delegated</h2>
+                    </div>
+                    <div style="border: 1px solid #e2e8f0; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
+                        <p style="color: #334155; font-size: 15px;">
+                            You have been assigned a compliance task on <strong>ESG Radar</strong>.
+                        </p>
+                        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 13px; font-weight: bold;">Task</td>
+                                <td style="padding: 8px 0; color: #111827; font-size: 14px;">${task_name}</td>
+                            </tr>
+                            ${facility_name ? `
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 13px; font-weight: bold;">Facility</td>
+                                <td style="padding: 8px 0; color: #111827; font-size: 14px;">${facility_name}</td>
+                            </tr>` : ''}
+                            <tr>
+                                <td style="padding: 8px 0; color: #64748b; font-size: 13px; font-weight: bold;">Due Date</td>
+                                <td style="padding: 8px 0; color: #dc2626; font-size: 14px; font-weight: bold;">${formattedDueDate}</td>
+                            </tr>
+                        </table>
+                        ${custom_message ? `
+                        <div style="background: #f8fafc; border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+                            <p style="margin: 0; color: #334155; font-size: 14px; white-space: pre-wrap;">${custom_message}</p>
+                        </div>` : ''}
+                        <p style="color: #94a3b8; font-size: 12px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                            This is an automated notification from ESG Radar Compliance Engine.
+                        </p>
+                    </div>
+                </div>
+            `,
+        });
+
+        if (emailResult.error) {
+            console.error("Resend API error:", emailResult.error);
+            return res.status(502).json({ error: "Email service rejected the notification. Please try again." });
+        }
+
+        res.status(200).json({ message: "Notification dispatched successfully.", id: emailResult.data?.id });
+
+    } catch (err) {
+        console.error("Error dispatching delegation email:", err.message);
+        res.status(500).json({ error: "Failed to route email. Please check server configuration." });
     }
 });
 
