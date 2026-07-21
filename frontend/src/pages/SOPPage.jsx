@@ -9,7 +9,8 @@ function SOPPage() {
         { id: 'evidence-locker', title: '3. The Evidence Locker', icon: '🗄️' },
         { id: 'audit-queue', title: '4. Audit & Approval Workflow', icon: '✅' },
         { id: 'anomalies', title: '5. Variance & Anomaly Flags', icon: '⚠️' },
-        { id: 'materiality', title: '6. Double Materiality Alignment', icon: '🎯' }
+        { id: 'materiality', title: '6. Double Materiality Alignment', icon: '🎯' },
+        { id: 'delegation', title: '7. Task Delegation Workflow', icon: '📤' }
     ];
 
     return (
@@ -166,6 +167,42 @@ function SOPPage() {
 
                             <h4 style={{ color: '#111827', marginTop: '24px' }}>Operating Procedure:</h4>
                             <p>When provisioning a new workspace, always ensure the correct <strong>Starter Kit</strong> is deployed via the Sector Onboarding tool. Submitting an incorrect matrix (e.g., GSE-focused vs. NIC-mandated) during regulatory audit periods may lead to non-compliance flags.</p>
+                        </div>
+                    )}
+
+                    {activeSection === 'delegation' && (
+                        <div className="fade-in">
+                            <h2 style={contentHeaderStyle}>7. Task Delegation Workflow</h2>
+                            <p>The Gap Analysis Matrix, found inside each framework's Alignment card, lists every clause required for full compliance. For any clause still showing a gap, an Admin has two options: log the data themselves, or delegate the task to the colleague responsible for that data.</p>
+
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>Clause Status Reference:</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #10b981', backgroundColor: '#ecfdf5', borderRadius: '4px' }}>
+                                    <strong>✅ Fulfilled:</strong> Approved data already satisfies this clause. No action needed.
+                                </div>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #ef4444', backgroundColor: '#fef2f2', borderRadius: '4px' }}>
+                                    <strong>❌ Gap:</strong> No approved data exists for this clause yet, and no one has been asked to provide it.
+                                </div>
+                                <div style={{ padding: '16px', borderLeft: '4px solid #f59e0b', backgroundColor: '#fffbeb', borderRadius: '4px' }}>
+                                    <strong>📤 Pending:</strong> The clause is still a gap, but a colleague has been notified by email and is expected to close it. The row shows who it was delegated to and the due date.
+                                </div>
+                            </div>
+
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>Delegating a Clause:</h4>
+                            <ol>
+                                <li style={{ marginBottom: '8px' }}>From the Gap Analysis Matrix, click <strong>Delegate 📤</strong> next to any unresolved clause.</li>
+                                <li style={{ marginBottom: '8px' }}>Enter the assignee's email, confirm the task name and facility context, and set a due date.</li>
+                                <li style={{ marginBottom: '8px' }}>Click <strong>Dispatch Alert</strong>. The assignee receives an email describing exactly what's needed and by when.</li>
+                                <li>The clause immediately switches to the <strong>📤 Pending</strong> state in the matrix, so Admins never lose track of what's been asked of whom.</li>
+                            </ol>
+
+                            <h4 style={{ color: '#111827', marginTop: '24px' }}>Sending a Reminder:</h4>
+                            <p>A clause already in the <strong>📤 Pending</strong> state shows a <strong>Remind ↻</strong> button instead of Delegate. This re-sends the notification email to the same assignee without creating a duplicate delegation record.</p>
+
+                            <div style={infoBoxStyle}>
+                                <strong>Important:</strong>
+                                <p style={{ margin: '8px 0 0 0', fontSize: '14px' }}>Delegating a task only sends a notification — it does not log any data itself. The clause only moves to ✅ Fulfilled once the assignee's data has actually been entered and approved through the normal Audit Queue process (see Chapter 4).</p>
+                            </div>
                         </div>
                     )}
                 </div>
