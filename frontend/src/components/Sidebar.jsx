@@ -138,29 +138,32 @@ function Sidebar() {
           )}
 
           {isAdmin && (
-            <>
-              <li style={getSectionHeaderStyle()}>System Admin</li>
-              <li><Link to="/organizations" style={getLinkStyle('/organizations')}>🏢 Facilities</Link></li>
-              <li><Link to="/entity-management" style={getLinkStyle('/entity-management')}>🌐 Boundaries</Link></li>
-              <li><Link to="/metrics" style={getLinkStyle('/metrics')}>⚙️ Metrics Config</Link></li>
-              <li><Link to="/admin/frameworks" style={getLinkStyle('/admin/frameworks')}>📐 Framework Maps</Link></li>
-              {sector === 'banking' && (
-              <li><Link to="/banking-data-entry" style={getLinkStyle('/banking-data-entry')}>🏦 Banking Data Entry</Link></li>
-          )}
-              {sector === 'energy' && (
-              <li><Link to="/energy-data-entry" style={getLinkStyle('/energy-data-entry')}>⚡ Energy Data Entry</Link></li>
-          )}
-              <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
-              <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
-          </>
-          )}
-          {isSuperAdmin && (
-             <>
-           <li style={getSectionHeaderStyle()}>Platform Admin</li>
-           <li><Link to="/platform-overview" style={getLinkStyle('/platform-overview')}>🌐 Platform Overview</Link></li>
-            <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
-            </>
-            )}
+  <>
+    <li style={getSectionHeaderStyle()}>System Admin</li>
+    <li><Link to="/organizations" style={getLinkStyle('/organizations')}>🏢 Facilities</Link></li>
+    <li><Link to="/entity-management" style={getLinkStyle('/entity-management')}>🌐 Boundaries</Link></li>
+    <li><Link to="/metrics" style={getLinkStyle('/metrics')}>⚙️ Metrics Config</Link></li>
+    <li><Link to="/admin/frameworks" style={getLinkStyle('/admin/frameworks')}>📐 Framework Maps</Link></li>
+    {sector === 'banking' && (
+    <li><Link to="/banking-data-entry" style={getLinkStyle('/banking-data-entry')}>🏦 Banking Data Entry</Link></li>
+    )}
+    {sector === 'insurance' && (
+    <li><Link to="/insurance-data-entry" style={getLinkStyle('/insurance-data-entry')}>🛡️ Insurance Data Entry</Link></li>
+    )}
+    {sector === 'energy' && (
+    <li><Link to="/energy-data-entry" style={getLinkStyle('/energy-data-entry')}>⚡ Energy Data Entry</Link></li>
+    )}
+    <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
+    <li><Link to="/sop" style={getLinkStyle('/sop')}>📄 Platform SOP</Link></li>
+  </>
+)}
+{isSuperAdmin && (
+   <>
+ <li style={getSectionHeaderStyle()}>Platform Admin</li>
+ <li><Link to="/platform-overview" style={getLinkStyle('/platform-overview')}>🌐 Platform Overview</Link></li>
+  <li><Link to="/users" style={getLinkStyle('/users')}>👥 Access Control</Link></li>
+  </>
+  )}
         </ul>
       </div>
 

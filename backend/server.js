@@ -71,6 +71,141 @@ app.use('/api/energy', energyRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/benchmarking', benchmarkingRoutes);
 
+
+app.get('/api/insurance/dashboard-summary', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        if (!year) return res.status(400).json({ error: "Missing year parameter." });
+
+        const orgTreeQuery = `
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+        `;
+
+        const governanceResult = await pool.query(
+            `${orgTreeQuery}
+             SELECT record_id, unit_id, assessment_year, has_esg_committee, board_oversight_score,
+                    nic_stress_test_submitted, customer_complaints_received, customer_complaints_resolved,
+                    high_risk_clients_screened, high_risk_clients_total, created_at
+             FROM insurance_governance_metrics
+             WHERE unit_id IN (SELECT unit_id FROM org_tree)
+               AND assessment_year = $2`,
+            [req.user.company_id, year]
+        );
+
+        // FIX: emissions, scenarios, and materiality have no backing tables yet
+        // for Insurance (confirmed — no such tables or entry paths exist).
+        // Returning them as real empty arrays rather than fabricating rows or
+        // silently omitting the keys, so the frontend's existing "no data
+        // logged yet" empty states render honestly instead of erroring.
+        res.json({
+            governance: governanceResult.rows,
+            emissions: [],
+            scenarios: [],
+            materiality: []
+        });
+    } catch (err) {
+        console.error("Insurance Dashboard Summary Error:", err.message);
+        res.status(500).json({ error: "Failed to compile insurance ESG summary." });
+    }
+});
+
+// GET raw records for the entry form's table, scoped to org tree + year
+app.get('/api/insurance/governance/raw', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        if (!year) return res.status(400).json({ error: "Missing year parameter." });
+
+        const result = await pool.query(
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT g.record_id, g.unit_id, u.name as unit_name, g.has_esg_committee,
+                   g.board_oversight_score, g.nic_stress_test_submitted,
+                   g.customer_complaints_received, g.customer_complaints_resolved,
+                   g.high_risk_clients_screened, g.high_risk_clients_total
+            FROM insurance_governance_metrics g
+            JOIN Organization_Unit u ON g.unit_id = u.unit_id
+            WHERE g.unit_id IN (SELECT unit_id FROM org_tree)
+              AND g.assessment_year = $2
+            ORDER BY u.name`,
+            [req.user.company_id, year]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Insurance Governance Raw Error:", err.message);
+        res.status(500).json({ error: "Failed to load governance records." });
+    }
+});
+
+// POST — upsert on (unit_id, assessment_year), same pattern as Banking's routes
+app.post('/api/insurance/governance', authorize, async (req, res) => {
+    try {
+        const {
+            unit_id, assessment_year, has_esg_committee, board_oversight_score,
+            nic_stress_test_submitted, customer_complaints_received,
+            customer_complaints_resolved, high_risk_clients_screened, high_risk_clients_total
+        } = req.body;
+
+        if (!unit_id || !assessment_year) {
+            return res.status(400).json({ error: "unit_id and assessment_year are required." });
+        }
+
+        const existing = await pool.query(
+            `SELECT record_id FROM insurance_governance_metrics WHERE unit_id = $1 AND assessment_year = $2`,
+            [unit_id, assessment_year]
+        );
+
+        if (existing.rows.length > 0) {
+            await pool.query(
+                `UPDATE insurance_governance_metrics
+                 SET has_esg_committee = $1, board_oversight_score = $2, nic_stress_test_submitted = $3,
+                     customer_complaints_received = $4, customer_complaints_resolved = $5,
+                     high_risk_clients_screened = $6, high_risk_clients_total = $7
+                 WHERE record_id = $8`,
+                [has_esg_committee, board_oversight_score || null, nic_stress_test_submitted,
+                 customer_complaints_received || null, customer_complaints_resolved || null,
+                 high_risk_clients_screened || null, high_risk_clients_total || null,
+                 existing.rows[0].record_id]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO insurance_governance_metrics
+                 (unit_id, assessment_year, has_esg_committee, board_oversight_score, nic_stress_test_submitted,
+                  customer_complaints_received, customer_complaints_resolved, high_risk_clients_screened, high_risk_clients_total)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [unit_id, assessment_year, has_esg_committee, board_oversight_score || null, nic_stress_test_submitted,
+                 customer_complaints_received || null, customer_complaints_resolved || null,
+                 high_risk_clients_screened || null, high_risk_clients_total || null]
+            );
+        }
+
+        res.status(200).json({ message: "Record saved successfully." });
+    } catch (err) {
+        console.error("Insurance Governance Save Error:", err.message);
+        res.status(500).json({ error: "Failed to save governance record." });
+    }
+});
+
+// DELETE
+app.delete('/api/insurance/governance/:id', authorize, async (req, res) => {
+    try {
+        await pool.query(`DELETE FROM insurance_governance_metrics WHERE record_id = $1`, [req.params.id]);
+        res.status(200).json({ message: "Record deleted." });
+    } catch (err) {
+        console.error("Insurance Governance Delete Error:", err.message);
+        res.status(500).json({ error: "Failed to delete record." });
+    }
+});
+
 // ==========================================
 // GET ALL EMISSIONS (For Dashboards)
 // ==========================================
