@@ -5,8 +5,13 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 function ReportGenerator() {
-  // Matched to the seeded database framework names
-  const [framework, setFramework] = useState('CSRD / ESRS');
+  // FIX: dropdown now only lists frameworks that actually have clauses
+  // seeded in Framework_Mappings (confirmed via DB query: Bank of Ghana
+  // Sustainable Banking Principles, NIC Insurance Guidelines). The previous
+  // list included CSRD/ESRS, ISSB/IFRS S2, GRI, SEC Climate, and GSE_MANDATORY
+  // — none of which have any rows, so selecting them silently produced an
+  // empty, misleading "0% Compliant" report with no error shown.
+  const [framework, setFramework] = useState('Bank of Ghana Sustainable Banking Principles');
   const [year, setYear] = useState('2026');
 
   const [isGeneratingCSV, setIsGeneratingCSV] = useState(false);
@@ -24,9 +29,6 @@ function ReportGenerator() {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      // FIX: encode the framework name so values like "CSRD / ESRS" (space
-      // and slash) don't corrupt the query string or silently fail to match
-      // on the backend.
       const response = await axios.get(
         `/api/reports/gap-analysis?framework=${encodeURIComponent(framework)}&year=${encodeURIComponent(year)}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -57,10 +59,10 @@ function ReportGenerator() {
 
   const generatePreview = async (e) => {
     e.preventDefault();
-    if (isGeneratingPreview) return; // FIX: guard against double-submit
+    if (isGeneratingPreview) return;
     setIsGeneratingPreview(true);
     setError(null);
-    setReportData(null); // clear any previous report so a stale one is never shown alongside a fresh error
+    setReportData(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -68,12 +70,6 @@ function ReportGenerator() {
       const encodedFramework = encodeURIComponent(framework);
       const encodedYear = encodeURIComponent(year);
 
-      // FIX: no more .catch(() => ({ data: [] })) on any of these four calls.
-      // A failed request now propagates and aborts report generation instead
-      // of being silently treated as "this facility has zero data" — which
-      // previously could produce a fully formatted, "System Verified"
-      // compliance report built entirely from a network failure rather than
-      // real approved data.
       const [orgRes, emissionsRes, obsRes, gapRes] = await Promise.all([
         axios.get('/api/organizations', config),
         axios.get('/api/emissions', config),
@@ -101,7 +97,12 @@ function ReportGenerator() {
         }
       });
 
-      const esgMetrics = { Environmental: [], Social: [], Governance: [] };
+      // FIX: added a Financial bucket. Previously only Environmental/Social/
+      // Governance existed here, so any observation with pillar === 'F' —
+      // which the Generic Data Entry form explicitly supports — was fetched
+      // from the API but never bucketed anywhere, and silently vanished from
+      // every generated report.
+      const esgMetrics = { Environmental: [], Social: [], Governance: [], Financial: [] };
       targetObs.forEach(o => {
         const metricObj = {
           name: o.metric_name, value: o.numeric_value !== null ? o.numeric_value : o.text_value,
@@ -110,9 +111,9 @@ function ReportGenerator() {
         if (o.pillar === 'E') esgMetrics.Environmental.push(metricObj);
         if (o.pillar === 'S') esgMetrics.Social.push(metricObj);
         if (o.pillar === 'G') esgMetrics.Governance.push(metricObj);
+        if (o.pillar === 'F') esgMetrics.Financial.push(metricObj);
       });
 
-      // Process Backend Dynamic Mapping (Gap Analysis)
       const mappedResults = gapRes.data;
       const totalReqs = mappedResults.length;
       const fulfilledReqs = mappedResults.filter(r => r.is_fulfilled).length;
@@ -126,8 +127,6 @@ function ReportGenerator() {
 
     } catch (err) {
       console.error("Preview Generation Error:", err);
-      // FIX: this can now actually reflect a real failure, since none of the
-      // underlying requests silently resolve to empty data anymore.
       setError("Failed to compile report data — one or more data sources could not be reached. Please try again before relying on this report.");
       setReportData(null);
     } finally {
@@ -136,7 +135,7 @@ function ReportGenerator() {
   };
 
   const exportOfficialPDF = async () => {
-    if (isExportingPDF) return; // guard against double-click
+    if (isExportingPDF) return;
     setIsExportingPDF(true);
     try {
       const element = printRef.current;
@@ -179,17 +178,13 @@ function ReportGenerator() {
           <div style={{ flex: '2 1 300px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={labelStyle}>Regulatory Framework Matrix</label>
             <select value={framework} onChange={(e) => setFramework(e.target.value)} style={inputStyle}>
-              {/* Connected to Database Mappings */}
-              {/* FIX: added the two frameworks that FrameworkManager.js allows
-                  mapping rules to be created for (SEC Climate, Ghana Stock
-                  Exchange) — previously mappings created for those two could
-                  never actually be reported on from this screen. */}
-              <option value="CSRD / ESRS">CSRD (European Standard)</option>
-              <option value="ISSB / IFRS S2">ISSB (Global)</option>
-              <option value="GRI">GRI Standard</option>
-              <option value="SEC Climate">SEC Climate Rules (US)</option>
-              <option value="GSE_MANDATORY">Ghana Stock Exchange</option>
-              <option value="NIC_INSURANCE_ESG">NIC Insurance ESG Guidelines</option>
+              {/* FIX: only frameworks with real seeded clauses in
+                  Framework_Mappings are listed. Add new options here only
+                  once their clauses have actually been inserted into the
+                  database — otherwise this dropdown silently produces
+                  empty, misleading reports again. */}
+              <option value="Bank of Ghana Sustainable Banking Principles">Bank of Ghana Sustainable Banking Principles</option>
+              <option value="NIC Insurance Guidelines">NIC Insurance Guidelines</option>
             </select>
           </div>
 
@@ -232,7 +227,6 @@ function ReportGenerator() {
                 margin: '0 auto', minHeight: '1100px' 
             }}
           >
-            {/* Document Header */}
             <div style={{ borderBottom: '2px solid #111827', paddingBottom: '24px', marginBottom: '48px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div>
                 <h1 style={{ margin: '0 0 8px 0', fontSize: '28px', textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: 'system-ui, -apple-system, sans-serif', fontWeight: '800' }}>
@@ -249,7 +243,6 @@ function ReportGenerator() {
               </div>
             </div>
 
-            {/* --- DYNAMIC COMPLIANCE GAP ANALYSIS SECTION --- */}
             <div style={{ marginBottom: '48px', padding: '24px', backgroundColor: reportData.complianceScore === 100 ? '#ecfdf5' : '#fef2f2', border: `1px solid ${reportData.complianceScore === 100 ? '#a7f3d0' : '#fecaca'}`, borderRadius: '8px', fontFamily: 'system-ui, sans-serif' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', color: '#111827', textTransform: 'uppercase', fontWeight: '700' }}>Automated Framework Mapping</h3>
@@ -282,7 +275,6 @@ function ReportGenerator() {
                 </table>
             </div>
 
-            {/* Carbon Footprint Section */}
             <div style={{ marginBottom: '48px' }}>
               <h3 style={sectionHeaderStyle}>1. Greenhouse Gas (GHG) Inventory</h3>
               
@@ -319,7 +311,9 @@ function ReportGenerator() {
               </table>
             </div>
 
-            {/* Social & Governance Metrics Section */}
+            {/* FIX: Financial pillar added as its own section (§4), alongside
+                the existing Social/Governance loop, so F-pillar data logged
+                via the Generic Data Entry form actually surfaces here. */}
             <div style={{ marginBottom: '48px' }}>
               <h3 style={sectionHeaderStyle}>2. Social & Governance Disclosures</h3>
               
@@ -342,7 +336,24 @@ function ReportGenerator() {
               ))}
             </div>
 
-            {/* Auditor Signature Area */}
+            <div style={{ marginBottom: '48px' }}>
+              <h3 style={sectionHeaderStyle}>3. Financial Disclosures</h3>
+              <div>
+                {reportData.esgMetrics.Financial.length === 0 ? (
+                  <p style={{ fontStyle: 'italic', color: '#9ca3af', fontSize: '14px', margin: 0 }}>No approved disclosures recorded for this period.</p>
+                ) : (
+                  <ul style={{ paddingLeft: '24px', margin: 0, lineHeight: '1.8', color: '#374151', fontSize: '15px' }}>
+                    {reportData.esgMetrics.Financial.map((metric, idx) => (
+                      <li key={idx} style={{ marginBottom: '8px' }}>
+                        <strong style={{ color: '#111827' }}>{metric.name}:</strong> {metric.value} {metric.unit}
+                        <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '8px', fontFamily: 'system-ui, sans-serif' }}>(Reported by: {metric.org})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
             <div style={{ marginTop: '80px', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #d1d5db', paddingTop: '32px', fontFamily: 'system-ui, sans-serif' }}>
               <div style={{ textAlign: 'center', width: '250px' }}>
                 <div style={{ borderBottom: '1px solid #9ca3af', height: '50px', marginBottom: '8px' }}></div>
@@ -366,7 +377,6 @@ function ReportGenerator() {
   );
 }
 
-// Reusable Styles
 const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' };
 const inputStyle = { width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '15px', backgroundColor: '#f9fafb', boxSizing: 'border-box', outline: 'none', color: '#111827', fontWeight: '500' };
 const primaryButtonStyle = { flex: 2, padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: '#111827', color: 'white', fontSize: '15px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', transition: 'background-color 0.2s' };
