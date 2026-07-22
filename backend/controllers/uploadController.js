@@ -22,13 +22,6 @@ const ACTIVITY_TO_SCOPE_MAP = {
     'waste_recycled_kg': 'scope_3'
 };
 
-// FIX: previously had its own small, separate EMISSION_FACTORS table (6
-// entries, flat by activity_type) that silently diverged from the shared
-// CARBON_MULTIPLIERS used by /api/emissions — meaning the same activity
-// logged manually vs. via bulk CSV could get different CO2e values, and
-// any activity not in that small list silently used a fallback of 1.0.
-// Now uses the same lookup pattern and same source of truth as the manual
-// GHG entry route.
 const calculateCarbonFootprint = (activity_type, raw_amount) => {
     const scope_category = ACTIVITY_TO_SCOPE_MAP[activity_type];
     const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3;
@@ -101,8 +94,15 @@ const processCsvUpload = async (req, res) => {
                         }
                         const metric_id = metricLookup.rows[0].metric_id;
 
-                        // STEP C: Calculate CO2e using the shared multiplier table
-                        const final_co2e = calculateCarbonFootprint(activity_type, raw_amount);
+                        // STEP C: Calculate CO2e — only for actual GHG activity types
+                        // (those present in CARBON_MULTIPLIERS). Previously this ran
+                        // unconditionally for every row, so Social/Governance metrics
+                        // like community_investment_ghc or board_diversity_ratio got a
+                        // fake calculated_co2e value silently attached. Non-GHG rows
+                        // now correctly store null instead.
+                        const scope_category = ACTIVITY_TO_SCOPE_MAP[activity_type];
+                        const isGhgActivity = scope_category && CARBON_MULTIPLIERS[scope_category]?.[activity_type] !== undefined;
+                        const final_co2e = isGhgActivity ? calculateCarbonFootprint(activity_type, raw_amount) : null;
 
                         // STEP D: Insert into esg_observation with metric_id included
                         const query = `
