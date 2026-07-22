@@ -87,27 +87,45 @@ app.get('/api/insurance/dashboard-summary', authorize, async (req, res) => {
             )
         `;
 
-        const governanceResult = await pool.query(
-            `${orgTreeQuery}
-             SELECT record_id, unit_id, assessment_year, has_esg_committee, board_oversight_score,
-                    nic_stress_test_submitted, customer_complaints_received, customer_complaints_resolved,
-                    high_risk_clients_screened, high_risk_clients_total, created_at
-             FROM insurance_governance_metrics
-             WHERE unit_id IN (SELECT unit_id FROM org_tree)
-               AND assessment_year = $2`,
-            [req.user.company_id, year]
-        );
+        const [governanceResult, environmentalResult, scenarioResult, materialityResult] = await Promise.all([
+            pool.query(
+                `${orgTreeQuery}
+                 SELECT record_id, unit_id, assessment_year, has_esg_committee, board_oversight_score,
+                        nic_stress_test_submitted, customer_complaints_received, customer_complaints_resolved,
+                        high_risk_clients_screened, high_risk_clients_total, created_at
+                 FROM insurance_governance_metrics
+                 WHERE unit_id IN (SELECT unit_id FROM org_tree) AND assessment_year = $2`,
+                [req.user.company_id, year]
+            ),
+            pool.query(
+                `${orgTreeQuery}
+                 SELECT scope_category, total_co2e, water_usage, waste_generated
+                 FROM insurance_environmental_metrics
+                 WHERE unit_id IN (SELECT unit_id FROM org_tree) AND assessment_year = $2`,
+                [req.user.company_id, year]
+            ),
+            pool.query(
+                `${orgTreeQuery}
+                 SELECT scenario_name, time_horizon, projected_financial_impact_ghs
+                 FROM insurance_scenario_analysis
+                 WHERE unit_id IN (SELECT unit_id FROM org_tree) AND assessment_year = $2
+                 ORDER BY created_at DESC`,
+                [req.user.company_id, year]
+            ),
+            pool.query(
+                `${orgTreeQuery}
+                 SELECT topic_name, business_impact_score, stakeholder_importance_score
+                 FROM insurance_materiality_assessment
+                 WHERE unit_id IN (SELECT unit_id FROM org_tree) AND assessment_year = $2`,
+                [req.user.company_id, year]
+            )
+        ]);
 
-        // FIX: emissions, scenarios, and materiality have no backing tables yet
-        // for Insurance (confirmed — no such tables or entry paths exist).
-        // Returning them as real empty arrays rather than fabricating rows or
-        // silently omitting the keys, so the frontend's existing "no data
-        // logged yet" empty states render honestly instead of erroring.
         res.json({
             governance: governanceResult.rows,
-            emissions: [],
-            scenarios: [],
-            materiality: []
+            emissions: environmentalResult.rows,
+            scenarios: scenarioResult.rows,
+            materiality: materialityResult.rows
         });
     } catch (err) {
         console.error("Insurance Dashboard Summary Error:", err.message);
@@ -115,34 +133,185 @@ app.get('/api/insurance/dashboard-summary', authorize, async (req, res) => {
     }
 });
 
-// GET raw records for the entry form's table, scoped to org tree + year
-app.get('/api/insurance/governance/raw', authorize, async (req, res) => {
+app.post('/api/insurance/environmental', authorize, async (req, res) => {
+    try {
+        const { unit_id, assessment_year, scope_category, total_co2e, water_usage, waste_generated } = req.body;
+        if (!unit_id || !assessment_year || !scope_category) {
+            return res.status(400).json({ error: "unit_id, assessment_year, and scope_category are required." });
+        }
+
+        const existing = await pool.query(
+            `SELECT record_id FROM insurance_environmental_metrics WHERE unit_id = $1 AND assessment_year = $2 AND scope_category = $3`,
+            [unit_id, assessment_year, scope_category]
+        );
+
+        if (existing.rows.length > 0) {
+            await pool.query(
+                `UPDATE insurance_environmental_metrics SET total_co2e = $1, water_usage = $2, waste_generated = $3 WHERE record_id = $4`,
+                [total_co2e || null, water_usage || null, waste_generated || null, existing.rows[0].record_id]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO insurance_environmental_metrics (unit_id, assessment_year, scope_category, total_co2e, water_usage, waste_generated)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [unit_id, assessment_year, scope_category, total_co2e || null, water_usage || null, waste_generated || null]
+            );
+        }
+        res.status(200).json({ message: "Record saved successfully." });
+    } catch (err) {
+        console.error("Insurance Environmental Save Error:", err.message);
+        res.status(500).json({ error: "Failed to save environmental record." });
+    }
+});
+
+app.get('/api/insurance/scenarios/raw', authorize, async (req, res) => {
     try {
         const { year } = req.query;
         if (!year) return res.status(400).json({ error: "Missing year parameter." });
-
         const result = await pool.query(
             `WITH RECURSIVE org_tree AS (
                 SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
                 UNION ALL
-                SELECT ou.unit_id FROM Organization_Unit ou
-                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+                SELECT ou.unit_id FROM Organization_Unit ou JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
             )
-            SELECT g.record_id, g.unit_id, u.name as unit_name, g.has_esg_committee,
-                   g.board_oversight_score, g.nic_stress_test_submitted,
-                   g.customer_complaints_received, g.customer_complaints_resolved,
-                   g.high_risk_clients_screened, g.high_risk_clients_total
-            FROM insurance_governance_metrics g
-            JOIN Organization_Unit u ON g.unit_id = u.unit_id
-            WHERE g.unit_id IN (SELECT unit_id FROM org_tree)
-              AND g.assessment_year = $2
-            ORDER BY u.name`,
+            SELECT s.record_id, s.unit_id, u.name as unit_name, s.scenario_name, s.time_horizon, s.projected_financial_impact_ghs
+            FROM insurance_scenario_analysis s
+            JOIN Organization_Unit u ON s.unit_id = u.unit_id
+            WHERE s.unit_id IN (SELECT unit_id FROM org_tree) AND s.assessment_year = $2
+            ORDER BY s.created_at DESC`,
             [req.user.company_id, year]
         );
         res.json(result.rows);
     } catch (err) {
-        console.error("Insurance Governance Raw Error:", err.message);
-        res.status(500).json({ error: "Failed to load governance records." });
+        console.error("Insurance Scenario Raw Error:", err.message);
+        res.status(500).json({ error: "Failed to load scenario records." });
+    }
+});
+
+app.post('/api/insurance/scenarios', authorize, async (req, res) => {
+    try {
+        const { unit_id, assessment_year, scenario_name, time_horizon, projected_financial_impact_ghs } = req.body;
+        if (!unit_id || !assessment_year || !scenario_name) {
+            return res.status(400).json({ error: "unit_id, assessment_year, and scenario_name are required." });
+        }
+        await pool.query(
+            `INSERT INTO insurance_scenario_analysis (unit_id, assessment_year, scenario_name, time_horizon, projected_financial_impact_ghs)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [unit_id, assessment_year, scenario_name, time_horizon || null, projected_financial_impact_ghs || null]
+        );
+        res.status(200).json({ message: "Record saved successfully." });
+    } catch (err) {
+        console.error("Insurance Scenario Save Error:", err.message);
+        res.status(500).json({ error: "Failed to save scenario record." });
+    }
+});
+
+app.delete('/api/insurance/scenarios/:id', authorize, async (req, res) => {
+    try {
+        await pool.query(`DELETE FROM insurance_scenario_analysis WHERE record_id = $1`, [req.params.id]);
+        res.status(200).json({ message: "Record deleted." });
+    } catch (err) {
+        console.error("Insurance Scenario Delete Error:", err.message);
+        res.status(500).json({ error: "Failed to delete record." });
+    }
+});
+
+// --- Materiality (upsert on unit_id + year + topic_name) ---
+app.get('/api/insurance/materiality/raw', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        if (!year) return res.status(400).json({ error: "Missing year parameter." });
+        const result = await pool.query(
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id FROM Organization_Unit ou JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT m.record_id, m.unit_id, u.name as unit_name, m.topic_name, m.business_impact_score, m.stakeholder_importance_score
+            FROM insurance_materiality_assessment m
+            JOIN Organization_Unit u ON m.unit_id = u.unit_id
+            WHERE m.unit_id IN (SELECT unit_id FROM org_tree) AND m.assessment_year = $2
+            ORDER BY u.name, m.topic_name`,
+            [req.user.company_id, year]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Insurance Materiality Raw Error:", err.message);
+        res.status(500).json({ error: "Failed to load materiality records." });
+    }
+});
+
+app.post('/api/insurance/materiality', authorize, async (req, res) => {
+    try {
+        const { unit_id, assessment_year, topic_name, business_impact_score, stakeholder_importance_score } = req.body;
+        if (!unit_id || !assessment_year || !topic_name) {
+            return res.status(400).json({ error: "unit_id, assessment_year, and topic_name are required." });
+        }
+        const existing = await pool.query(
+            `SELECT record_id FROM insurance_materiality_assessment WHERE unit_id = $1 AND assessment_year = $2 AND topic_name = $3`,
+            [unit_id, assessment_year, topic_name]
+        );
+        if (existing.rows.length > 0) {
+            await pool.query(
+                `UPDATE insurance_materiality_assessment SET business_impact_score = $1, stakeholder_importance_score = $2 WHERE record_id = $3`,
+                [business_impact_score || null, stakeholder_importance_score || null, existing.rows[0].record_id]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO insurance_materiality_assessment (unit_id, assessment_year, topic_name, business_impact_score, stakeholder_importance_score)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [unit_id, assessment_year, topic_name, business_impact_score || null, stakeholder_importance_score || null]
+            );
+        }
+        res.status(200).json({ message: "Record saved successfully." });
+    } catch (err) {
+        console.error("Insurance Materiality Save Error:", err.message);
+        res.status(500).json({ error: "Failed to save materiality record." });
+    }
+});
+
+app.delete('/api/insurance/materiality/:id', authorize, async (req, res) => {
+    try {
+        await pool.query(`DELETE FROM insurance_materiality_assessment WHERE record_id = $1`, [req.params.id]);
+        res.status(200).json({ message: "Record deleted." });
+    } catch (err) {
+        console.error("Insurance Materiality Delete Error:", err.message);
+        res.status(500).json({ error: "Failed to delete record." });
+    }
+});
+
+// GET raw records for the entry form's table, scoped to org tree + year
+app.get('/api/insurance/environmental/raw', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        if (!year) return res.status(400).json({ error: "Missing year parameter." });
+        const result = await pool.query(
+            `WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id FROM Organization_Unit ou JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT e.record_id, e.unit_id, u.name as unit_name, e.scope_category, e.total_co2e, e.water_usage, e.waste_generated
+            FROM insurance_environmental_metrics e
+            JOIN Organization_Unit u ON e.unit_id = u.unit_id
+            WHERE e.unit_id IN (SELECT unit_id FROM org_tree) AND e.assessment_year = $2
+            ORDER BY u.name, e.scope_category`,
+            [req.user.company_id, year]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Insurance Environmental Raw Error:", err.message);
+        res.status(500).json({ error: "Failed to load environmental records." });
+    }
+});
+
+app.delete('/api/insurance/environmental/:id', authorize, async (req, res) => {
+    try {
+        await pool.query(`DELETE FROM insurance_environmental_metrics WHERE record_id = $1`, [req.params.id]);
+        res.status(200).json({ message: "Record deleted." });
+    } catch (err) {
+        console.error("Insurance Environmental Delete Error:", err.message);
+        res.status(500).json({ error: "Failed to delete record." });
     }
 });
 
