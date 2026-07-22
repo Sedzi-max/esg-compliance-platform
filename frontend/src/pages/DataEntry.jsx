@@ -72,11 +72,6 @@ const ACTIVITY_TO_SCOPE_MAP = {
   'waste_recycled_kg': 'scope_3'
 };
 
-// FIX: these now use the real granular framework_code values from
-// Framework_Mappings (the same codes the Gap Analysis Matrix tracks),
-// grouped by principle for the dropdown. The old list only had 7 broad
-// codes (BoG-P1..P7) that never matched any Gap Analysis clause, so
-// logging data through this form never actually closed a compliance gap.
 const BOG_PRINCIPLES = [
   { group: 'Principle 1: E&S Risk Management in Lending', options: [
     { id: 'BoG-P1-products', label: 'New products/services introduced to encourage good E&S performance' },
@@ -118,8 +113,6 @@ const BOG_PRINCIPLES = [
   ]}
 ];
 
-// NIC Insurance Guidelines — built from the Framework_Mappings rows inserted
-// for 'NIC Insurance Guidelines', mirroring Banking's granularity.
 const NIC_PRINCIPLES = [
   { group: '7.1 ESG Governance', options: [
     { id: 'NIC-Gov-board-oversight', label: 'Board oversight of ESG-related risks and opportunities in business strategy' },
@@ -179,14 +172,17 @@ function DataEntry() {
   const [uploadSuccess, setUploadSuccess] = useState('');
   const [uploadErrors, setUploadErrors] = useState([]);
 
-  // FIX: no longer defaults to a hardcoded sector with a manual toggle.
-  // The real sector is fetched from the same endpoint Sidebar.jsx already
-  // uses, so the form shown here always matches the company's actual sector.
   const [userSector, setUserSector] = useState(null);
   const [sectorLoading, setSectorLoading] = useState(true);
   const [entryMode, setEntryMode] = useState('E');
   const [envType, setEnvType] = useState('GHG');
   const [filePreviewName, setFilePreviewName] = useState("");
+
+  // FIX: for sectors with a dedicated principle/clause form (Banking,
+  // Insurance), that form previously replaced the Generic form entirely —
+  // including its GHG Carbon Tracker, leaving no way to log emissions data
+  // at all. This sub-tab lets those sectors reach both.
+  const [sectorSubTab, setSectorSubTab] = useState('clauses');
 
   const [envFormData, setEnvFormData] = useState({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
   const [genEnvFormData, setGenEnvFormData] = useState({ organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
@@ -209,8 +205,6 @@ function DataEntry() {
       const response = await axios.get('/api/organizations/my-sector', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Normalize whatever casing the backend returns ('banking' / 'Banking')
-      // to the Title Case values this component's form-switch expects.
       const raw = (response.data?.sector || 'general').toLowerCase();
       const normalized = raw.charAt(0).toUpperCase() + raw.slice(1);
       setUserSector(normalized);
@@ -449,9 +443,6 @@ function DataEntry() {
     );
   };
 
-  // Shared renderer for a principle-based sector form (Banking / Insurance).
-  // Both sectors submit through the same submitObservationWithEvidence path,
-  // just with a different clause list, color, icon, and copy.
   const renderPrincipleForm = ({ icon, title, subtitle, principleGroups, principleLabel, formData, setFormData, onSubmit, formType, accentColor, successVerb }) => (
     <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
       <h2 style={{ marginTop: 0, fontSize: '1.4rem', color: '#0f172a', marginBottom: '8px' }}>{icon} {title}</h2>
@@ -494,6 +485,89 @@ function DataEntry() {
     </div>
   );
 
+  // Extracted so both the Generic form's "Env." tab AND the Banking/Insurance
+  // principle-form sub-tab can render the same Carbon Tracker (GHG) form,
+  // instead of it only existing inside the Generic branch.
+  const renderGhgForm = () => (
+    <form onSubmit={handleEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
+        <select name="organization_id" value={envFormData.organization_id} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+          <option value="">-- Select Organization --</option>
+          {organizations.map(org => (<option key={org.unit_id} value={org.unit_id}>{org.name}</option>))}
+        </select>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Emission Scope</label>
+        <select name="scope_category" value={envFormData.scope_category} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+          <option value="">-- Select Scope --</option>
+          <option value="scope_1">Scope 1: Direct Emissions</option>
+          <option value="scope_2">Scope 2: Purchased Electricity</option>
+          <option value="scope_3">Scope 3: Value Chain</option>
+        </select>
+      </div>
+
+      {envFormData.scope_category && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Activity Type</label>
+          <select name="activity_type" value={envFormData.activity_type} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <option value="">-- Select Activity --</option>
+            {ACTIVITY_OPTIONS[envFormData.scope_category].map(activity => (
+              <option key={activity.id} value={activity.id}>{activity.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {envFormData.activity_type && (
+        <EvidenceAttachmentUI formType="ghg" onExtract={(extractedValue) => setEnvFormData({ ...envFormData, raw_amount: extractedValue })} />
+      )}
+
+      {envFormData.activity_type && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Raw Amount</label>
+          <input type="number" step="any" min="0" name="raw_amount" placeholder="Enter value..." value={envFormData.raw_amount} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
+        </div>
+      )}
+
+      <button type="submit" disabled={!envFormData.activity_type || !envFormData.raw_amount || isSubmitting} style={{ padding: '12px 20px', background: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? '#6c757d' : '#198754', cursor: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? 'not-allowed' : 'pointer', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', marginTop: '10px' }}>
+        {isSubmitting ? 'Processing...' : 'Submit to GHG Ledger'}
+      </button>
+    </form>
+  );
+
+  // Wraps a principle form (Banking/Insurance) with a sub-tab toggle so the
+  // Carbon Tracker (GHG) is always reachable alongside the clause form,
+  // instead of the clause form silently replacing it.
+  const renderSectorFormWithGhgTab = (principleFormArgs) => (
+    <div>
+      <div style={{ display: 'flex', gap: '4px', backgroundColor: '#e9ecef', padding: '4px', borderRadius: '20px', marginBottom: '16px' }}>
+        <button
+          onClick={() => { setSectorSubTab('clauses'); setFilePreviewName(''); }}
+          style={{ flex: 1, background: sectorSubTab === 'clauses' ? principleFormArgs.accentColor : 'transparent', color: sectorSubTab === 'clauses' ? 'white' : '#495057', border: 'none', padding: '8px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+        >
+          {principleFormArgs.icon} Compliance Clauses
+        </button>
+        <button
+          onClick={() => { setSectorSubTab('carbon'); setFilePreviewName(''); }}
+          style={{ flex: 1, background: sectorSubTab === 'carbon' ? '#198754' : 'transparent', color: sectorSubTab === 'carbon' ? 'white' : '#495057', border: 'none', padding: '8px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+        >
+          🌱 Carbon Tracker (GHG)
+        </button>
+      </div>
+
+      {sectorSubTab === 'clauses' ? (
+        renderPrincipleForm(principleFormArgs)
+      ) : (
+        <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+          <h2 style={{ marginTop: 0, fontSize: '1.2rem', color: '#198754', marginBottom: '16px' }}>🌱 Carbon Tracker (GHG)</h2>
+          {renderGhgForm()}
+        </div>
+      )}
+    </div>
+  );
+
   const renderSectorForm = () => {
     if (sectorLoading) {
       return (
@@ -504,7 +578,7 @@ function DataEntry() {
     }
 
     if (userSector === 'Banking') {
-      return renderPrincipleForm({
+      return renderSectorFormWithGhgTab({
         icon: '🏦',
         title: 'Bank of Ghana Compliance Portal',
         subtitle: 'Log required data directly against the Bank of Ghana Sustainable Banking Principles.',
@@ -520,7 +594,7 @@ function DataEntry() {
     }
 
     if (userSector === 'Insurance') {
-      return renderPrincipleForm({
+      return renderSectorFormWithGhgTab({
         icon: '🛡️',
         title: 'NIC ESG Compliance Portal',
         subtitle: 'Log required data directly against the NIC ESG Guidelines for the Insurance Industry.',
@@ -537,9 +611,7 @@ function DataEntry() {
 
     // Energy (and any other sector) doesn't have a granular clause list in
     // Framework_Mappings yet, so it falls back to the Generic E/S/G/F form
-    // rather than inventing regulatory clauses. Swap this for a dedicated
-    // renderPrincipleForm() call once the Green Finance Taxonomy clauses
-    // are seeded, the same way Banking and Insurance are handled above.
+    // (which already includes its own Carbon Tracker tab under "Env.").
     return (
         <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
 
@@ -597,54 +669,7 @@ function DataEntry() {
                 </button>
               </div>
 
-              {envType === 'GHG' ? (
-                <form onSubmit={handleEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
-                    <select name="organization_id" value={envFormData.organization_id} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                      <option value="">-- Select Organization --</option>
-                      {organizations.map(org => (<option key={org.unit_id} value={org.unit_id}>{org.name}</option>))}
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Emission Scope</label>
-                    <select name="scope_category" value={envFormData.scope_category} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                      <option value="">-- Select Scope --</option>
-                      <option value="scope_1">Scope 1: Direct Emissions</option>
-                      <option value="scope_2">Scope 2: Purchased Electricity</option>
-                      <option value="scope_3">Scope 3: Value Chain</option>
-                    </select>
-                  </div>
-
-                  {envFormData.scope_category && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Activity Type</label>
-                      <select name="activity_type" value={envFormData.activity_type} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                        <option value="">-- Select Activity --</option>
-                        {ACTIVITY_OPTIONS[envFormData.scope_category].map(activity => (
-                          <option key={activity.id} value={activity.id}>{activity.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {envFormData.activity_type && (
-                    <EvidenceAttachmentUI formType="ghg" onExtract={(extractedValue) => setEnvFormData({ ...envFormData, raw_amount: extractedValue })} />
-                  )}
-
-                  {envFormData.activity_type && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Raw Amount</label>
-                      <input type="number" step="any" min="0" name="raw_amount" placeholder="Enter value..." value={envFormData.raw_amount} onChange={handleEnvChange} required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
-                    </div>
-                  )}
-
-                  <button type="submit" disabled={!envFormData.activity_type || !envFormData.raw_amount || isSubmitting} style={{ padding: '12px 20px', background: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? '#6c757d' : '#198754', cursor: (!envFormData.activity_type || !envFormData.raw_amount || isSubmitting) ? 'not-allowed' : 'pointer', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', marginTop: '10px' }}>
-                    {isSubmitting ? 'Processing...' : 'Submit to GHG Ledger'}
-                  </button>
-                </form>
-              ) : (
+              {envType === 'GHG' ? renderGhgForm() : (
                 <form onSubmit={handleGenEnvSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                     <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Organization</label>
