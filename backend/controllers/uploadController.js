@@ -1,24 +1,41 @@
 const crypto = require('crypto');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const pool = require('../db'); 
+const pool = require('../db');
+const CARBON_MULTIPLIERS = require('../utils/carbonFactors');
 
-// --- 1. EMISSION FACTOR ENGINE ---
-const EMISSION_FACTORS = {
-    'mobile_diesel_liters': 2.68,        
-    'mobile_petrol_liters': 2.31,        
-    'electricity_grid_kwh': 0.43,        
-    'spend_diesel_ghc': 0.18,            
-    'spend_electricity_ghc': 0.25,
-    'spend_flights_ghc': 0.85
+// Mirrors the frontend's ACTIVITY_TO_SCOPE_MAP (DataEntry.jsx) so a
+// bulk-uploaded row and a manually-entered row for the same activity_type
+// always resolve to the same scope_category, and therefore the same
+// multiplier out of the shared CARBON_MULTIPLIERS table.
+const ACTIVITY_TO_SCOPE_MAP = {
+    'mobile_diesel_liters': 'scope_1',
+    'mobile_petrol_liters': 'scope_1',
+    'stationary_natural_gas_therms': 'scope_1',
+    'generator_diesel_liters': 'scope_1',
+    'electricity_grid_kwh': 'scope_2',
+    'district_heating_kwh': 'scope_2',
+    'travel_flight_short_haul_km': 'scope_3',
+    'travel_flight_long_haul_km': 'scope_3',
+    'travel_hotel_stay_nights': 'scope_3',
+    'waste_landfill_kg': 'scope_3',
+    'waste_recycled_kg': 'scope_3'
 };
 
+// FIX: previously had its own small, separate EMISSION_FACTORS table (6
+// entries, flat by activity_type) that silently diverged from the shared
+// CARBON_MULTIPLIERS used by /api/emissions — meaning the same activity
+// logged manually vs. via bulk CSV could get different CO2e values, and
+// any activity not in that small list silently used a fallback of 1.0.
+// Now uses the same lookup pattern and same source of truth as the manual
+// GHG entry route.
 const calculateCarbonFootprint = (activity_type, raw_amount) => {
-    const multiplier = EMISSION_FACTORS[activity_type] || 1.0; 
+    const scope_category = ACTIVITY_TO_SCOPE_MAP[activity_type];
+    const multiplier = CARBON_MULTIPLIERS[scope_category]?.[activity_type] || 2.3;
     return parseFloat(raw_amount) * multiplier;
 };
 
-// --- 2. CSV UPLOAD PROCESSOR ---
+// --- CSV UPLOAD PROCESSOR ---
 const processCsvUpload = async (req, res) => {
     try {
         if (!req.file) {
@@ -29,7 +46,7 @@ const processCsvUpload = async (req, res) => {
         const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
         const hashCheck = await pool.query(
-            'SELECT uploaded_at FROM uploaded_files_log WHERE file_hash = $1', 
+            'SELECT uploaded_at FROM uploaded_files_log WHERE file_hash = $1',
             [fileHash]
         );
 
@@ -55,7 +72,7 @@ const processCsvUpload = async (req, res) => {
                     const row = results[i];
                     try {
                         const { organization_name, pillar, activity_type, raw_amount, unit, quality_tier, methodology } = row;
-                        
+
                         if (!organization_name || !activity_type || raw_amount === undefined) {
                             throw new Error('Missing required fields. Ensure headers match the template.');
                         }
@@ -72,9 +89,10 @@ const processCsvUpload = async (req, res) => {
                         const unit_id = orgLookup.rows[0].unit_id;
 
                         // STEP B: Lookup the metric's UUID
-                        // Note: If your column in metric_definition is named 'name' instead of 'metric_name', adjust this query!
+                        // FIX: metric_definition's column is 'name', not 'metric_name' —
+                        // every row previously failed here regardless of CSV content.
                         const metricLookup = await pool.query(
-                            'SELECT metric_id FROM metric_definition WHERE metric_name = $1 LIMIT 1',
+                            'SELECT metric_id FROM metric_definition WHERE name = $1 LIMIT 1',
                             [activity_type]
                         );
 
@@ -83,7 +101,7 @@ const processCsvUpload = async (req, res) => {
                         }
                         const metric_id = metricLookup.rows[0].metric_id;
 
-                        // STEP C: Calculate CO2e
+                        // STEP C: Calculate CO2e using the shared multiplier table
                         const final_co2e = calculateCarbonFootprint(activity_type, raw_amount);
 
                         // STEP D: Insert into esg_observation with metric_id included
@@ -93,17 +111,17 @@ const processCsvUpload = async (req, res) => {
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                             RETURNING observation_id;
                         `;
-                        
+
                         const insertRes = await pool.query(query, [
-                            unit_id, 
-                            metric_id, 
-                            pillar || null, 
-                            activity_type, 
-                            parseFloat(raw_amount), 
+                            unit_id,
+                            metric_id,
+                            pillar || null,
+                            activity_type,
+                            parseFloat(raw_amount),
                             unit || null,
                             quality_tier || null,
-                            methodology || null, 
-                            final_co2e,                                 
+                            methodology || null,
+                            final_co2e,
                             new Date().toISOString()
                         ]);
 
