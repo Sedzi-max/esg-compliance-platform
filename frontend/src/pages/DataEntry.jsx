@@ -21,57 +21,6 @@ const ACTIVITY_OPTIONS = {
   ]
 };
 
-const SMART_MAPPER = {
-  scopes: {
-    'scope 1': 'scope_1',
-    'scope 1 emissions': 'scope_1',
-    'direct emissions': 'scope_1',
-    'direct fuel combustion': 'scope_1',
-    'scope 2': 'scope_2',
-    'scope 2 emissions': 'scope_2',
-    'purchased electricity': 'scope_2',
-    'indirect emissions': 'scope_2',
-    'scope 3': 'scope_3',
-    'value chain': 'scope_3',
-    'supply chain': 'scope_3'
-  },
-  activities: {
-    'diesel': 'mobile_diesel_liters',
-    'diesel (mobile fleet)': 'mobile_diesel_liters',
-    'mobile diesel': 'mobile_diesel_liters',
-    'petrol': 'mobile_petrol_liters',
-    'gasoline': 'mobile_petrol_liters',
-    'natural gas': 'stationary_natural_gas_therms',
-    'generator diesel': 'generator_diesel_liters',
-    'grid electricity': 'electricity_grid_kwh',
-    'electricity': 'electricity_grid_kwh',
-    'purchased electricity': 'electricity_grid_kwh',
-    'energy consumed': 'electricity_grid_kwh',
-    'district heating': 'district_heating_kwh',
-    'short haul flights': 'travel_flight_short_haul_km',
-    'long haul flights': 'travel_flight_long_haul_km',
-    'hotel stays': 'travel_hotel_stay_nights',
-    'waste (landfill)': 'waste_landfill_kg',
-    'landfill waste': 'waste_landfill_kg',
-    'waste (recycled)': 'waste_recycled_kg',
-    'recycled waste': 'waste_recycled_kg'
-  }
-};
-
-const ACTIVITY_TO_SCOPE_MAP = {
-  'mobile_diesel_liters': 'scope_1',
-  'mobile_petrol_liters': 'scope_1',
-  'stationary_natural_gas_therms': 'scope_1',
-  'generator_diesel_liters': 'scope_1',
-  'electricity_grid_kwh': 'scope_2',
-  'district_heating_kwh': 'scope_2',
-  'travel_flight_short_haul_km': 'scope_3',
-  'travel_flight_long_haul_km': 'scope_3',
-  'travel_hotel_stay_nights': 'scope_3',
-  'waste_landfill_kg': 'scope_3',
-  'waste_recycled_kg': 'scope_3'
-};
-
 const BOG_PRINCIPLES = [
   { group: 'Principle 1: E&S Risk Management in Lending', options: [
     { id: 'BoG-P1-products', label: 'New products/services introduced to encourage good E&S performance' },
@@ -163,6 +112,7 @@ function DataEntry() {
   const [organizations, setOrganizations] = useState([]);
   const [emissionsData, setEmissionsData] = useState([]);
   const [metrics, setMetrics] = useState([]);
+  const [metricDictionary, setMetricDictionary] = useState(null);
 
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -221,15 +171,17 @@ function DataEntry() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const [orgRes, emissionsRes, metricsRes] = await Promise.all([
+      const [orgRes, emissionsRes, metricsRes, dictRes] = await Promise.all([
         axios.get('/api/organizations', config),
         axios.get('/api/emissions', config).catch(() => ({ data: [] })),
-        axios.get('/api/metrics', config).catch(() => ({ data: [] }))
+        axios.get('/api/metrics', config).catch(() => ({ data: [] })),
+        axios.get('/api/metrics/dictionary').catch(() => ({ data: null }))
       ]);
 
       setOrganizations(orgRes.data);
       setEmissionsData(emissionsRes.data);
       setMetrics(metricsRes.data);
+      setMetricDictionary(dictRes.data);
     } catch (err) {
       setError("Failed to load data. Ensure you are logged in.");
     }
@@ -863,7 +815,7 @@ function DataEntry() {
                 <h4 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#334155', margin: '0 0 8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     Required Columns:
                     <a
-                        href="/esg_data_template.csv"
+                        href="/api/metrics/template.csv"
                         download
                         style={{ fontSize: '0.75rem', color: '#2563eb', textDecoration: 'underline', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}
                     >
@@ -873,10 +825,32 @@ function DataEntry() {
                 <ul style={{ fontSize: '0.75rem', color: '#475569', margin: 0, paddingLeft: '20px', fontFamily: 'monospace', lineHeight: '1.6', textAlign: 'left' }}>
                     <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>organization_name</span> (e.g., Accra Branch)</li>
                     <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>pillar</span> (E, S, G, or F)</li>
-                    <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>activity_type</span> (e.g., electricity_grid_kwh)</li>
+                    <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>activity_type</span> (see valid values below)</li>
                     <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>raw_amount</span> (Numbers only)</li>
                     <li><span style={{ fontWeight: 'bold', color: '#1e293b' }}>unit</span> (e.g., liters, GHC)</li>
                 </ul>
+
+                {metricDictionary && (
+                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                        <p style={{ fontSize: '0.75rem', fontWeight: '600', color: '#334155', margin: '0 0 8px 0' }}>
+                            Valid activity_type values:
+                        </p>
+                        <div style={{ maxHeight: '160px', overflowY: 'auto', fontSize: '0.7rem', fontFamily: 'monospace', color: '#475569', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '8px' }}>
+                            {Object.entries(metricDictionary.metrics_by_pillar).map(([pillar, metricList]) => (
+                                <div key={pillar} style={{ marginBottom: '8px' }}>
+                                    <div style={{ fontWeight: 'bold', color: '#1e293b' }}>
+                                        {metricDictionary.pillars[pillar] || pillar}
+                                    </div>
+                                    {metricList.map(m => (
+                                        <div key={m.activity_type} style={{ paddingLeft: '10px' }}>
+                                            {m.activity_type} {m.unit_of_measure ? `(${m.unit_of_measure})` : ''}
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div style={{ marginTop: 'auto' }}>

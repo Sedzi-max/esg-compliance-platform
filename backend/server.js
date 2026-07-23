@@ -344,6 +344,72 @@ app.get('/api/metrics', authorize, async (req, res) => {
 });
 
 // ==========================================
+// METRIC DICTIONARY + CSV TEMPLATE (dynamic, generated live from Metric_Definition)
+// Directly addresses the reviewer's "Import Specification Documentation" gap —
+// structurally impossible for these to drift out of sync with the schema.
+// ==========================================
+
+// No `authorize` — this is generic reference data (valid metric names/pillars/
+// units), not company-specific, and needs to be reachable from a plain
+// <a href download> link that can't send a JWT.
+app.get('/api/metrics/dictionary', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT name AS activity_type, pillar, data_type, unit_of_measure, aggregation_type
+             FROM metric_definition
+             ORDER BY pillar, name`
+        );
+
+        // Grouped by pillar for easier human reading if the frontend wants to
+        // render this as a reference table rather than a flat list.
+        const grouped = rows.reduce((acc, row) => {
+            if (!acc[row.pillar]) acc[row.pillar] = [];
+            acc[row.pillar].push(row);
+            return acc;
+        }, {});
+
+        res.status(200).json({
+            pillars: { E: 'Environmental', S: 'Social', G: 'Governance', F: 'Financial' },
+            metrics: rows,
+            metrics_by_pillar: grouped,
+            valid_quality_tiers: ['A', 'B', 'C'], // adjust if your real tier set differs
+            csv_headers: ['organization_name', 'pillar', 'activity_type', 'raw_amount', 'unit', 'quality_tier', 'methodology']
+        });
+    } catch (err) {
+        console.error('Failed to build metric dictionary:', err);
+        res.status(500).json({ error: 'Failed to build metric dictionary.' });
+    }
+});
+
+// No `authorize` here either — same reason as /dictionary. This is the route
+// DataEntry.jsx's download link should point at.
+app.get('/api/metrics/template.csv', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT name, unit_of_measure FROM metric_definition ORDER BY pillar, name`
+        );
+
+        const headers = ['organization_name', 'pillar', 'activity_type', 'raw_amount', 'unit', 'quality_tier', 'methodology'];
+
+        // One example row per metric, using its real name and real unit — so a
+        // user can delete the example values and fill in their own numbers
+        // without needing to look anything up separately.
+        const exampleRows = rows.map(m =>
+            ['YourOrganizationName', '', m.name, '0', m.unit_of_measure || '', 'A', ''].join(',')
+        );
+
+        const csvString = [headers.join(','), ...exampleRows].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="esg_radar_upload_template.csv"');
+        res.status(200).send(csvString);
+    } catch (err) {
+        console.error('Failed to generate CSV template:', err);
+        res.status(500).json({ error: 'Failed to generate CSV template.' });
+    }
+});
+
+// ==========================================
 // TASK DELEGATION EMAIL NOTIFICATION
 // ==========================================
 
