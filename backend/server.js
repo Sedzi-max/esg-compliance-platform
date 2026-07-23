@@ -117,7 +117,6 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 FROM organization_unit ou
                 JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
             )
-            -- 1. FETCH CARBON DATA
             SELECT
                 e.observation_id as id,
                 'GHG' as type,
@@ -134,6 +133,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 e.status,
                 e.reviewer_comment,
                 e.reviewed_at,
+                e.ledger_hash,
                 ru.email as reviewed_by_email,
                 COALESCE(e.created_at, e.timestamp) as created_at
             FROM esg_observation e
@@ -144,7 +144,6 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
 
             UNION ALL
 
-            -- 2. FETCH GENERAL, SOCIAL, & GOV DATA
             SELECT
                 o.observation_id as id,
                 CASE
@@ -166,6 +165,7 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 o.status,
                 o.reviewer_comment,
                 o.reviewed_at,
+                o.ledger_hash,
                 ru.email as reviewed_by_email,
                 COALESCE(o.timestamp, o.created_at) as created_at
             FROM esg_observation o
@@ -647,7 +647,7 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         }
 
         const { id } = req.params;
-        const { status, comment } = req.body;
+        const { status, comment, ledgerHash } = req.body;
 
         if (status === 'Rejected' && (!comment || !comment.trim())) {
             return res.status(400).json({ error: "A rejection reason is required." });
@@ -656,17 +656,17 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         const updatedEmission = req.user.role === 'Admin'
             ? await pool.query(
                 `UPDATE esg_observation 
-                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW()
+                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW(), ledger_hash = COALESCE($5, ledger_hash)
                  WHERE observation_id = $4 
                  RETURNING *`,
-                [status, comment || null, req.user.id, id]
+                [status, comment || null, req.user.id, id, ledgerHash || null]
               )
             : await pool.query(
                 `UPDATE esg_observation 
-                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW()
-                 WHERE observation_id = $4 AND unit_id = $5
+                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW(), ledger_hash = COALESCE($5, ledger_hash)
+                 WHERE observation_id = $4 AND unit_id = $6
                  RETURNING *`,
-                [status, comment || null, req.user.id, id, req.user.company_id]
+                [status, comment || null, req.user.id, id, ledgerHash || null, req.user.company_id]
               );
 
         if (updatedEmission.rows.length === 0) {

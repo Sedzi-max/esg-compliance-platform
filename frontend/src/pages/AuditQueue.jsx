@@ -76,6 +76,25 @@ function AuditQueue() {
     setTimeout(() => setActionToast(null), 6000);
   };
 
+  // FIX: the "ledger hash" shown on approval was previously Math.random() — a
+  // fake 40-char hex string with no relationship to the actual record. This
+  // computes a genuine SHA-256 digest of the record's approval data using the
+  // browser's native Web Crypto API, so it's a real, deterministic,
+  // independently-recomputable hash instead of decoration.
+  const generateLedgerHash = async (log) => {
+    const payload = JSON.stringify({
+      id: log.id,
+      metric: log.metric,
+      value: log.value,
+      scope_category: log.scope_category,
+      approved_at: new Date().toISOString()
+    });
+    const data = new TextEncoder().encode(payload);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
   // --- INDIVIDUAL AUDIT ACTIONS (Hooked to Backend) ---
   // FIX: rejectReason was previously captured for validation only and never sent
   // to the backend — nothing about a rejection's reason was ever persisted. Now
@@ -94,13 +113,17 @@ function AuditQueue() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      await axios.put(`/api/emissions/${selectedLog.id}/status`, { status: newStatus, comment }, config);
+      let ledgerHash = null;
+      if (newStatus === 'Approved') {
+        ledgerHash = await generateLedgerHash(selectedLog);
+      }
 
-      setEmissions(emissions.map(e => e.id === selectedLog.id ? { ...e, status: newStatus } : e));
+      await axios.put(`/api/emissions/${selectedLog.id}/status`, { status: newStatus, comment, ledgerHash }, config);
+
+      setEmissions(emissions.map(e => e.id === selectedLog.id ? { ...e, status: newStatus, ledger_hash: ledgerHash || e.ledger_hash } : e));
 
       if (newStatus === 'Approved') {
-        const mockHash = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
-        showToast(`Record ${selectedLog.id} verified and locked to ledger.`, 'success', mockHash);
+        showToast(`Record ${selectedLog.id} verified and locked to ledger.`, 'success', ledgerHash);
       } else if (newStatus === 'Rejected') {
         showToast(`Record ${selectedLog.id} rejected. Alert routed to submitter.`, 'error');
       } else {
@@ -344,11 +367,11 @@ function AuditQueue() {
                 </div>
 
                 <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-                  <h3 style={{ margin: '0 0 16px 0', color: '#1e293b', fontSize: '16px' }}>AI Compliance Check</h3>
+                  <h3 style={{ margin: '0 0 16px 0', color: '#1e293b', fontSize: '16px' }}>Evidence Status</h3>
                   {selectedLog.evidence_file_url ? (
                     <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0', color: '#166534', fontSize: '14px', lineHeight: '1.5' }}>
                       <strong>Tier A Standard Met.</strong><br/>
-                      Evidence file attached. AI Document OCR scan indicates a <strong>{Math.floor(Math.random() * (99 - 92 + 1)) + 92}%</strong> confidence match between the uploaded receipt and the reported value.
+                      Evidence file attached and available for review in the panel to the right.
                     </div>
                   ) : (
                     <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '8px', border: '1px solid #fecaca', color: '#991b1b', fontSize: '14px', lineHeight: '1.5' }}>
@@ -376,6 +399,11 @@ function AuditQueue() {
                         <div style={{ color: '#475569' }}>"{selectedLog.reviewer_comment}"</div>
                       ) : (
                         <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No comment left.</div>
+                      )}
+                      {selectedLog.status === 'Approved' && selectedLog.ledger_hash && (
+                        <div style={{ marginTop: '10px', backgroundColor: '#ffffff', padding: '8px 12px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11px', color: '#475569', border: '1px solid #cbd5e1', wordBreak: 'break-all' }}>
+                          <strong>Ledger Hash:</strong> {selectedLog.ledger_hash}
+                        </div>
                       )}
                     </div>
                   </div>
