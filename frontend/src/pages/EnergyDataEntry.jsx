@@ -20,6 +20,13 @@ function EnergyDataEntry() {
         grid_loss_percentage: '',
         renewable_investment_ghs: '',
         energy_efficiency_score: '',
+        // NEW — Tier 2 fields
+        energy_access_connections_count: '',
+        fugitive_emissions_co2e_tonnes: '',
+        land_rehabilitation_hectares: '',
+        local_content_procurement_pct: '',
+        carbon_credits_traded_tonnes: '',
+        government_subsidies_received_ghs: '',
     });
 
     useEffect(() => {
@@ -74,6 +81,9 @@ function EnergyDataEntry() {
         setFormData({
             unit_id: '', renewable_generation_mwh: '', thermal_generation_mwh: '',
             grid_loss_percentage: '', renewable_investment_ghs: '', energy_efficiency_score: '',
+            energy_access_connections_count: '', fugitive_emissions_co2e_tonnes: '',
+            land_rehabilitation_hectares: '', local_content_procurement_pct: '',
+            carbon_credits_traded_tonnes: '', government_subsidies_received_ghs: '',
         });
     };
 
@@ -178,6 +188,32 @@ function EnergyDataEntry() {
                         <input type="number" min="0" max="100" step="0.1" value={formData.energy_efficiency_score} onChange={e => handleFormChange('energy_efficiency_score', e.target.value)} style={inputStyle} />
                     </div>
 
+                    {/* NEW — Tier 2 fields */}
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Energy Access (New Connections)</label>
+                        <input type="number" min="0" step="1" value={formData.energy_access_connections_count} onChange={e => handleFormChange('energy_access_connections_count', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Fugitive Emissions (tCO2e)</label>
+                        <input type="number" min="0" step="0.01" value={formData.fugitive_emissions_co2e_tonnes} onChange={e => handleFormChange('fugitive_emissions_co2e_tonnes', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Land Rehabilitation (Hectares)</label>
+                        <input type="number" min="0" step="0.01" value={formData.land_rehabilitation_hectares} onChange={e => handleFormChange('land_rehabilitation_hectares', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Local Content Procurement (%)</label>
+                        <input type="number" min="0" max="100" step="0.1" value={formData.local_content_procurement_pct} onChange={e => handleFormChange('local_content_procurement_pct', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Carbon Credits Traded (tCO2e)</label>
+                        <input type="number" min="0" step="0.01" value={formData.carbon_credits_traded_tonnes} onChange={e => handleFormChange('carbon_credits_traded_tonnes', e.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={fieldStyle}>
+                        <label style={labelStyle}>Government Subsidies Received (GHS)</label>
+                        <input type="number" min="0" step="0.01" value={formData.government_subsidies_received_ghs} onChange={e => handleFormChange('government_subsidies_received_ghs', e.target.value)} style={inputStyle} />
+                    </div>
+
                     <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <button type="submit" disabled={isSaving} style={{ backgroundColor: '#111827', color: 'white', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', border: 'none', cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.7 : 1 }}>
                             {isSaving ? 'Saving...' : 'Save Record'}
@@ -220,6 +256,12 @@ function EnergyDataEntry() {
                                     <th style={thStyle}>Grid Loss (%)</th>
                                     <th style={thStyle}>Investment (GHS)</th>
                                     <th style={thStyle}>Efficiency Score</th>
+                                    <th style={thStyle}>Energy Access</th>
+                                    <th style={thStyle}>Fugitive (tCO2e)</th>
+                                    <th style={thStyle}>Land Rehab (ha)</th>
+                                    <th style={thStyle}>Local Content (%)</th>
+                                    <th style={thStyle}>Carbon Credits</th>
+                                    <th style={thStyle}>Subsidies (GHS)</th>
                                     <th style={thStyle}>Action</th>
                                 </tr>
                             </thead>
@@ -232,6 +274,12 @@ function EnergyDataEntry() {
                                         <td style={{ padding: '12px' }}>{rec.grid_loss_percentage ?? '—'}</td>
                                         <td style={{ padding: '12px' }}>{rec.renewable_investment_ghs}</td>
                                         <td style={{ padding: '12px' }}>{rec.energy_efficiency_score ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.energy_access_connections_count ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.fugitive_emissions_co2e_tonnes ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.land_rehabilitation_hectares ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.local_content_procurement_pct ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.carbon_credits_traded_tonnes ?? '—'}</td>
+                                        <td style={{ padding: '12px' }}>{rec.government_subsidies_received_ghs ?? '—'}</td>
                                         <td style={{ padding: '12px' }}>
                                             <button
                                                 onClick={() => handleDelete(rec.record_id)}
