@@ -77,8 +77,14 @@ function AuditQueue() {
   };
 
   // --- INDIVIDUAL AUDIT ACTIONS (Hooked to Backend) ---
-  const executeAuditAction = async (newStatus) => {
-    if (newStatus === 'Rejected' && !rejectReason) {
+  // FIX: rejectReason was previously captured for validation only and never sent
+  // to the backend — nothing about a rejection's reason was ever persisted. Now
+  // included as `comment` on every status change (approve, reject, or resubmit),
+  // so the reviewer's context survives instead of being silently discarded.
+  const executeAuditAction = async (newStatus, commentOverride = null) => {
+    const comment = commentOverride !== null ? commentOverride : rejectReason;
+
+    if (newStatus === 'Rejected' && !comment) {
         alert("Please provide a reason for rejection so the facility manager can correct it.");
         return;
     }
@@ -88,15 +94,17 @@ function AuditQueue() {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      await axios.put(`/api/emissions/${selectedLog.id}/status`, { status: newStatus }, config);
+      await axios.put(`/api/emissions/${selectedLog.id}/status`, { status: newStatus, comment }, config);
 
       setEmissions(emissions.map(e => e.id === selectedLog.id ? { ...e, status: newStatus } : e));
 
       if (newStatus === 'Approved') {
         const mockHash = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
         showToast(`Record ${selectedLog.id} verified and locked to ledger.`, 'success', mockHash);
-      } else {
+      } else if (newStatus === 'Rejected') {
         showToast(`Record ${selectedLog.id} rejected. Alert routed to submitter.`, 'error');
+      } else {
+        showToast(`Record ${selectedLog.id} reopened for review.`, 'success');
       }
 
       setSelectedLog(null);
@@ -105,7 +113,28 @@ function AuditQueue() {
       fetchAuditQueue();
     } catch (err) {
       console.error("Error updating status:", err);
-      alert("Failed to update status. You may not have Admin privileges.");
+      alert(err.response?.data?.error || "Failed to update status. You may not have Admin privileges.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // FIX: rejected records previously had no path back to Pending — this reopens
+  // a rejected record directly from the table row without requiring a comment
+  // (the original rejection reason is already preserved and shown in the modal).
+  const handleResubmit = async (log) => {
+    if (!window.confirm(`Reopen record ${log.id} for review? It will move back to the Pending queue.`)) return;
+
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+      await axios.put(`/api/emissions/${log.id}/status`, { status: 'Pending', comment: null }, config);
+      showToast(`Record ${log.id} reopened for review.`, 'success');
+      fetchAuditQueue();
+    } catch (err) {
+      console.error("Error resubmitting record:", err);
+      alert(err.response?.data?.error || "Failed to resubmit record.");
     } finally {
       setIsSubmitting(false);
     }
@@ -215,12 +244,15 @@ function AuditQueue() {
               <th style={{ padding: '16px 24px', borderBottom: '2px solid #e2e8f0' }}>Unit & Scope</th>
               <th style={{ padding: '16px 24px', borderBottom: '2px solid #e2e8f0' }}>Metric & Value</th>
               <th style={{ padding: '16px 24px', borderBottom: '2px solid #e2e8f0' }}>Data Quality</th>
+              {activeTab !== 'Pending' && (
+                <th style={{ padding: '16px 24px', borderBottom: '2px solid #e2e8f0' }}>Reviewed By</th>
+              )}
               <th style={{ padding: '16px 24px', borderBottom: '2px solid #e2e8f0', textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredData.length === 0 ? (
-              <tr><td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontWeight: '500' }}>Inbox Zero! No {activeTab.toLowerCase()} records found.</td></tr>
+              <tr><td colSpan={activeTab !== 'Pending' ? 6 : 5} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontWeight: '500' }}>Inbox Zero! No {activeTab.toLowerCase()} records found.</td></tr>
             ) : (
               filteredData.map((log) => (
                 <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background-color 0.2s' }} onClick={() => openDrawer(log)} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -244,17 +276,32 @@ function AuditQueue() {
                       {log.evidence_file_url ? <span title="Evidence Attached">📎</span> : <span title="No Evidence">⚠️</span>}
                     </div>
                   </td>
+                  {activeTab !== 'Pending' && (
+                    <td style={{ padding: '16px 24px' }}>
+                      <div style={{ fontSize: '13px', color: '#334155', fontWeight: '600' }}>{log.reviewed_by_email || '—'}</div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{log.reviewed_at ? new Date(log.reviewed_at).toLocaleDateString() : ''}</div>
+                    </td>
+                  )}
                   <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                    {canApprove && activeTab === 'Pending' && (
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedLog(log); setRejectReason(''); }}
+                        style={{ backgroundColor: 'white', color: '#2563eb', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                        onMouseOver={(e) => { e.target.style.borderColor = '#2563eb'; e.target.style.backgroundColor = '#eff6ff'; }}
+                        onMouseOut={(e) => { e.target.style.borderColor = '#cbd5e1'; e.target.style.backgroundColor = 'white'; }}
+                      >
+                        {activeTab === 'Pending' ? 'Review & Audit' : 'View History'}
+                      </button>
+                      {canApprove && activeTab === 'Rejected' && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); setSelectedLog(log); }}
-                          style={{ backgroundColor: 'white', color: '#2563eb', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
-                          onMouseOver={(e) => { e.target.style.borderColor = '#2563eb'; e.target.style.backgroundColor = '#eff6ff'; }}
-                          onMouseOut={(e) => { e.target.style.borderColor = '#cbd5e1'; e.target.style.backgroundColor = 'white'; }}
+                          onClick={(e) => { e.stopPropagation(); handleResubmit(log); }}
+                          disabled={isSubmitting}
+                          style={{ backgroundColor: 'white', color: '#7c3aed', border: '1px solid #ddd6fe', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer' }}
                         >
-                          Review & Audit
+                          ↩️ Resubmit
                         </button>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -310,6 +357,29 @@ function AuditQueue() {
                     </div>
                   )}
                 </div>
+
+                {/* FIX: "visible approval history" from the review — surfaces the
+                    reviewer, timestamp, and comment for records that already have
+                    a decision, instead of that information vanishing after review. */}
+                {selectedLog.status !== 'Pending' && (
+                  <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+                    <h3 style={{ margin: '0 0 16px 0', color: '#1e293b', fontSize: '16px' }}>Review History</h3>
+                    <div style={{
+                      backgroundColor: selectedLog.status === 'Approved' ? '#f0fdf4' : '#fef2f2',
+                      border: `1px solid ${selectedLog.status === 'Approved' ? '#bbf7d0' : '#fecaca'}`,
+                      padding: '16px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.5'
+                    }}>
+                      <div style={{ fontWeight: '700', color: selectedLog.status === 'Approved' ? '#166534' : '#991b1b', marginBottom: '6px' }}>
+                        {selectedLog.status} by {selectedLog.reviewed_by_email || 'an admin'}{selectedLog.reviewed_at ? ` on ${new Date(selectedLog.reviewed_at).toLocaleString()}` : ''}
+                      </div>
+                      {selectedLog.reviewer_comment ? (
+                        <div style={{ color: '#475569' }}>"{selectedLog.reviewer_comment}"</div>
+                      ) : (
+                        <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No comment left.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Right Panel: The Evidence Viewer */}
@@ -340,29 +410,45 @@ function AuditQueue() {
               </div>
             </div>
 
-            <div style={{ padding: '24px 32px', backgroundColor: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: '0 0 400px' }}>
-                <input
-                  type="text" placeholder="Reason for rejection (if rejecting)..."
-                  value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  onClick={() => executeAuditAction('Rejected')} disabled={isSubmitting}
-                  style={{ backgroundColor: 'white', color: '#ef4444', border: '1px solid #ef4444', padding: '10px 24px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer' }}
-                >
-                  Reject & Return
-                </button>
-                <button
-                  onClick={() => executeAuditAction('Approved')} disabled={isSubmitting}
-                  style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 32px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)' }}
-                >
-                  {isSubmitting ? 'Locking...' : '🔒 Approve & Hash to Ledger'}
-                </button>
-              </div>
-            </div>
+            {/* Footer: action buttons for Pending; read-only history + Resubmit for decided records */}
+            {selectedLog.status === 'Pending' ? (
+              canApprove && (
+                <div style={{ padding: '24px 32px', backgroundColor: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: '0 0 400px' }}>
+                    <input
+                      type="text" placeholder="Reviewer comment (required if rejecting)..."
+                      value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => executeAuditAction('Rejected')} disabled={isSubmitting}
+                      style={{ backgroundColor: 'white', color: '#ef4444', border: '1px solid #ef4444', padding: '10px 24px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer' }}
+                    >
+                      Reject & Return
+                    </button>
+                    <button
+                      onClick={() => executeAuditAction('Approved')} disabled={isSubmitting}
+                      style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 32px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)' }}
+                    >
+                      {isSubmitting ? 'Locking...' : '🔒 Approve & Hash to Ledger'}
+                    </button>
+                  </div>
+                </div>
+              )
+            ) : (
+              canApprove && selectedLog.status === 'Rejected' && (
+                <div style={{ padding: '24px 32px', backgroundColor: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => executeAuditAction('Pending', null)} disabled={isSubmitting}
+                    style={{ backgroundColor: 'white', color: '#7c3aed', border: '1px solid #ddd6fe', padding: '10px 24px', borderRadius: '6px', fontWeight: '700', cursor: isSubmitting ? 'wait' : 'pointer' }}
+                  >
+                    ↩️ Resubmit for Review
+                  </button>
+                </div>
+              )
+            )}
           </div>
         </div>
       )}

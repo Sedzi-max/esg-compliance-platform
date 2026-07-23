@@ -132,9 +132,13 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 e.quality_tier,
                 e.evidence_url as evidence_file_url,
                 e.status,
+                e.reviewer_comment,
+                e.reviewed_at,
+                ru.email as reviewed_by_email,
                 COALESCE(e.created_at, e.timestamp) as created_at
             FROM esg_observation e
             JOIN organization_unit u ON e.unit_id = u.unit_id
+            LEFT JOIN users ru ON e.reviewed_by = ru.user_id
             WHERE e.scope_category IS NOT NULL
               AND e.unit_id IN (SELECT unit_id FROM org_tree)
 
@@ -160,9 +164,13 @@ app.get('/api/audit/pending', authorize, async (req, res) => {
                 o.quality_tier,
                 o.evidence_url as evidence_file_url,
                 o.status,
+                o.reviewer_comment,
+                o.reviewed_at,
+                ru.email as reviewed_by_email,
                 COALESCE(o.timestamp, o.created_at) as created_at
             FROM esg_observation o
             JOIN organization_unit u ON o.unit_id = u.unit_id
+            LEFT JOIN users ru ON o.reviewed_by = ru.user_id
             WHERE o.pillar IS NOT NULL
               AND o.unit_id IN (SELECT unit_id FROM org_tree)
 
@@ -639,22 +647,26 @@ app.put('/api/emissions/:id/status', authorize, auditorGuard, async (req, res) =
         }
 
         const { id } = req.params;
-        const { status } = req.body;
+        const { status, comment } = req.body;
 
-        // Admins have org-wide approval rights.
-        // Managers are restricted to their own unit (req.user.company_id is really their unit_id).
+        if (status === 'Rejected' && (!comment || !comment.trim())) {
+            return res.status(400).json({ error: "A rejection reason is required." });
+        }
+
         const updatedEmission = req.user.role === 'Admin'
             ? await pool.query(
-                `UPDATE esg_observation SET status = $1 
-                 WHERE observation_id = $2 
+                `UPDATE esg_observation 
+                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW()
+                 WHERE observation_id = $4 
                  RETURNING *`,
-                [status, id]
+                [status, comment || null, req.user.id, id]
               )
             : await pool.query(
-                `UPDATE esg_observation SET status = $1 
-                 WHERE observation_id = $2 AND unit_id = $3
+                `UPDATE esg_observation 
+                 SET status = $1, reviewer_comment = $2, reviewed_by = $3, reviewed_at = NOW()
+                 WHERE observation_id = $4 AND unit_id = $5
                  RETURNING *`,
-                [status, id, req.user.company_id]
+                [status, comment || null, req.user.id, id, req.user.company_id]
               );
 
         if (updatedEmission.rows.length === 0) {
