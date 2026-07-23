@@ -285,6 +285,27 @@ const handleSetTarget = async (e) => {
     }));
   }
 
+const SCOPE_FALLBACK_SUGGESTIONS = {
+  scope_1: 'Consider transitioning mobile fleets to EV or auditing stationary generator usage.',
+  scope_2: 'Evaluate purchasing Renewable Energy Certificates (RECs) or auditing facility HVAC efficiency.',
+  scope_3: 'Initiate supplier sustainability audits and evaluate employee business travel policies.'
+};
+
+
+  const ACTIVITY_SUGGESTIONS = {
+  mobile_diesel_liters: 'Consider auditing or transitioning your mobile diesel fleet to EV alternatives.',
+  mobile_petrol_liters: 'Consider auditing or transitioning your mobile petrol fleet to EV alternatives.',
+  generator_diesel_liters: 'Consider auditing backup generator usage and exploring solar/battery alternatives to reduce reliance on diesel generators.',
+  stationary_natural_gas_therms: 'Consider a stationary combustion efficiency audit for natural gas heating/equipment.',
+  electricity_grid_kwh: 'Evaluate purchasing Renewable Energy Certificates (RECs) or auditing facility HVAC/lighting efficiency.',
+  district_heating_kwh: 'Evaluate the carbon intensity of your district heating supplier and potential efficiency upgrades.',
+  travel_flight_long_haul_km: 'Review long-haul business travel policies and consider virtual-meeting alternatives or carbon offset programs.',
+  travel_flight_short_haul_km: 'Review short-haul business travel policies — these trips often have viable lower-carbon alternatives (rail, virtual meetings).',
+  travel_hotel_stay_nights: 'Consider prioritizing hotels with verified sustainability certifications for business travel.',
+  waste_landfill_kg: 'Initiate a waste diversion program to shift landfill waste toward recycling or composting.',
+  waste_recycled_kg: 'Review whether recycled waste volumes can be reduced at the source, since processing still carries a carbon cost.'
+};
+
   const generateInsights = () => {
     const insights = [];
     if (approvedEmissions.length === 0) {
@@ -321,20 +342,43 @@ const handleSetTarget = async (e) => {
     }
 
     const highestScope = Object.keys(scopeTotals).reduce((a, b) => scopeTotals[a] > scopeTotals[b] ? a : b);
-    if (scopeTotals[highestScope] > 0) {
-      const scopePercentage = ((scopeTotals[highestScope] / totalCO2e) * 100).toFixed(1);
-      const scopeName = highestScope.replace('_', ' ').toUpperCase();
-      
-      let suggestion = "";
-      if (highestScope === 'scope_1') suggestion = "Consider transitioning mobile fleets to EV or auditing stationary generator usage.";
-      if (highestScope === 'scope_2') suggestion = "Evaluate purchasing Renewable Energy Certificates (RECs) or auditing facility HVAC efficiency.";
-      if (highestScope === 'scope_3') suggestion = "Initiate supplier sustainability audits and evaluate employee business travel policies.";
+if (scopeTotals[highestScope] > 0) {
+  const scopePercentage = ((scopeTotals[highestScope] / totalCO2e) * 100).toFixed(1);
+  const scopeName = highestScope.replace('_', ' ').toUpperCase();
 
-      insights.push({
-        type: 'info', icon: '🔍', title: `Primary Emitter: ${scopeName}`,
-        text: `${scopeName} accounts for a massive ${scopePercentage}% of your total footprint. ${suggestion}`
-      });
+  // NEW: find which specific activity_type drives the most emissions
+  // WITHIN this scope, rather than only knowing which scope is highest.
+  const scopeActivityTotals = {};
+  approvedEmissions.forEach(e => {
+    if (e.scope_category === highestScope) {
+      const key = e.activity_type;
+      scopeActivityTotals[key] = (scopeActivityTotals[key] || 0) + Number(e.calculated_co2e);
     }
+  });
+
+  const activityKeys = Object.keys(scopeActivityTotals);
+  const topActivity = activityKeys.length > 0
+    ? activityKeys.reduce((a, b) => scopeActivityTotals[a] > scopeActivityTotals[b] ? a : b)
+    : null;
+
+  let insightText = `${scopeName} accounts for a massive ${scopePercentage}% of your total footprint.`;
+
+  if (topActivity) {
+    const activityShareOfScope = ((scopeActivityTotals[topActivity] / scopeTotals[highestScope]) * 100).toFixed(1);
+    const activityLabel = topActivity.replace(/_/g, ' ');
+    const suggestion = ACTIVITY_SUGGESTIONS[topActivity] || SCOPE_FALLBACK_SUGGESTIONS[highestScope];
+
+    insightText = `${scopeName} accounts for a massive ${scopePercentage}% of your total footprint, driven primarily by ${activityLabel} (${activityShareOfScope}% of ${scopeName} emissions). ${suggestion}`;
+  } else {
+    insightText += ` ${SCOPE_FALLBACK_SUGGESTIONS[highestScope]}`;
+  }
+
+  insights.push({
+    type: 'info', icon: '🔍', title: `Primary Emitter: ${scopeName}`,
+    text: insightText
+  });
+}
+
 
     if (totalCO2e > 0 && (socCount === 0 || govCount === 0)) {
       insights.push({
