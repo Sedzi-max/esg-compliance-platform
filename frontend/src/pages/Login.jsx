@@ -1,8 +1,23 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Eye, EyeOff, ShieldCheck, Users, FileCheck } from 'lucide-react';
 // 1. Import the custom hook at the top
 import { useAuth } from '../AuthContext';
+
+// FIX: "premium for top companies" polish pass — real typography (Sora for
+// headings, Inter for body/data) instead of system-ui, lucide-react icons
+// instead of emoji, and one restrained signature touch: a slow radar-sweep
+// animation behind the existing decorative circles, tying back to the
+// product's own name. Colors are unchanged (still navy #0a192f / green
+// #10b981) — this is an execution upgrade, not a rebrand.
+//
+// REQUIRES: add these two lines inside <head> in public/index.html for the
+// fonts to actually load:
+// <link rel="preconnect" href="https://fonts.googleapis.com">
+// <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+//
+// REQUIRES: npm install lucide-react (if not already a dependency)
 
 function Login() {
   const navigate = useNavigate();
@@ -18,8 +33,6 @@ function Login() {
   const [error, setError] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // FIX: password field had no way to reveal what was typed before submitting.
-  // Toggling this switches the input's type between 'password' and 'text'.
   const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
@@ -63,13 +76,18 @@ function Login() {
     }
   };
 
+  const FONT_HEADING = "'Sora', system-ui, sans-serif";
+  const FONT_BODY = "'Inter', system-ui, sans-serif";
+
   // --- THE SUCCESS SCREEN ---
   if (registrationSuccess) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'system-ui, sans-serif', background: '#f8f9fa' }}>
-        <div style={{ background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', maxWidth: '500px', textAlign: 'center', border: '1px solid #dee2e6' }}>
-          <div style={{ fontSize: '3.5rem', marginBottom: '20px' }}>⏳</div>
-          <h2 style={{ color: '#0a192f', marginBottom: '15px', fontWeight: '800' }}>Application Received</h2>
+      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: FONT_BODY, background: '#f8f9fa' }}>
+        <div style={{ background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', maxWidth: '500px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+          <div style={{ width: '64px', height: '64px', margin: '0 auto 20px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: '#ecfdf5' }}>
+            <FileCheck size={30} color="#059669" strokeWidth={2} />
+          </div>
+          <h2 style={{ fontFamily: FONT_HEADING, color: '#0a192f', marginBottom: '15px', fontWeight: '700', fontSize: '1.5rem' }}>Application Received</h2>
           <p style={{ color: '#64748b', lineHeight: '1.6', marginBottom: '35px', fontSize: '1.05rem' }}>
             Thank you for registering <strong>{formData.company_name}</strong>. 
             Your corporate account is currently <strong>pending admin approval</strong> to ensure platform security.
@@ -79,7 +97,7 @@ function Login() {
               setRegistrationSuccess(false);
               setIsRegistering(false);
             }} 
-            style={{ background: '#10b981', color: 'white', border: 'none', padding: '14px 24px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', width: '100%', fontSize: '1.05rem' }}
+            style={{ fontFamily: FONT_HEADING, background: '#10b981', color: 'white', border: 'none', padding: '14px 24px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', width: '100%', fontSize: '1.05rem' }}
           >
             Return to Login Portal
           </button>
@@ -90,40 +108,64 @@ function Login() {
 
   // --- THE DUAL-VIEW PORTAL ---
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', fontFamily: 'system-ui, sans-serif', background: '#f8f9fa' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', fontFamily: FONT_BODY, background: '#f8f9fa' }}>
+
+      {/* Signature touch: a slow, restrained radar sweep behind the existing
+          decorative rings — ties directly to the product name, respects
+          prefers-reduced-motion, and is the one deliberate motion moment on
+          this screen rather than scattered effects elsewhere. */}
+      <style>{`
+        @keyframes radarSweep {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .radar-sweep {
+          animation: radarSweep 14s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .radar-sweep { animation: none; }
+        }
+      `}</style>
       
       {/* LEFT SIDE: Classic Corporate Navy Design */}
       <div style={{ flex: 1, background: 'linear-gradient(135deg, #0a192f 0%, #112240 100%)', padding: '60px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: '-15%', right: '-10%', width: '600px', height: '600px', border: '2px solid rgba(255,255,255,0.03)', borderRadius: '50%' }}></div>
+        <div
+          className="radar-sweep"
+          style={{
+            position: 'absolute', top: '-15%', right: '-10%', width: '600px', height: '600px', borderRadius: '50%',
+            background: 'conic-gradient(from 0deg, rgba(16,185,129,0.16), transparent 25%, transparent 100%)'
+          }}
+        ></div>
         <div style={{ position: 'absolute', top: '-5%', right: '-5%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(13,110,253,0.05) 0%, transparent 70%)', borderRadius: '50%' }}></div>
         
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '50px' }}>
-            <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#10b981', letterSpacing: '-0.5px' }}>ESG Radar</span>
+            <span style={{ fontFamily: FONT_HEADING, fontSize: '1.8rem', fontWeight: '800', color: '#10b981', letterSpacing: '-0.5px' }}>ESG Radar</span>
           </div>
           
-          <h1 style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: '1.1', marginBottom: '25px', color: '#ffffff', letterSpacing: '-1px' }}>
+          <h1 style={{ fontFamily: FONT_HEADING, fontSize: '3.25rem', fontWeight: '800', lineHeight: '1.15', marginBottom: '25px', color: '#ffffff', letterSpacing: '-1px' }}>
             Secure Corporate <br />Compliance Portal.
           </h1>
-          <p style={{ fontSize: '1.25rem', color: '#94a3b8', lineHeight: '1.6', maxWidth: '480px', margin: 0 }}>
+          <p style={{ fontSize: '1.15rem', color: '#94a3b8', lineHeight: '1.6', maxWidth: '480px', margin: 0 }}>
             Access your cryptographically secured ledger, approve value chain data, and generate auditor-ready disclosures.
           </p>
         </div>
 
         <div style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '30px' }}>
-          <div style={{ fontSize: '0.9rem', color: '#94a3b8', display: 'flex', gap: '25px', fontWeight: '500' }}>
-            <span>✓ Bank-Grade Encryption</span>
-            <span>✓ Role-Based Access Control</span>
-            <span>✓ Audit Trailed</span>
+          <div style={{ fontSize: '0.9rem', color: '#94a3b8', display: 'flex', gap: '28px', fontWeight: '500' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={16} color="#10b981" strokeWidth={2} /> Bank-Grade Encryption</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={16} color="#10b981" strokeWidth={2} /> Role-Based Access Control</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FileCheck size={16} color="#10b981" strokeWidth={2} /> Audit Trailed</span>
           </div>
         </div>
       </div>
 
       {/* RIGHT SIDE: Authentication Form */}
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
-        <div style={{ width: '100%', maxWidth: '420px', background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', border: '1px solid #dee2e6' }}>
+        <div style={{ width: '100%', maxWidth: '420px', background: 'white', padding: '50px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
           
-          <h2 style={{ fontSize: '2rem', color: '#0a192f', margin: '0 0 10px 0', fontWeight: '800', letterSpacing: '-0.5px' }}>
+          <h2 style={{ fontFamily: FONT_HEADING, fontSize: '1.85rem', color: '#0a192f', margin: '0 0 10px 0', fontWeight: '800', letterSpacing: '-0.5px' }}>
             {isRegistering ? 'Register Entity' : 'Executive Login'}
           </h2>
           <p style={{ color: '#64748b', marginBottom: '35px', fontSize: '1rem' }}>
@@ -132,7 +174,7 @@ function Login() {
 
           {error && (
             <div style={{ padding: '14px 15px', marginBottom: '25px', background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', fontSize: '0.95rem', fontWeight: '600' }}>
-              ⚠️ {error}
+              {error}
             </div>
           )}
 
@@ -140,7 +182,7 @@ function Login() {
             
             {isRegistering && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Company Name</label>
+                <label style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Company Name</label>
                 <input 
                   type="text" 
                   name="company_name" 
@@ -148,13 +190,13 @@ function Login() {
                   onChange={handleChange} 
                   required 
                   placeholder="Acme Corp"
-                  style={{ padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
+                  style={{ fontFamily: FONT_BODY, padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
                 />
               </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Corporate Email</label>
+              <label style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Corporate Email</label>
               <input 
                 type="email" 
                 name="email" 
@@ -162,13 +204,13 @@ function Login() {
                 onChange={handleChange} 
                 required 
                 placeholder="cso@corporate.com"
-                style={{ padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
+                style={{ fontFamily: FONT_BODY, padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none' }}
               />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Password</label>
+                <label style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Password</label>
                 {!isRegistering && <span style={{ fontSize: '0.85rem', color: '#3b82f6', cursor: 'pointer', fontWeight: '600' }}>Forgot Protocol?</span>}
               </div>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -179,15 +221,15 @@ function Login() {
                   onChange={handleChange} 
                   required 
                   placeholder="••••••••••••"
-                  style={{ padding: '14px', paddingRight: '48px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+                  style={{ fontFamily: FONT_BODY, padding: '14px', paddingRight: '48px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#f8fafc', color: '#0f172a', outline: 'none', width: '100%', boxSizing: 'border-box' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  style={{ position: 'absolute', right: '14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', padding: 0, lineHeight: 1, color: '#64748b' }}
+                  style={{ position: 'absolute', right: '14px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: '#64748b', display: 'flex' }}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? <EyeOff size={18} strokeWidth={2} /> : <Eye size={18} strokeWidth={2} />}
                 </button>
               </div>
             </div>
@@ -195,7 +237,7 @@ function Login() {
             <button 
               type="submit" 
               disabled={isAuthenticating}
-              style={{ background: '#10b981', color: 'white', padding: '16px', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: isAuthenticating ? 'wait' : 'pointer', fontSize: '1.1rem', marginTop: '15px' }}
+              style={{ fontFamily: FONT_HEADING, background: '#10b981', color: 'white', padding: '16px', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: isAuthenticating ? 'wait' : 'pointer', fontSize: '1.05rem', marginTop: '15px' }}
             >
               {isAuthenticating ? 'Processing...' : (isRegistering ? 'Submit Application' : 'Initialize Secure Session')}
             </button>
@@ -208,7 +250,7 @@ function Login() {
                 setIsRegistering(!isRegistering);
                 setError('');
               }}
-              style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '700', cursor: 'pointer', marginTop: '8px', fontSize: '0.95rem' }}
+              style={{ fontFamily: FONT_HEADING, background: 'none', border: 'none', color: '#3b82f6', fontWeight: '700', cursor: 'pointer', marginTop: '8px', fontSize: '0.95rem' }}
             >
               {isRegistering ? 'Return to Login' : 'Request Admin Access'}
             </button>

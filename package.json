@@ -4,5 +4,8 @@
   "scripts": {
     "install": "cd backend && npm install",
     "start": "cd backend && node server.js"
+  },
+  "dependencies": {
+    "lucide-react": "^1.26.0"
   }
 }
