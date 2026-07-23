@@ -513,9 +513,10 @@ app.post('/api/notify/delegate', authorize, async (req, res) => {
 
 app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        let { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar } = req.body;
+        let { organization_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, document_type } = req.body;
         const evidence_url = req.file ? req.file.key : null;
         const quality_tier = req.file ? 'A' : 'C';
+        const safeDocType = document_type || 'Uncategorized';
 
         if (!organization_id || organization_id === 'undefined' || organization_id === 'null' || organization_id === '') {
             return res.status(400).json({ error: "Please select an Organization from the dropdown." });
@@ -544,10 +545,10 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
 
         const result = await pool.query(`
             INSERT INTO ESG_Observation 
-            (unit_id, metric_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_url, quality_tier, "timestamp")
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+            (unit_id, metric_id, metric_name, numeric_value, text_value, unit_of_measure, pillar, evidence_url, quality_tier, document_type, "timestamp")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
             RETURNING *;
-        `, [organization_id, metric_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url, quality_tier]);
+        `, [organization_id, metric_id, metric_name, safeNumeric, safeText, unit_of_measure, pillar, evidence_url, quality_tier, safeDocType]);
 
         res.json({ message: "Data logged successfully with evidence!", data: result.rows[0] });
     } catch (err) {
@@ -571,6 +572,10 @@ app.get('/api/observations', authorize, async (req, res) => {
                 o.numeric_value,
                 o.text_value,
                 o.timestamp,
+                o.evidence_url,
+                o.quality_tier,
+                o.document_type,
+                o.status,
                 u.name AS organization_name,
                 COALESCE(o.metric_name, m.name) AS metric_name,
                 COALESCE(o.unit_of_measure, m.unit_of_measure) AS unit_of_measure,
@@ -589,13 +594,13 @@ app.get('/api/observations', authorize, async (req, res) => {
     }
 });
 
-
 // ==========================================
 // GHG EMISSIONS (CARBON TRACKER) ROUTE
 // ==========================================
 app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file'), async (req, res) => {
     try {
-        const { organization_id, scope_category, activity_type, raw_amount } = req.body;
+        const { organization_id, scope_category, activity_type, raw_amount, document_type } = req.body;
+        const safeDocType = document_type || 'Uncategorized';
 
         if (!organization_id || !scope_category || !activity_type || raw_amount == null) {
             return res.status(400).json({ error: "Missing required field(s)" });
@@ -621,10 +626,10 @@ app.post('/api/emissions', authorize, auditorGuard, upload.single('evidence_file
 
         const result = await pool.query(`
             INSERT INTO esg_observation 
-            (unit_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier, "timestamp")
-            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, NOW())
+            (unit_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, status, evidence_url, quality_tier, document_type, "timestamp")
+            VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, $8, $9, NOW())
             RETURNING *;
-        `, [organization_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier]);
+        `, [organization_id, metric_id, scope_category, activity_type, raw_amount, calculated_co2e, evidence_url, quality_tier, safeDocType]);
 
         res.json({ message: "GHG Emission securely logged!", data: result.rows[0] });
     } catch (err) {
@@ -1781,9 +1786,11 @@ app.get('/api/evidence/:key/view', authorize, async (req, res) => {
 pool.query(`
     ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
     ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
+    ALTER TABLE esg_observation ADD COLUMN IF NOT EXISTS document_type VARCHAR(50) DEFAULT 'Uncategorized';
 
     ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS evidence_url VARCHAR(500);
     ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS quality_tier VARCHAR(10) DEFAULT 'C';
+    ALTER TABLE ESG_Observation ADD COLUMN IF NOT EXISTS document_type VARCHAR(50) DEFAULT 'Uncategorized';
 `).then(() => {
     console.log("✅ Database schema successfully patched for ALL tables!");
 }).catch(err => {

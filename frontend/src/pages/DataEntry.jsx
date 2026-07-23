@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
+// Used by the shared EvidenceAttachmentUI so every uploaded file gets tagged
+// with a document type — closes the "no metadata tagging" gap flagged in the
+// Evidence Locker review.
+const DOCUMENT_TYPES = ['Uncategorized', 'Utility Bill', 'Invoice', 'Receipt', 'Audit Report', 'Certificate', 'Contract', 'Other'];
+
 const ACTIVITY_OPTIONS = {
   scope_1: [
     { id: 'mobile_diesel_liters', label: 'Diesel (Mobile Fleet) - Liters' },
@@ -134,14 +139,14 @@ function DataEntry() {
   // at all. This sub-tab lets those sectors reach both.
   const [sectorSubTab, setSectorSubTab] = useState('clauses');
 
-  const [envFormData, setEnvFormData] = useState({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
-  const [genEnvFormData, setGenEnvFormData] = useState({ organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
-  const [socFormData, setSocFormData] = useState({ organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
-  const [govFormData, setGovFormData] = useState({ organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
-  const [finFormData, setFinFormData] = useState({ organization_id: '', pillar: 'F', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null });
+  const [envFormData, setEnvFormData] = useState({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null, document_type: 'Uncategorized' });
+  const [genEnvFormData, setGenEnvFormData] = useState({ organization_id: '', pillar: 'E', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null, document_type: 'Uncategorized' });
+  const [socFormData, setSocFormData] = useState({ organization_id: '', pillar: 'S', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null, document_type: 'Uncategorized' });
+  const [govFormData, setGovFormData] = useState({ organization_id: '', pillar: 'G', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null, document_type: 'Uncategorized' });
+  const [finFormData, setFinFormData] = useState({ organization_id: '', pillar: 'F', metric_name: '', numeric_value: '', unit_of_measure: '', text_value: '', evidence_file: null, document_type: 'Uncategorized' });
 
-  const [bogFormData, setBogFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null });
-  const [nicFormData, setNicFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null });
+  const [bogFormData, setBogFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null, document_type: 'Uncategorized' });
+  const [nicFormData, setNicFormData] = useState({ organization_id: '', principle_id: '', numeric_value: '', evidence_file: null, document_type: 'Uncategorized' });
 
   useEffect(() => {
     fetchAllData();
@@ -242,13 +247,14 @@ function DataEntry() {
       submitData.append('scope_category', envFormData.scope_category);
       submitData.append('activity_type', envFormData.activity_type);
       submitData.append('raw_amount', envFormData.raw_amount);
+      submitData.append('document_type', envFormData.document_type || 'Uncategorized');
       if (envFormData.evidence_file) submitData.append('evidence_file', envFormData.evidence_file);
 
       await axios.post('/api/emissions', submitData, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      setEnvFormData({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null });
+      setEnvFormData({ organization_id: '', scope_category: '', activity_type: '', raw_amount: '', evidence_file: null, document_type: 'Uncategorized' });
       setFilePreviewName('');
       fetchAllData();
       showSuccess("GHG Emission securely logged with verification invoice!");
@@ -270,6 +276,7 @@ function DataEntry() {
       submitData.append('pillar', formDataState.pillar || 'G');
       submitData.append('metric_name', formDataState.metric_name || formDataState.principle_id);
       submitData.append('unit_of_measure', formDataState.unit_of_measure || '');
+      submitData.append('document_type', formDataState.document_type || 'Uncategorized');
 
       if (formDataState.numeric_value) submitData.append('numeric_value', formDataState.numeric_value);
       if (formDataState.text_value) submitData.append('text_value', formDataState.text_value);
@@ -279,7 +286,7 @@ function DataEntry() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      resetStateFn({ ...formDataState, numeric_value: '', text_value: '', evidence_file: null });
+      resetStateFn({ ...formDataState, numeric_value: '', text_value: '', evidence_file: null, document_type: 'Uncategorized' });
       setFilePreviewName('');
       fetchAllData();
       showSuccess(successMessage);
@@ -329,7 +336,7 @@ function DataEntry() {
     return map[scope] || scope;
   };
 
-  const EvidenceAttachmentUI = ({ formType, onExtract }) => {
+  const EvidenceAttachmentUI = ({ formType, onExtract, documentType, onDocumentTypeChange }) => {
     const [isScanning, setIsScanning] = useState(false);
     const [scanComplete, setScanComplete] = useState(false);
 
@@ -371,6 +378,19 @@ function DataEntry() {
             <p style={{ margin: '0 0 15px 0', color: '#495057', fontWeight: 'bold', fontSize: '0.85rem' }}>
               📄 {filePreviewName} attached
             </p>
+
+            {onDocumentTypeChange && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '15px', textAlign: 'left' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>Document Type</label>
+                <select
+                  value={documentType || 'Uncategorized'}
+                  onChange={(e) => onDocumentTypeChange(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da', fontSize: '0.85rem' }}
+                >
+                  {DOCUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            )}
 
             {!scanComplete ? (
               <button
@@ -421,7 +441,7 @@ function DataEntry() {
           </select>
         </div>
 
-        <EvidenceAttachmentUI formType={formType} onExtract={(extractedValue) => setFormData({ ...formData, numeric_value: extractedValue })} />
+        <EvidenceAttachmentUI formType={formType} onExtract={(extractedValue) => setFormData({ ...formData, numeric_value: extractedValue })} documentType={formData.document_type} onDocumentTypeChange={(val) => setFormData({ ...formData, document_type: val })} />
 
         {formData.principle_id && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -473,7 +493,7 @@ function DataEntry() {
       )}
 
       {envFormData.activity_type && (
-        <EvidenceAttachmentUI formType="ghg" onExtract={(extractedValue) => setEnvFormData({ ...envFormData, raw_amount: extractedValue })} />
+        <EvidenceAttachmentUI formType="ghg" onExtract={(extractedValue) => setEnvFormData({ ...envFormData, raw_amount: extractedValue })} documentType={envFormData.document_type} onDocumentTypeChange={(val) => setEnvFormData({ ...envFormData, document_type: val })} />
       )}
 
       {envFormData.activity_type && (
@@ -644,7 +664,7 @@ function DataEntry() {
                     </select>
                   </div>
 
-                  <EvidenceAttachmentUI formType="genEnv" onExtract={(extractedValue) => setGenEnvFormData({ ...genEnvFormData, numeric_value: extractedValue })} />
+                  <EvidenceAttachmentUI formType="genEnv" onExtract={(extractedValue) => setGenEnvFormData({ ...genEnvFormData, numeric_value: extractedValue })} documentType={genEnvFormData.document_type} onDocumentTypeChange={(val) => setGenEnvFormData({ ...genEnvFormData, document_type: val })} />
 
                   {genEnvFormData.metric_name && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -684,7 +704,7 @@ function DataEntry() {
                 </select>
               </div>
 
-              <EvidenceAttachmentUI formType="soc" onExtract={(extractedValue) => setSocFormData({ ...socFormData, numeric_value: extractedValue })} />
+              <EvidenceAttachmentUI formType="soc" onExtract={(extractedValue) => setSocFormData({ ...socFormData, numeric_value: extractedValue })} documentType={socFormData.document_type} onDocumentTypeChange={(val) => setSocFormData({ ...socFormData, document_type: val })} />
 
               {socFormData.metric_name && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -722,7 +742,7 @@ function DataEntry() {
                 </select>
               </div>
 
-              <EvidenceAttachmentUI formType="gov" onExtract={(extractedValue) => setGovFormData({ ...govFormData, numeric_value: extractedValue })} />
+              <EvidenceAttachmentUI formType="gov" onExtract={(extractedValue) => setGovFormData({ ...govFormData, numeric_value: extractedValue })} documentType={govFormData.document_type} onDocumentTypeChange={(val) => setGovFormData({ ...govFormData, document_type: val })} />
 
               {govFormData.metric_name && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -768,7 +788,7 @@ function DataEntry() {
                 </select>
               </div>
 
-              <EvidenceAttachmentUI formType="fin" onExtract={(extractedValue) => setFinFormData({ ...finFormData, numeric_value: extractedValue })} />
+              <EvidenceAttachmentUI formType="fin" onExtract={(extractedValue) => setFinFormData({ ...finFormData, numeric_value: extractedValue })} documentType={finFormData.document_type} onDocumentTypeChange={(val) => setFinFormData({ ...finFormData, document_type: val })} />
 
               {finFormData.metric_name && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
