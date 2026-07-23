@@ -535,13 +535,7 @@ app.post('/api/observations', authorize, auditorGuard, upload.single('evidence_f
             [metric_name]
         );
 
-        if (metricResult.rows.length === 0) {
-            return res.status(400).json({
-                error: `No metric definition found for "${metric_name}".`
-            });
-        }
-
-        const metric_id = metricResult.rows[0].metric_id;
+        const metric_id = metricResult.rows.length > 0 ? metricResult.rows[0].metric_id : null;
 
         const result = await pool.query(`
             INSERT INTO ESG_Observation 
