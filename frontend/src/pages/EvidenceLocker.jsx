@@ -17,6 +17,11 @@ function EvidenceLocker() {
     const [yearFilter, setYearFilter] = useState('All');
     const [metricSearch, setMetricSearch] = useState('');
 
+    // FIX: verifying/rejecting a document gave zero feedback — the record simply
+    // vanished from the active tab (since its status changed) with nothing telling
+    // the user it worked or where the document went. Mirrors AuditQueue.jsx's toast.
+    const [actionToast, setActionToast] = useState(null);
+
     // Role verification
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : null;
@@ -95,7 +100,32 @@ function EvidenceLocker() {
         }
     };
 
+    const showToast = (message, type) => {
+        setActionToast({ message, type });
+        setTimeout(() => setActionToast(null), 5000);
+    };
+
     const handleDocumentVerification = async (id, newStatus, source) => {
+        // FIX: approving here was a bare one-click action with zero confirmation —
+        // it let a document be marked "verified" without ever being opened, and
+        // gave no chance to back out of an accidental click on a consequential,
+        // compliance-locking action. Matches the existing window.confirm pattern
+        // already used elsewhere in this app (handleApproveAll, handleResubmit).
+        if (newStatus === 'Approved' && !window.confirm("Approve this document without reviewing it first? It will be locked in as verified.")) {
+            return;
+        }
+
+        let comment = null;
+        if (newStatus === 'Rejected') {
+            // FIX: the backend now requires a rejection reason (added for Audit
+            // Queue's reviewer-comment work) — this button previously sent no
+            // comment at all, which would 400 instead of completing.
+            comment = window.prompt("Reason for rejection (required):");
+            if (!comment || !comment.trim()) {
+                return; // cancelled or left blank — don't send an invalid request
+            }
+        }
+
         try {
             const token = localStorage.getItem('token');
             
@@ -104,14 +134,27 @@ function EvidenceLocker() {
                     headers: { Authorization: `Bearer ${token}` }
                 });
             } else {
-                await axios.put(`/api/emissions/${id}/status`, { status: newStatus }, {
+                await axios.put(`/api/emissions/${id}/status`, { status: newStatus, comment }, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
             }
             
             setDocuments(documents.map(doc => doc.id === id ? { ...doc, status: newStatus } : doc));
+
+            // FIX: previously nothing told the user the action succeeded or where
+            // the document went — it just silently left the active tab.
+            showToast(
+                newStatus === 'Approved'
+                    ? `Document approved — moved to the Approved tab.`
+                    : `Document rejected — moved to the Rejected tab.`,
+                newStatus === 'Approved' ? 'success' : 'error'
+            );
         } catch (err) {
-            alert("Failed to update document status. Ensure you have the correct permissions.");
+            // FIX: this always showed a generic "permissions" message even when the
+            // real cause (e.g. a missing rejection reason) was returned by the
+            // backend — surfacing the actual error is far less confusing.
+            console.error("Failed to update document status:", err);
+            alert(err.response?.data?.error || "Failed to update document status. Ensure you have the correct permissions.");
         }
     };
 
@@ -179,6 +222,14 @@ function EvidenceLocker() {
                     </p>
                 </div>
             </div>
+
+            {/* Action Toast Notification */}
+            {actionToast && (
+                <div style={{ backgroundColor: actionToast.type === 'success' ? '#ecfdf5' : '#fef2f2', border: `1px solid ${actionToast.type === 'success' ? '#a7f3d0' : '#fecaca'}`, padding: '14px 20px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', color: actionToast.type === 'success' ? '#065f46' : '#991b1b', fontWeight: '700', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                    <span style={{ fontSize: '18px' }}>{actionToast.type === 'success' ? '✅' : '⚠️'}</span>
+                    {actionToast.message}
+                </div>
+            )}
 
             {/* Search & filter bar */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '20px', padding: '16px', background: 'white', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
