@@ -30,7 +30,7 @@ import EnergyAnalytics from './pages/EnergyAnalytics';
 import PlatformOverview from './pages/PlatformOverview';
 import EnergyDataEntry from './pages/EnergyDataEntry';
 import InsuranceDataEntry from './pages/InsuranceDataEntry';
-import MaterialityMatrix from './components/MaterialityMatrix';
+import MaterialityMatrix from './pages/MaterialityMatrix';
 
 
 // Component Imports
@@ -67,7 +67,13 @@ function App() {
           path="/*" 
           element={
             <ProtectedRoute>
-              <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
+              {/* FIX: "premium" polish request — nudged the shared app-shell
+                  background from the very pale #f3f4f6 to a slightly deeper,
+                  cooler, navy-tinted gray (#e9edf2), so white content cards
+                  read with more contrast/depth instead of blending into a
+                  washed-out background. Any page that doesn't set its own
+                  background color inherits this automatically. */}
+              <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', minHeight: '100vh', backgroundColor: '#e9edf2' }}>
                 
                 {/* Plug in the new Context-aware Sidebar */}
                 <Sidebar />
@@ -87,7 +93,7 @@ function App() {
                     <Route path="/campaigns" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><SurveyCampaigns /></ProtectedRoute>} />
                     <Route path="/alignment" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><FrameworkAlignment /></ProtectedRoute>} />
                     <Route path="/materiality-matrix" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><MaterialityMatrix /></ProtectedRoute>} />
-
+                    
                     {/* Climate Stress Testing & Scenario Analysis Route */}
                     <Route path="/scenarios" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><ScenarioAnalysis /></ProtectedRoute>} />
                     <Route path="/banking-analytics" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><BankingAnalytics /></ProtectedRoute>} />

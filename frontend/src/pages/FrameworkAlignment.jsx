@@ -125,7 +125,9 @@ const FrameworkAlignment = () => {
     };
 
     return (
-        <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        // FIX: "premium" polish request — background nudged from the pale
+        // #f3f4f6 to the same deeper, navy-tinted #e9edf2 used app-wide now.
+        <div style={{ backgroundColor: '#e9edf2', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
 
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' }}>

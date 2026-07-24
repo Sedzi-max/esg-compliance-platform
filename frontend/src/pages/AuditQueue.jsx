@@ -201,7 +201,7 @@ function AuditQueue() {
   const pendingCount = emissions.filter(e => e.status === 'Pending').length;
 
   return (
-    <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ backgroundColor: '#e9edf2', minHeight: '100vh', padding: '40px', fontFamily: 'system-ui, sans-serif' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', flexWrap: 'wrap', gap: '20px' }}>

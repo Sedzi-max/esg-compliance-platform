@@ -166,7 +166,7 @@ function MaterialityMatrix() {
   const sliderPct = (v) => ((v - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100;
 
   return (
-    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: FONT_BODY }}>
+    <div style={{ backgroundColor: '#e9edf2', minHeight: '100vh', padding: '40px', fontFamily: FONT_BODY }}>
 
       <style>{`
         .materiality-slider {
