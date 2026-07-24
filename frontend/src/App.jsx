@@ -30,12 +30,13 @@ import EnergyAnalytics from './pages/EnergyAnalytics';
 import PlatformOverview from './pages/PlatformOverview';
 import EnergyDataEntry from './pages/EnergyDataEntry';
 import InsuranceDataEntry from './pages/InsuranceDataEntry';
-import MaterialityMatrix from './pages/MaterialityMatrix';
+
 
 
 // Component Imports
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar'; 
+import MaterialityMatrix from './components/MaterialityMatrix';
 
 // Tells React to use the live URL if it exists, otherwise fallback to localhost
 axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'https://esg-compliance-platform-production.up.railway.app';
