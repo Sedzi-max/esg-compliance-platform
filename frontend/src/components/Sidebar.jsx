@@ -121,6 +121,11 @@ function Sidebar() {
               <li style={getSectionHeaderStyle()}>Supply Chain</li>
               <li><Link to="/campaigns" style={getLinkStyle('/campaigns')}>🚀 Scope 3 Campaigns</Link></li>
               <li><Link to="/alignment" style={getLinkStyle('/alignment')}>🎯 Alignment Matrix</Link></li>
+              {/* FIX: new page from the Consultant Review's "Alignment Matrix"
+                  finding — kept as its own distinct link (not renaming the one
+                  above) since /alignment is a different, already-working
+                  feature and users already know it by that name. */}
+              <li><Link to="/materiality-matrix" style={getLinkStyle('/materiality-matrix')}>🧭 Materiality Assessment</Link></li>
               
               {/* Climate Stress Testing */}
               <li style={getSectionHeaderStyle()}>Risk & Forecasting</li>

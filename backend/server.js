@@ -1455,7 +1455,7 @@ app.post('/api/materiality', authorize, auditorGuard, async (req, res) => {
 app.get('/api/materiality/:orgId', authorize, async (req, res) => {
     try {
         const { orgId } = req.params;
-        const currentYear = new Date().getFullYear();
+        const year = req.query.year || new Date().getFullYear();
 
         const result = await pool.query(`
             WITH RECURSIVE org_tree AS (
@@ -1469,7 +1469,7 @@ app.get('/api/materiality/:orgId', authorize, async (req, res) => {
             FROM Materiality_Scores
             WHERE unit_id = $2 AND assessment_year = $3
               AND unit_id IN (SELECT unit_id FROM org_tree)
-        `, [req.user.company_id, orgId, currentYear]);
+        `, [req.user.company_id, orgId, year]);
 
         res.json(result.rows);
     } catch (err) {

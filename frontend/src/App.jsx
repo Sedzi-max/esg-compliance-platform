@@ -30,6 +30,7 @@ import EnergyAnalytics from './pages/EnergyAnalytics';
 import PlatformOverview from './pages/PlatformOverview';
 import EnergyDataEntry from './pages/EnergyDataEntry';
 import InsuranceDataEntry from './pages/InsuranceDataEntry';
+import MaterialityMatrix from './pages/MaterialityMatrix';
 
 
 // Component Imports
@@ -85,6 +86,7 @@ function App() {
                     <Route path="/evidence-locker" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><EvidenceLocker /></ProtectedRoute>} />
                     <Route path="/campaigns" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><SurveyCampaigns /></ProtectedRoute>} />
                     <Route path="/alignment" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><FrameworkAlignment /></ProtectedRoute>} />
+                    <Route path="/materiality-matrix" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><MaterialityMatrix /></ProtectedRoute>} />
                     
                     {/* Climate Stress Testing & Scenario Analysis Route */}
                     <Route path="/scenarios" element={<ProtectedRoute allowedRoles={['Admin', 'Manager']}><ScenarioAnalysis /></ProtectedRoute>} />
