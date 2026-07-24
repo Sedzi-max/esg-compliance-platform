@@ -882,6 +882,49 @@ app.get('/api/reports/readiness', authorize, async (req, res) => {
 });
 
 
+app.get('/api/reports/gse-disclosure', authorize, async (req, res) => {
+    try {
+        const { year } = req.query;
+        if (!year) return res.status(400).json({ error: "Missing year parameter." });
+
+        const query = `
+            WITH RECURSIVE org_tree AS (
+                SELECT unit_id FROM Organization_Unit WHERE unit_id = $1
+                UNION ALL
+                SELECT ou.unit_id
+                FROM Organization_Unit ou
+                JOIN org_tree ot ON ou.parent_unit_id = ot.unit_id
+            )
+            SELECT
+                fm.framework_code,
+                fm.description,
+                fm.activity_type,
+                md.aggregation_type,
+                md.unit_of_measure,
+                CASE
+                    WHEN md.aggregation_type = 'AVG' THEN AVG(COALESCE(e.numeric_value, e.raw_amount))
+                    ELSE SUM(COALESCE(e.numeric_value, e.raw_amount))
+                END as reported_value,
+                SUM(e.calculated_co2e) as co2e_value
+            FROM Framework_Mappings fm
+            LEFT JOIN Metric_Definition md ON fm.activity_type = md.name
+            LEFT JOIN esg_observation e
+                ON (e.activity_type = fm.activity_type OR e.metric_name = fm.framework_code)
+                AND e.status = 'Approved'
+                AND e.unit_id IN (SELECT unit_id FROM org_tree)
+                AND EXTRACT(YEAR FROM COALESCE(e.created_at, e.timestamp)) = $2
+            WHERE fm.framework_name = 'GSE ESG Disclosures Guidance Manual'
+            GROUP BY fm.framework_code, fm.description, fm.activity_type, md.aggregation_type, md.unit_of_measure
+            ORDER BY fm.framework_code;
+        `;
+        const result = await pool.query(query, [req.user.company_id, year]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error("GSE Disclosure Report Error:", err.message);
+        res.status(500).json({ error: "Failed to compile GSE disclosure report." });
+    }
+});
+
 app.get('/api/reports/gap-analysis', authorize, async (req, res) => {
     try {
         const { framework, year } = req.query;
