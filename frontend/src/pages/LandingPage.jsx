@@ -300,6 +300,9 @@ function LandingPage() {
             <span style={{ fontFamily: FONT_HEADING, fontSize: '1.4rem', fontWeight: 'bold', color: 'white' }}>ESG Radar</span>
           </div>
           <p style={{ margin: 0, fontSize: '0.95rem' }}>Built for Global and Regional Stock Exchange Compliance.</p>
+          <a href="mailto:contact@esgradarcompliance.com" style={{ fontFamily: FONT_HEADING, color: '#10b981', fontSize: '1rem', fontWeight: '700', textDecoration: 'none', marginTop: '4px' }}>
+            contact@esgradarcompliance.com
+          </a>
           <div style={{ width: '100%', height: '1px', background: '#495057', margin: '20px 0' }}></div>
           <p style={{ margin: 0, fontSize: '0.85rem' }}>&copy; {new Date().getFullYear()} Route Radar Limited. All rights reserved.</p>
         </div>
