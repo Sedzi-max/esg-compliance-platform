@@ -1518,6 +1518,33 @@ app.post('/api/scenarios', authorize, auditorGuard, async (req, res) => {
         ];
 
         const newScenario = await pool.query(insertQuery, values);
+
+        const assessmentDate = `${assessment_year}-12-31`;
+
+        await pool.query(`
+            INSERT INTO esg_observation
+            (unit_id, activity_type, metric_name, text_value, pillar, status, created_at)
+            VALUES
+            ($1, 'climate_physical_risk_narrative', $2, $3, 'G', 'Pending', $4),
+            ($1, 'climate_transition_risk_narrative', $2, $5, 'G', 'Pending', $4),
+            ($1, 'climate_mitigation_strategy', $2, $6, 'G', 'Pending', $4)
+        `, [
+            req.user.company_id,
+            scenario_name,
+            physical_risk_impact,
+            assessmentDate,
+            transition_risk_impact,
+            mitigation_strategy
+        ]);
+
+        if (projected_financial_impact_ghs) {
+            await pool.query(`
+                INSERT INTO esg_observation
+                (unit_id, activity_type, metric_name, numeric_value, unit_of_measure, pillar, status, created_at)
+                VALUES ($1, 'climate_financial_impact_ghs', $2, $3, 'GHS', 'F', 'Pending', $4)
+            `, [req.user.company_id, scenario_name, projected_financial_impact_ghs, assessmentDate]);
+        }
+
         res.status(201).json(newScenario.rows[0]);
 
     } catch (err) {
